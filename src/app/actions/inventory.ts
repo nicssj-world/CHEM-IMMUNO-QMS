@@ -37,6 +37,8 @@ export async function createInvoice(form: FormData) {
   const lines = products.flatMap((product_id,i) => product_id && quantities[i] && Number(quantities[i]) > 0 ? [{ product_id, quantity: quantities[i] }] : []);
   if (!lines.length) fail('/receive','กรุณาเพิ่มสินค้าอย่างน้อยหนึ่งรายการ');
   const payload = { vendor_id: value(form,'vendor_id'), invoice_number: value(form,'invoice_number'), invoice_date: value(form,'invoice_date'), po_number: value(form,'po_number') || null, lines };
+  const { data: existing } = await client.from('ci_invoices').select('id').eq('vendor_id',payload.vendor_id).eq('invoice_number',payload.invoice_number).limit(1).maybeSingle();
+  if (existing) redirect(`/receive?invoice=${existing.id}`);
   const { data, error } = await client.rpc('ci_create_invoice',{ p_data: payload });
   if (error || !data) fail('/receive',error?.message ?? 'สร้าง invoice ไม่สำเร็จ');
   revalidatePath('/receive');
@@ -55,7 +57,11 @@ export async function confirmReceipt(form: FormData) {
   const lines = ids.flatMap((invoice_line_id,i) => quantities[i] && Number(quantities[i]) > 0 ? [{ invoice_line_id, quantity: quantities[i], lot_number: lots[i], expiry_date: expiries[i], location_id: locations[i] }] : []);
   if (!lines.length) fail(path,'กรุณากรอกจำนวนที่รับอย่างน้อยหนึ่งรายการ');
   if (lines.some(line => !line.lot_number || !line.expiry_date || !line.location_id)) fail(path,'รายการที่รับต้องมี LOT วันหมดอายุ และตำแหน่ง');
-  const { error } = await client.rpc('ci_confirm_receipt',{ p_invoice_id: invoiceId, p_lines: lines, p_idempotency_key: value(form,'idempotency_key') });
+  const assessment = Object.fromEntries(['correct_product','correct_quantity','packaging_ok','temperature_required','temperature_ok','shelf_life_ok','documentation_complete','delivery_discrepancy'].map(key => [key, value(form,key) === '' ? null : value(form,key) === 'yes']));
+  const required = ['correct_product','correct_quantity','packaging_ok','temperature_required','shelf_life_ok','documentation_complete','delivery_discrepancy'];
+  if (required.some(key => value(form,key) === '')) fail(path,'กรุณาบันทึกผลตรวจรับก่อนยืนยัน');
+  if (value(form,'temperature_required') === 'yes' && value(form,'temperature_ok') === '') fail(path,'กรุณาบันทึกผลอุณหภูมิ');
+  const { error } = await client.rpc('ci_confirm_receipt_assessed',{ p_invoice_id: invoiceId, p_lines: lines, p_idempotency_key: value(form,'idempotency_key'), p_assessment: { ...assessment, notes: value(form,'assessment_notes') || null } });
   if (error) fail(path,error.message);
   success(path);
 }
