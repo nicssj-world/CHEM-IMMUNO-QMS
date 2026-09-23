@@ -48,6 +48,10 @@ An Admin with active Admin access to both warehouses can provision a user from *
 
 Initial workbook import requires an explicit review and approval. Unresolved source rows remain held. Do not use the older workbook.
 
-## Environment boundaries
+## Environment configuration
 
-`SUPABASE_SERVICE_ROLE_KEY` is server-only and must never use a `NEXT_PUBLIC_` prefix. `.env.local` and all `.env*` files are ignored by Git. The sole CHEM-IMMUNO Production Supabase target is project `nivlnbaveanoawfbrmzz` at `https://nivlnbaveanoawfbrmzz.supabase.co`. Do not use Staging or Preview Supabase/Vercel environments. Production operations require explicit Production authorization.
+`.env.example` is tracked and contains placeholders only. Copy it to `.env.local` for local development when appropriate, and use the local values shown by `supabase status`; never copy Production values into it. Real environment files such as `.env`, `.env.local`, `.env.production`, and `.env.*.local` remain ignored.
+
+Configure Production app values through the Vercel project’s Production environment settings, not committed files. Supabase CLI authentication and project linking are separate local tooling state; they are not application environment variables and are not a reason to commit credentials.
+
+`NEXT_PUBLIC_*` values are exposed to the browser and must contain only public configuration. `SUPABASE_SERVICE_ROLE_KEY` is server-only and must never use a `NEXT_PUBLIC_` prefix. The sole CHEM-IMMUNO Production Supabase target is project `nivlnbaveanoawfbrmzz` at `https://nivlnbaveanoawfbrmzz.supabase.co`. Do not use Staging or Preview Supabase/Vercel environments. Production operations require explicit Production authorization.
