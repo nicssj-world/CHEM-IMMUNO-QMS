@@ -16,7 +16,7 @@ Local Auth disables self-service sign-up. Accounts are created only through the 
 
 ### Bootstrap the first local Admin
 
-The CLI requires the explicit `--allow-local` flag for loopback Supabase URLs. It refuses the protected Production project ref and requires `CI_EXPECTED_SUPABASE_PROJECT_REF` to match any hosted project URL. Hosted use is for a separately approved Preview project only.
+The CLI requires the explicit `--allow-local` flag for loopback Supabase URLs. CHEM-IMMUNO has one persistent hosted environment: Production. Staging and Preview Supabase projects and Preview Vercel deployments are not used. Hosted bootstrap accepts only the exact Production project URL below, requires `CI_EXPECTED_SUPABASE_PROJECT_REF` to match its ref, and requires the explicit `--production-rollout` mode. Every other hosted project is rejected.
 
 For local disposable testing:
 
@@ -32,7 +32,7 @@ try {
 }
 ```
 
-The CLI refuses a `--password` argument because npm can echo command arguments. It reads `CI_BOOTSTRAP_PASSWORD` or `--password-stdin`, never displays either value, and never displays a service-role key. Before making a hosted Auth request, it prints `Target environment: PREVIEW` and the validated project ref. For a real Preview bootstrap, set `CI_EXPECTED_SUPABASE_PROJECT_REF` and the Preview-only Supabase URL/service-role key, then run the same command without `--allow-local`. If bootstrap stops after creating the Auth account, rerunning with the same Ephis ID safely completes the database step without changing that account's password.
+The CLI refuses a `--password` argument because npm can echo command arguments. It reads `CI_BOOTSTRAP_PASSWORD` or `--password-stdin`, never displays either value, and never displays a service-role key. Before making a hosted Auth request, it validates the URL/ref and rollout mode, then prints `Target environment: PRODUCTION` and the validated project ref. A Production bootstrap requires the Production-only Supabase URL/key, `CI_EXPECTED_SUPABASE_PROJECT_REF=nivlnbaveanoawfbrmzz`, and `--production-rollout`. If bootstrap stops after creating the Auth account, rerunning with the same Ephis ID safely completes the database step without changing that account's password.
 
 ### Admin user provisioning
 
@@ -50,4 +50,4 @@ Initial workbook import requires an explicit review and approval. Unresolved sou
 
 ## Environment boundaries
 
-`SUPABASE_SERVICE_ROLE_KEY` is server-only and must never use a `NEXT_PUBLIC_` prefix. `.env.local` and all `.env*` files are ignored by Git. Production Supabase project `lvddgcogfcvcsaajdqvl` is protected from bootstrap and is not a development or Preview environment.
+`SUPABASE_SERVICE_ROLE_KEY` is server-only and must never use a `NEXT_PUBLIC_` prefix. `.env.local` and all `.env*` files are ignored by Git. The sole CHEM-IMMUNO Production Supabase target is project `nivlnbaveanoawfbrmzz` at `https://nivlnbaveanoawfbrmzz.supabase.co`. Do not use Staging or Preview Supabase/Vercel environments. Production operations require explicit Production authorization.

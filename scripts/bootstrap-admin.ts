@@ -32,7 +32,13 @@ async function findUserByEmail(admin: AuthAdminClient, email: string) {
 }
 
 async function main() {
-  const { ephisId: rawEphisId, displayName: rawDisplayName, passwordFromStdin, allowLocal } = parseBootstrapArguments(process.argv.slice(2));
+  const {
+    ephisId: rawEphisId,
+    displayName: rawDisplayName,
+    passwordFromStdin,
+    allowLocal,
+    productionRollout,
+  } = parseBootstrapArguments(process.argv.slice(2));
   const ephisId = normalizeEphisId(rawEphisId);
   const displayName = rawDisplayName.trim();
   const password = passwordFromStdin ? await readPasswordFromStdin() : process.env.CI_BOOTSTRAP_PASSWORD ?? '';
@@ -42,10 +48,15 @@ async function main() {
   if (password.length < 12 || password.length > 128) throw new Error('Initial password must contain 12 to 128 characters.');
   if (!urlValue || !serviceRoleKey) throw new Error('Set the target Supabase URL and server-only SUPABASE_SERVICE_ROLE_KEY.');
 
-  const target = resolveBootstrapTarget(urlValue, process.env.CI_EXPECTED_SUPABASE_PROJECT_REF, allowLocal);
+  const target = resolveBootstrapTarget(
+    urlValue,
+    process.env.CI_EXPECTED_SUPABASE_PROJECT_REF,
+    allowLocal,
+    productionRollout,
+  );
   const local = target.environment === 'local';
   const projectRef = target.projectRef;
-  console.log(`Target environment: ${local ? 'LOCAL disposable Supabase' : 'PREVIEW'}`);
+  console.log('Target environment: ' + (local ? 'LOCAL disposable Supabase' : 'PRODUCTION'));
   if (projectRef) console.log(`Target project ref: ${projectRef}`);
 
   const email = internalAuthEmail(ephisId);

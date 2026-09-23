@@ -16,7 +16,7 @@ test('real local Supabase Auth maps Ephis IDs, enforces application access, ware
     const admin = createClient(url, serviceRoleKey!, { auth: { autoRefreshToken: false, persistSession: false } });
     const testPassword = `Local-${crypto.randomUUID()}-A9!`;
     const identities = [
-      { ephis: `e2ea${crypto.randomUUID().slice(0,8)}`, name: 'E2E Preview Admin', role: 'admin', warehouses: [1,2], active: true },
+      { ephis: `e2ea${crypto.randomUUID().slice(0,8)}`, name: 'E2E Local Admin', role: 'admin', warehouses: [1,2], active: true },
       { ephis: `e2es${crypto.randomUUID().slice(0,8)}`, name: 'E2E Chemistry Staff', role: 'staff', warehouses: [1], active: true },
       { ephis: `e2ep${crypto.randomUUID().slice(0,8)}`, name: 'E2E Immunology Supervisor', role: 'supervisor', warehouses: [2], active: true },
       { ephis: `e2ev${crypto.randomUUID().slice(0,8)}`, name: 'E2E Chemistry Viewer', role: 'viewer', warehouses: [1], active: true },
