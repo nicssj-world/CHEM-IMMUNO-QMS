@@ -1,0 +1,60 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: light;
+  --ink: #153044;
+  --muted: #63798a;
+  --line: #dce7eb;
+  --surface: #ffffff;
+  --bg: #f3f8f8;
+  --blue: #155e99;
+  --teal: #079b96;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { margin: 0; color: var(--ink); background: var(--bg); font-family: Arial, Tahoma, sans-serif; }
+button, input, select, textarea { font: inherit; }
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 3px solid #27b1aa; outline-offset: 2px; }
+.shell { width: min(100%, 1440px); margin: 0 auto; }
+.surface { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 8px 28px rgba(21,48,68,.04); }
+.page-title { font-size: clamp(1.65rem, 3vw, 2.3rem); line-height: 1.2; letter-spacing: -.025em; font-weight: 750; }
+.eyebrow { font-size: .72rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; color: var(--teal); }
+.muted { color: var(--muted); }
+.field { display: grid; gap: 7px; color: var(--ink); font-weight: 650; font-size: .88rem; }
+.input { width: 100%; min-height: 46px; padding: 10px 13px; border: 1px solid #bfd0d8; border-radius: 10px; background: #fff; color: var(--ink); }
+.input:disabled { background: #eaf0f2; }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 9px 16px; border-radius: 10px; border: 1px solid transparent; background: var(--blue); color: white; font-weight: 700; cursor: pointer; text-decoration: none; }
+.button:hover { background: #0d4c7e; }
+.button.secondary { background: white; border-color: #b9cdd7; color: var(--ink); }
+.button.secondary:hover { background: #eef6f7; }
+.button.danger { background: #a83442; }
+.button:disabled { opacity: .55; cursor: not-allowed; }
+.badge { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 999px; background: #e7f4f3; color: #096f70; font-size: .75rem; font-weight: 750; }
+.error { padding: 12px 15px; border-radius: 10px; color: #8c2534; background: #fff1f2; border: 1px solid #efc8cf; }
+.notice { padding: 12px 15px; border-radius: 10px; color: #235270; background: #eaf5fa; border: 1px solid #c9e5f2; }
+.app-grid { display: grid; grid-template-columns: 232px minmax(0,1fr); min-height: 100dvh; }
+.sidebar { background: #0d3857; color: #e8f5f7; padding: 28px 15px; }
+.side-link { display: flex; align-items: center; gap: 11px; min-height: 44px; padding: 9px 12px; border-radius: 10px; color: #d6e8ed; text-decoration: none; font-size: .92rem; }
+.side-link:hover { background: #1a5472; color: white; }
+.main-area { min-width: 0; padding: 0 28px 38px; }
+.topbar { display: flex; align-items: center; justify-content: space-between; min-height: 82px; border-bottom: 1px solid var(--line); gap: 15px; }
+.bottom-nav { display: none; }
+.table-wrap { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; text-align: left; }
+.data-table th { padding: 12px 14px; border-bottom: 1px solid var(--line); font-size: .72rem; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+.data-table td { padding: 13px 14px; border-bottom: 1px solid #edf2f3; vertical-align: top; }
+.data-table tr:last-child td { border-bottom: 0; }
+@media (max-width: 800px) {
+  .app-grid { display: block; }
+  .sidebar { display: none; }
+  .main-area { padding: 0 16px 94px; }
+  .topbar { min-height: 66px; }
+  .bottom-nav { position: fixed; z-index: 30; display: grid; grid-template-columns: repeat(5,1fr); left: 0; right: 0; bottom: 0; padding: 6px max(8px,env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left)); background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -7px 22px rgba(21,48,68,.07); }
+  .bottom-nav a { display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 48px; font-size: .66rem; color: #49687a; text-decoration: none; }
+  .bottom-nav a:active { color: var(--blue); }
+  .mobile-card-list { display: grid; gap: 10px; }
+  .desktop-table { display: none; }
+}
+@media (min-width: 801px) { .mobile-card-list { display: none; } }

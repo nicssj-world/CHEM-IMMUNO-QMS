@@ -1,0 +1,102 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import test from "node:test";
+import {
+  APPROVED_WORKBOOK_FILENAME,
+  APPROVED_WORKBOOK_SHA256,
+  assertImportReadyForActivation,
+  previewApprovedWorkbook,
+  WorkbookValidationError,
+} from "../../src/lib/import/approved-workbook";
+
+const workbookPath = join(process.cwd(), "tests", "import", "fixtures", APPROVED_WORKBOOK_FILENAME);
+const readApproved = () => readFile(workbookPath);
+
+test("approved workbook gives exact product, identifier, and warehouse audit", async () => {
+  const { audit, payload } = await previewApprovedWorkbook(await readApproved());
+  assert.equal(audit.source_sha256, APPROVED_WORKBOOK_SHA256);
+  assert.equal(audit.product_count, 162);
+  assert.deepEqual(audit.warehouse_counts, { CHE: 90, IMM: 72 });
+  assert.deepEqual(audit.type_counts, { reagent: 72, calibrator: 32, control: 23, consumable: 35 });
+  assert.deepEqual(audit.warehouse_type_counts, {
+    CHE: { reagent: 42, calibrator: 11, control: 10, consumable: 27 },
+    IMM: { reagent: 30, calibrator: 21, control: 13, consumable: 8 },
+  });
+  assert.equal(audit.ref_current_unique_count, 162);
+  assert.equal(audit.manufacturer_barcode_unique_count, 162);
+  assert.equal(audit.legacy_ref_count, 29);
+  assert.equal(audit.leading_zero_ref_count, 138);
+  assert.equal(payload.products[0].ref_current, "08056692190");
+  assert.equal(payload.products[0].manufacturer_barcode, "101002426");
+  assert.equal(payload.products[0].raw_source.no, 1);
+  assert.equal(payload.products[42].source_sheet, "FOC item_chem c503 c703 ISE");
+  assert.equal(payload.products[90].ref_current, "09315284214");
+  assert.equal(payload.products[120].source_sheet, "FOC item_Imm e801");
+  assert.equal(payload.products.find((p) => p.ref_current === "08056757214")?.legacy_ref, "08056757190");
+  assert.equal(payload.products.find((p) => p.ref_current === "09043284214")?.legacy_ref, "09043284190");
+  assert.equal(payload.products.some((p) => p.ref_current === "08056757190"), false);
+});
+
+test("only exact Product and source-group Platform assertions are materialized", async () => {
+  const { audit, payload } = await previewApprovedWorkbook(await readApproved());
+  assert.equal(audit.product_relation_count, 90);
+  assert.equal(audit.platform_source_row_count, 27);
+  assert.equal(audit.used_with_review_row_count, 12);
+  assert.equal(audit.source_anomaly_review_count, 8);
+  assert.equal(payload.product_relations.filter((r) => r.source_sheet.startsWith("FOC item_chem")).length, 60);
+  assert.equal(payload.product_relations.filter((r) => r.source_sheet.startsWith("FOC item_Imm")).length, 30);
+  assert.deepEqual(
+    Object.fromEntries(
+      ["c503_c703_ise", "ise_neo", "c703", "e801"].map((key) =>
+        [key, payload.platform_relations.filter((r) => r.platform_key === key).length],
+      ),
+    ),
+    { c503_c703_ise: 20, ise_neo: 2, c703: 1, e801: 4 },
+  );
+  const reviewRows = payload.review_items
+    .filter((item) => item.kind === "used_with")
+    .map((item) => `${item.source_sheet}!${item.source_row}`);
+  assert.deepEqual(reviewRows, [
+    "FOC item_chem c503 c703 ISE!16",
+    "FOC item_chem c503 c703 ISE!17",
+    "FOC item_chem c503 c703 ISE!41",
+    "FOC item_chem c503 c703 ISE!42",
+    "FOC item_Imm e801!5",
+    "FOC item_Imm e801!6",
+    "FOC item_Imm e801!10",
+    "FOC item_Imm e801!26",
+    "FOC item_Imm e801!27",
+    "FOC item_Imm e801!33",
+    "FOC item_Imm e801!34",
+    "FOC item_Imm e801!35",
+  ]);
+  for (const reviewRow of reviewRows) {
+    assert.equal(payload.product_relations.some((r) => `${r.source_sheet}!${r.source_row}` === reviewRow), false);
+    assert.equal(payload.platform_relations.some((r) => `${r.source_sheet}!${r.source_row}` === reviewRow), false);
+  }
+  assert.equal(payload.product_relations.some((r) => String(r.relation_type) === "replacement_for"), false);
+  assert.equal(payload.products.some((p) => "gtin" in p), false);
+});
+
+test("review items keep raw source anomalies and block activation", async () => {
+  const { audit, payload } = await previewApprovedWorkbook(await readApproved());
+  assert.equal(payload.review_items.length, 20);
+  assert.ok(payload.review_items.every((item) => item.critical));
+  assert.equal(payload.review_items.filter((item) => item.kind === "missing_packing").length, 3);
+  assert.equal(payload.review_items.filter((item) => item.kind === "truncated_packing").length, 1);
+  assert.equal(payload.review_items.filter((item) => item.kind === "platform_name_conflict").length, 1);
+  assert.equal(payload.review_items.filter((item) => item.kind === "source_type_question").length, 3);
+  assert.equal(payload.products.find((p) => p.source_sheet === "FOC item_Imm e801" && p.source_row === 38)?.packing_size_raw,
+    "10  x  1.0  mL,  5  x  2.0  m");
+  assert.equal(audit.activation_blocked, true);
+  assert.throws(() => assertImportReadyForActivation(audit), WorkbookValidationError);
+});
+
+test("changed bytes and wrong filename fail before parsing or staging", async () => {
+  const bytes = await readApproved();
+  await assert.rejects(previewApprovedWorkbook(bytes, "older.xlsx"), WorkbookValidationError);
+  const changed = Buffer.from(bytes);
+  changed[100] ^= 0x01;
+  await assert.rejects(previewApprovedWorkbook(changed), /SHA-256 mismatch/);
+});
