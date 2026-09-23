@@ -33,7 +33,7 @@
 
 เก็บ REF เดิมเป็น identifier ของ **สินค้าเดิม** ทั้ง 29 รายการ ไม่สร้าง product เพิ่ม และไม่แปลงเป็นความสัมพันธ์ `replacement_for` ระหว่างสอง Product
 
-**Review queue ของ `Used with` ทั้ง 12 แถวที่ยังยืนยันไม่ได้** — เลขแถวคือแถว Excel จริง:
+**หลักฐาน review จาก source `Used with` 12 แถว** — ตารางนี้บันทึกข้อความเดิมและเหตุผลที่ต้องตรวจ เลขแถวคือแถว Excel จริง; ผล owner decisions อยู่ใน `docs/import-audit.md` และ resolution manifest:
 
 | ชีต / แถว (`No.`) | สินค้า | เหตุผลที่ต้องทบทวน |
 |---|---|---|
@@ -50,7 +50,7 @@
 | Chemistry FOC 42 (`38`) | RD STANDARD FALSE BOTTOM TUBE | `Used with` ว่าง |
 | Immunology FOC 33 (`71`) | PROGESTERONE DILUENT | `Used with` ว่าง |
 
-**ข้อผิดปกติอื่นที่ต้องอยู่ในรายงาน import:** `Packing Size` ว่าง 3 แถว ได้แก่ Chemistry FOC 15 (`PRECISET TDM I CALIBRATOR`), Chemistry FOC 42 (`RD STANDARD FALSE BOTTOM TUBE`) และ Immunology FOC 33 (`ELECSYS PROGESTERONE DILUENT`); Immunology FOC 38 (`HCV Duo PC`) มีข้อความ `10 x 1.0 mL, 5 x 2.0 m` ที่ดูเหมือนหน่วยท้ายถูกตัด เลข `No.` ไม่เป็น unique key: ซ้ำระหว่างชีตน้ำยากับ FOC และเลข 47/48 ซ้ำระหว่างสองชีต FOC; Immunology `No. 71` อยู่หลัง `No. 75` ในลำดับแถว นอกจากนี้ Chemistry FOC 39 ชื่อ `Reaction Cell c 503 / c513` แต่ `Used with` ระบุ `c503 / c703 / ISE`; `STANDARDS HIGH/LOW` ถูกจัดเป็น consumable และ `ISE INTERNAL STANDARD GEN.2` อยู่ในชีต reagent ให้คงค่าต้นทางและส่งตรวจความหมาย ห้ามแก้ชนิดหรือความเข้ากันได้จากชื่อสินค้าเอง
+**ข้อผิดปกติจาก source ที่ต้องคงไว้ใน provenance:** `Packing Size` ว่างเดิม 3 แถว ได้แก่ Chemistry FOC 15 (`PRECISET TDM I CALIBRATOR`), Chemistry FOC 42 (`RD STANDARD FALSE BOTTOM TUBE`) และ Immunology FOC 33 (`ELECSYS PROGESTERONE DILUENT`); Immunology FOC 38 (`HCV Duo PC`) เดิมมีข้อความ `10  x  1.0  mL,  5  x  2.0  m`; เลข `No.` ไม่เป็น unique key และ Immunology `No. 71` อยู่หลัง `No. 75` ในลำดับแถว Owner อนุมัติ packing ปัจจุบันแยกจาก source; อนุมัติ Reaction Cell REF `07700814001` ให้ผูก c503+c513 เท่านั้น โดยเก็บ `Used with` เดิม; อนุมัติ `STANDARDS HIGH/LOW` เป็น calibrator และยืนยัน `ISE INTERNAL STANDARD GEN.2` เป็น reagent รายละเอียดทุกค่าอยู่ใน resolution manifest; ห้ามเขียนทับ raw snapshot
 
 ## 2. แบบจำลองสินค้า ผู้ใช้ และข้อมูลคลัง
 
@@ -103,7 +103,7 @@ Next.js server actions/route handlers รับคำขอ ตรวจ session
 
 Audit เก็บ before/after ที่จำเป็นสำหรับ master/identifier/relationship, actor และเหตุผลของ operation, approval, reversal และการเปลี่ยนสิทธิ์ โดยไม่ใช้ audit แทน ledger Product relationship ลบจาก current-state table ได้ แต่ audit ยังเก็บเหตุการณ์ Confirmed receipt/stock history ไม่ถูกลบ
 
-**Import hard gate:** parse workbook → เก็บ raw row/checksum → normalize เฉพาะรูปแบบที่ระบุชัด → ตรวจ count/duplicate/missing/type/warehouse/legacy/relationship/platform → สร้าง review queue → dry run และ preview → ผู้รับผิดชอบอนุมัติ mapping/packing ที่ค้าง → apply แบบ transaction เดียว → reconcile จำนวนและ code sequence ข้อความที่ไม่ตรงไม่ auto-link; สามารถนำ Product เข้าชุด staging เพื่อ review ได้ แต่ห้ามเปิดใช้ Product Master ใน Production ก่อนตัดสินรายการ critical ทุกแถว รายงาน import ต้องแสดง 162/90/72, ชนิดสินค้า, 29 legacy aliases, 90 confirmed Product links, 27 platform source links, 12 review rows และข้อผิดปกติ packing/numbering ตามผลตรวจด้านบน
+**Import hard gate:** parse workbook → เก็บ raw row/checksum → normalize เฉพาะรูปแบบที่ระบุชัด → ตรวจ count/duplicate/missing/type/warehouse/legacy/relationship/platform → ผูก resolution manifest ที่ยืนยัน sheet/row/REF/raw value → dry run และ preview → apply แบบ transaction เดียว → reconcile จำนวนและ code sequence ข้อความที่ไม่ตรงไม่ auto-link รายงานต้องแยก source types 72/32/23/35 ออกจาก active types 72/34/23/33; แยก 90 source Product links + 10 owner-approved links = 100 active; แยก 27 source Platform rows ออกจาก 28 active mappings; เก็บ 20 resolution evidence records และแสดง unresolved critical เป็น 0
 
 Schema ใช้ versioned migrations ที่ผ่าน disposable local PostgreSQL และ Preview ก่อน Production; initial data import เป็น batch แยกจาก schema migration ไม่แตะ Stock-BM และไม่ใช้ Excel เก่า การย้อนแอปใช้ Vercel deployment ก่อนหน้า; การแก้ schema หลังเปิดใช้เป็น forward corrective migration; การแก้ stock หลัง confirm ใช้ reversal/adjustment พร้อม audit และ backup/reconciliation ก่อน cutover
 
@@ -117,10 +117,10 @@ Schema ใช้ versioned migrations ที่ผ่าน disposable local Pos
 
 แต่ละ phase ต้องส่ง migration/API/UI พร้อม focused tests และหลักฐาน gate ของ phase นั้น ไม่แยกเป็น phase ย่อยจำนวนมาก
 
-**ชุดทดสอบที่ต้องมี:** import fixture ของ workbook hash นี้, 162/90/72 และชนิด, REF/leading zero/barcode/legacy, 90/27/12 classification และห้าม fuzzy link; relation type/self/cross-warehouse/add/edit/hard-delete; GS1-128/DataMatrix/HIBC/AI 240/LOT/expiry/serial/malformed/conflicting identifier; receiving แบบ partial/mixed warehouse, FEFO override, insufficient stock, transfer, adjustment/reversal/count/disposal; ROP 90 วัน, reversal และการตัด transfer/adjustment ออก; RLS/role escalation/storage; report reconciliation; responsive 375/768 px, repeated scan และ iPhone camera ต้องมี **สอง PostgreSQL sessions ที่ interleave จริง** สำหรับ simultaneous issue, receive, code allocation และ double submit ไม่ใช้ source-text assertions แทน DB concurrency test
+**ชุดทดสอบที่ต้องมี:** import fixture ของ workbook hash นี้, 162/90/72 warehouse totals และ source/active type counts, REF/leading zero/barcode/legacy, 90 source + 10 owner Product edges, 27/28 Platform source/active mappings, 20 manifest entries, critical open 0 และห้าม fuzzy link; relation type/self/cross-warehouse/add/edit/hard-delete; GS1-128/DataMatrix/HIBC/AI 240/LOT/expiry/serial/malformed/conflicting identifier; receiving แบบ partial/mixed warehouse, FEFO override, insufficient stock, transfer, adjustment/reversal/count/disposal; ROP 90 วัน, reversal และการตัด transfer/adjustment ออก; RLS/role escalation/storage; report reconciliation; responsive 375/768 px, repeated scan และ iPhone camera ต้องมี **สอง PostgreSQL sessions ที่ interleave จริง** สำหรับ simultaneous issue, receive, code allocation และ double submit ไม่ใช้ source-text assertions แทน DB concurrency test
 
 **Production verification:** หลังได้รับอนุมัติแยกสำหรับ rollout ให้ตรวจ Ephis login → เลือกคลัง → invoice เดียวที่มีสองคลัง → ถ่ายรูป → สแกน/resolve → LOT/expiry → confirm receipt → ยอดเพิ่ม → FEFO issue → ยอดลด → reorder/expiry attention → count/adjustment/reversal → audit → รายงานรายเดือน reconcile ทุกขั้นตอนต้องทำได้โดยไม่แก้ DB ด้วยมือ สำรองข้อมูลก่อน cutover, ตรวจ Preview และสิทธิ์จริง, ติดตาม error/latency/failed RPC และเตรียม rollback deployment แนะนำติดตั้ง Vercel CLI ด้วย `npm i -g vercel` เพื่อใช้ `vercel env pull`, `vercel deploy` และ `vercel logs` ในขั้น Preview/ตรวจปัญหา
 
-**การตัดสินที่ต้องได้รับจากเจ้าของข้อมูลก่อน gate ที่เกี่ยวข้อง:** ยืนยัน 12 `Used with` ใน review queue ว่าจะผูกเป้าหมายใดหรือคงไม่ผูก; เติม/รับรอง packing size 3 ค่าและข้อความ HCV ที่ดูถูกตัด; ตัดสินความหมายของ `Reaction Cell c503/c513` เทียบกับ platform group และชนิดของรายการที่มีชื่อ `STANDARD`; ยืนยันวิธี provision Ephis ID กับ Supabase Auth; ระบุผู้อนุมัติ import และนโยบาย vendor scoring/approval หากต้องการผลประเมินเชิงคะแนน สิ่งเหล่านี้เป็น **hold** ที่ระบุชัด ไม่ใช่สิทธิ์ให้ผู้พัฒนาคาดเดา
+**การตัดสินที่ยังต้องได้ก่อน gate ที่เกี่ยวข้อง:** วิธี provision Ephis ID กับ Supabase Auth; นโยบาย vendor scoring/approval หากต้องการผลประเมินเชิงคะแนน ทั้งสองข้อยังเป็น hold; ส่วน REL-01 ถึง REL-12 และ PM-01 ถึง PM-08 มี owner decision บันทึกแล้วและไม่ใช่ hold ของ Product Master/import อีกต่อไป
 
 **Definition of Done:** 162 สินค้าและความสัมพันธ์ที่อนุมัติ reconcile กับ workbook ใหม่โดยไม่มี mapping เงียบ; code ไม่ซ้ำ/ไม่ใช้ซ้ำ; สองคลังแยกจริง; ledger append-only และไม่ติดลบภายใต้ concurrent requests; workflow รับเข้า→เบิก→รายงานครบ; role/RLS/storage ผ่าน; mobile iPhone ใช้งานจริง; vendor evidence และรายงานถูกต้อง; Chrome/iPhone ติดตั้งได้; production verification และแผน rollback มีหลักฐานก่อนประกาศพร้อมใช้

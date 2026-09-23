@@ -53,8 +53,11 @@ export function ReviewResolutionForm({
         <select className="input" name="platformKey" required defaultValue="">
           <option value="" disabled>เลือกจากข้อมูลที่ยืนยันแล้ว</option>
           {warehouseCode === 'CHE' ? <>
-            <option value="c503_c703_ise">c503 / c703 / ISE (กลุ่มตามต้นทาง)</option>
+          <option value="c503_c703_ise">c503 / c703 / ISE (กลุ่มตามต้นทาง)</option>
+            <option value="c503">c503</option>
+            <option value="c513">c513</option>
             <option value="ise_neo">ISE neo</option>
+            <option value="ISE">ISE</option>
             <option value="c703">c703</option>
           </> : <option value="e801">e801</option>}
         </select>

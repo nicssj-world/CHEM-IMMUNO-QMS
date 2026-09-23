@@ -91,7 +91,7 @@ export async function resolveImportReview(formData: FormData): Promise<void> {
     resolutionData = { target_ref_currents: refs, relation_type: `uses_${source.product_type}` };
   } else if (item.kind === 'used_with' && mode === 'platform') {
     const platformKey = String(formData.get('platformKey') ?? '');
-    if (!['c503_c703_ise', 'ise_neo', 'c703', 'e801'].includes(platformKey) ||
+    if (!['c503_c703_ise', 'c503', 'c513', 'ise_neo', 'ISE', 'c703', 'e801'].includes(platformKey) ||
       (source.warehouse_code === 'CHE' && platformKey === 'e801') ||
       (source.warehouse_code === 'IMM' && platformKey !== 'e801')) {
       redirect(`/import?batch=${batchId}&error=review-input`);

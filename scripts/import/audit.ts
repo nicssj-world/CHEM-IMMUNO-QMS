@@ -18,9 +18,10 @@ async function main() {
   }
   process.stdout.write(`${JSON.stringify(preview.audit, null, 2)}\n`);
   for (const item of preview.payload.review_items) {
-    process.stdout.write(`REVIEW ${item.kind} ${item.source_sheet}!${item.source_row}: ${item.details}\n`);
+    const resolution = preview.payload.resolution_manifest.entries.find((entry) => entry.review_id === item.review_id);
+    process.stdout.write(`RESOLVED ${item.review_id} (${resolution?.resolution_type}) ${item.kind} ${item.source_sheet}!${item.source_row}; source review note: ${item.details}\n`);
   }
-  process.stdout.write("No database write performed. Stage only after explicit workflow authorization; activation remains blocked while critical reviews are open.\n");
+  process.stdout.write(`No database write performed. ${preview.audit.resolved_review_count} review evidence rows have explicit manifest decisions; ${preview.audit.unresolved_critical_review_count} critical reviews remain unresolved. Import activation review gate: ${preview.audit.activation_blocked ? "blocked" : "clear"}.\n`);
 }
 
 main().catch((error: unknown) => {

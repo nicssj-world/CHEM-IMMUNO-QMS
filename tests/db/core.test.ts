@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { Client } from 'pg';
@@ -61,13 +61,10 @@ async function setup(): Promise<void> {
   try { await owner.query(`CREATE DATABASE ${dbName}`); } finally { await owner.end(); }
   const client = await connect();
   try {
-    const files = [
-      'tests/db/bootstrap.sql',
-      'supabase/migrations/202609230001_ci_phase1_schema.sql',
-      'supabase/migrations/202609230002_ci_phase1_rpcs.sql',
-      'supabase/migrations/202609230003_ci_phase1_import.sql',
-      'supabase/migrations/20260923105045_ci_phase1_correctness.sql',
-    ];
+    const migrations = (await readdir(path.join(process.cwd(), 'supabase/migrations')))
+      .filter((filename) => filename.endsWith('.sql')).sort()
+      .map((filename) => `supabase/migrations/${filename}`);
+    const files = ['tests/db/bootstrap.sql', ...migrations];
     for (const filename of files) await client.query(await readFile(path.join(process.cwd(), filename), 'utf8'));
     await client.query(`INSERT INTO auth.users(id) VALUES ('${ADMIN}'),('${STAFF_CHE}'),('${SUPERVISOR_CHE}'),('${VIEWER_IMM}')`);
     await client.query(`INSERT INTO public.ci_user_profiles(user_id,ephis_id) VALUES
