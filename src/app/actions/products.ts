@@ -39,22 +39,6 @@ export async function deleteProduct(form: FormData) {
   redirect('/products?saved=deleted');
 }
 
-export async function upsertUserAccess(form: FormData) {
-  const access = await requireAccess();
-  const userId = text(form,'user_id');
-  const ephisId = text(form,'ephis_id');
-  const warehouseId = Number(text(form,'warehouse_id'));
-  const role = text(form,'role');
-  if (!/^[0-9a-f-]{36}$/i.test(userId) || !ephisId || ![1,2].includes(warehouseId) || !['admin','supervisor','staff','viewer'].includes(role)) fail('/admin/users','กรอก user UUID, Ephis ID, warehouse และ role ให้ถูกต้อง');
-  if (!access.warehouses.some(w => w.role === 'admin' && Number(w.id) === 1) || !access.warehouses.some(w => w.role === 'admin' && Number(w.id) === 2)) fail('/admin/users','ต้องเป็น Admin ทั้งสองคลังเพื่อจัดการสิทธิ์');
-  const client = await createClient();
-  if (!client) fail('/admin/users','ยังไม่ได้ตั้งค่า Supabase');
-  const { error } = await client.rpc('ci_upsert_user_access',{ p_user_id:userId,p_ephis_id:ephisId,p_warehouse_id:warehouseId,p_role:role,p_active:form.get('active') === 'on' });
-  if (error) fail('/admin/users',error.message);
-  revalidatePath('/admin/users');
-  redirect('/admin/users?saved=1');
-}
-
 export async function updateProduct(form: FormData) {
   await requireAccess();
   const id = text(form,'id');

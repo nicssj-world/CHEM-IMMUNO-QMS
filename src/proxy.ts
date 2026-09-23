@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { AUTH_COOKIE_OPTIONS } from '@/lib/supabase/cookies';
 
 export async function proxy(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -7,6 +8,7 @@ export async function proxy(request: NextRequest) {
   if (!url || !key) return NextResponse.next({ request });
   let response = NextResponse.next({ request });
   const client = createServerClient(url, key, {
+    cookieOptions: AUTH_COOKIE_OPTIONS,
     cookies: {
       getAll() { return request.cookies.getAll(); },
       setAll(items) {

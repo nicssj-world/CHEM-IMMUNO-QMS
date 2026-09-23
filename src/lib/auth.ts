@@ -1,13 +1,10 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { canMutateRole, canSuperviseRole, resolveAppAccess, type AppRole, type AppWarehouse } from '@/lib/auth-identity';
 
-export type Role = 'admin' | 'supervisor' | 'staff' | 'viewer';
-export type Warehouse = { id: string; code: 'CHE' | 'IMM'; name: string; role: Role };
-export type AccessContext = {
-  userId: string;
-  ephisId: string;
-  warehouses: Warehouse[];
-};
+export type Role = AppRole;
+export type Warehouse = AppWarehouse;
+export type AccessContext = import('@/lib/auth-identity').AppAccess;
 
 export async function getAccessContext(): Promise<AccessContext | null> {
   const client = await createClient();
@@ -15,7 +12,7 @@ export async function getAccessContext(): Promise<AccessContext | null> {
   const { data: userResult, error: authError } = await client.auth.getUser();
   if (authError || !userResult.user) return null;
   const { data: profile, error: profileError } = await client
-    .from('ci_user_profiles').select('ephis_id,active').eq('user_id', userResult.user.id).eq('active', true).single();
+    .from('ci_user_profiles').select('ephis_id,display_name,active').eq('user_id', userResult.user.id).maybeSingle();
   if (profileError || !profile) return null;
   const { data: access, error } = await client
     .from('ci_user_access')
@@ -23,16 +20,7 @@ export async function getAccessContext(): Promise<AccessContext | null> {
     .eq('user_id', userResult.user.id)
     .eq('active', true);
   if (error || !access?.length) return null;
-  const warehouses = access.flatMap((row) => {
-    const raw = row.ci_warehouses as unknown;
-    const warehouse = Array.isArray(raw) ? raw[0] : raw;
-    if (!warehouse || typeof warehouse !== 'object') return [];
-    const value = warehouse as Record<string, unknown>;
-    if (value.code !== 'CHE' && value.code !== 'IMM') return [];
-    return [{ id: String(value.id), code: value.code as Warehouse['code'], name: String(value.name), role: row.role as Role }];
-  });
-  if (!warehouses.length) return null;
-  return { userId: userResult.user.id, ephisId: String(profile.ephis_id), warehouses };
+  return resolveAppAccess(userResult.user.id, userResult.user.email, profile, access);
 }
 
 export async function requireAccess() {
@@ -41,5 +29,5 @@ export async function requireAccess() {
   return access;
 }
 
-export function canMutate(role: Role) { return role !== 'viewer'; }
-export function canSupervise(role: Role) { return role === 'admin' || role === 'supervisor'; }
+export const canMutate = canMutateRole;
+export const canSupervise = canSuperviseRole;

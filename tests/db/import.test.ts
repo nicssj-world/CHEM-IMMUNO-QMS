@@ -53,7 +53,7 @@ test('exact workbook and owner resolution manifest stage and apply atomically in
       try {
       await client.query('begin');
       await client.query('insert into auth.users(id) values ($1),($2)', [adminId, staffId]);
-      await client.query("insert into public.ci_user_profiles(user_id,ephis_id) values ($1,'ci-import-admin'),($2,'ci-import-staff')", [adminId, staffId]);
+      await client.query("insert into public.ci_user_profiles(user_id,ephis_id,display_name) values ($1,'ci-import-admin','Import Admin'),($2,'ci-import-staff','Import Staff')", [adminId, staffId]);
       await client.query("insert into public.ci_user_access(user_id,warehouse_id,role) values ($1,1,'admin'),($1,2,'admin'),($2,1,'staff')", [adminId, staffId]);
       await client.query('set local role authenticated');
       await client.query("select set_config('request.jwt.claim.sub',$1,true)", [staffId]);

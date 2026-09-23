@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { AUTH_COOKIE_OPTIONS } from './cookies';
 
 export async function createClient(): Promise<SupabaseClient | null> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -8,6 +9,7 @@ export async function createClient(): Promise<SupabaseClient | null> {
   if (!url || !key) return null;
   const cookieStore = await cookies();
   return createServerClient(url, key, {
+    cookieOptions: AUTH_COOKIE_OPTIONS,
     cookies: {
       getAll() { return cookieStore.getAll(); },
       setAll(items) {

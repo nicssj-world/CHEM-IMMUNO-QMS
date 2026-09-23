@@ -67,8 +67,8 @@ async function setup(): Promise<void> {
     const files = ['tests/db/bootstrap.sql', ...migrations];
     for (const filename of files) await client.query(await readFile(path.join(process.cwd(), filename), 'utf8'));
     await client.query(`INSERT INTO auth.users(id) VALUES ('${ADMIN}'),('${STAFF_CHE}'),('${SUPERVISOR_CHE}'),('${VIEWER_IMM}')`);
-    await client.query(`INSERT INTO public.ci_user_profiles(user_id,ephis_id) VALUES
-      ('${ADMIN}','A100'),('${STAFF_CHE}','S200'),('${SUPERVISOR_CHE}','P300'),('${VIEWER_IMM}','V400')`);
+    await client.query(`INSERT INTO public.ci_user_profiles(user_id,ephis_id,display_name) VALUES
+      ('${ADMIN}','a100','Test Admin'),('${STAFF_CHE}','s200','Test Staff'),('${SUPERVISOR_CHE}','p300','Test Supervisor'),('${VIEWER_IMM}','v400','Test Viewer')`);
     await client.query(`INSERT INTO public.ci_user_access(user_id,warehouse_id,role) VALUES
       ('${ADMIN}',1,'admin'),('${ADMIN}',2,'admin'),('${STAFF_CHE}',1,'staff'),
       ('${SUPERVISOR_CHE}',1,'supervisor'),('${VIEWER_IMM}',2,'viewer')`);
@@ -91,6 +91,39 @@ test('Phase 1 PostgreSQL gate: auth, ledger, workflows, concurrency', { timeout:
     const cheLocation2 = await rpc<string>(ADMIN, 'ci_create_location', [1, 'A2', 'Chem shelf A2'], ['smallint', 'text', 'text']);
     const immLocation = await rpc<string>(ADMIN, 'ci_create_location', [2, 'I1', 'Imm shelf I1'], ['smallint', 'text', 'text']);
     const vendor = await rpc<string>(ADMIN, 'ci_create_vendor', ['Vendor A'], ['text']);
+
+    await t.test('Ephis provisioning resolves the internal Auth identity and replaces warehouse grants atomically', async () => {
+      const provisionedUser = '55555555-5555-4555-8555-555555555555';
+      const owner = await connect();
+      try {
+        await owner.query('INSERT INTO auth.users(id,email) VALUES ($1,$2)', [provisionedUser, 'ephis.new-staff@chem-immuno.internal']);
+      } finally { await owner.end(); }
+      await rpc(ADMIN, 'ci_provision_user', ['New-Staff','New Staff','staff',[1],true], ['text','text','text','smallint[]','boolean']);
+      const check = await connect();
+      try {
+        const result = await check.query(`SELECT p.ephis_id,p.display_name,p.active,
+          array_agg(a.warehouse_id ORDER BY a.warehouse_id) FILTER (WHERE a.active) AS active_warehouses,
+          array_agg(a.role ORDER BY a.warehouse_id) FILTER (WHERE a.active) AS active_roles
+          FROM public.ci_user_profiles p JOIN public.ci_user_access a ON a.user_id=p.user_id
+          WHERE p.user_id=$1 GROUP BY p.ephis_id,p.display_name,p.active`, [provisionedUser]);
+        assert.deepEqual(result.rows[0], {
+          ephis_id: 'new-staff', display_name: 'New Staff', active: true,
+          active_warehouses: [1], active_roles: ['staff'],
+        });
+      } finally { await check.end(); }
+      await assert.rejects(() => rpc(STAFF_CHE, 'ci_provision_user', ['Other','Other User','viewer',[1],true], ['text','text','text','smallint[]','boolean']), /CI_ACCESS_DENIED/);
+      await assert.rejects(() => rpc(ADMIN, 'ci_provision_user', ['Other','Other User','owner',[1],true], ['text','text','text','smallint[]','boolean']), /CI_USER_ROLE_INVALID/);
+      await rpc(ADMIN, 'ci_provision_user', ['New-Staff','Updated Name','supervisor',[2],true], ['text','text','text','smallint[]','boolean']);
+      const updated = await connect();
+      try {
+        const result = await updated.query(`SELECT p.display_name,
+          array_agg(a.warehouse_id ORDER BY a.warehouse_id) FILTER (WHERE a.active) AS active_warehouses,
+          array_agg(a.role ORDER BY a.warehouse_id) FILTER (WHERE a.active) AS active_roles
+          FROM public.ci_user_profiles p JOIN public.ci_user_access a ON a.user_id=p.user_id
+          WHERE p.user_id=$1 GROUP BY p.display_name`, [provisionedUser]);
+        assert.deepEqual(result.rows[0], { display_name: 'Updated Name', active_warehouses: [2], active_roles: ['supervisor'] });
+      } finally { await updated.end(); }
+    });
 
     await t.test('product codes are transactional, immutable, and allocated across two sessions', async () => {
       const first = await connect();
