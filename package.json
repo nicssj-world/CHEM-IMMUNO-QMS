@@ -9,11 +9,12 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "npm run test:unit",
-    "test:unit": "node --import tsx --test tests/auth/identity.test.ts tests/auth/cookies.test.ts tests/auth/bootstrap-args.test.ts tests/auth/bootstrap-target.test.ts tests/import/approved-workbook.test.ts tests/barcode/*.test.ts tests/inventory/*.test.ts",
+    "test:unit": "node --import tsx --test tests/auth/identity.test.ts tests/auth/cookies.test.ts tests/auth/bootstrap-args.test.ts tests/auth/bootstrap-target.test.ts tests/import/approved-workbook.test.ts tests/barcode/*.test.ts tests/inventory/*.test.ts tests/pwa/*.test.ts",
     "test:import": "node --import tsx --test tests/import/*.test.ts",
     "test:db": "node --import tsx --test tests/db/*.test.ts",
     "test:auth:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-local-auth.ps1",
     "test:storage:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-local-storage.ps1",
+    "test:e2e:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-browser-local.ps1",
     "import:audit": "tsx scripts/import/audit.ts",
     "bootstrap:admin": "tsx scripts/bootstrap-admin.ts"
   },
@@ -32,6 +33,7 @@
     "zod": "4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "24.4.0",
     "@types/pg": "8.23.1",

@@ -40,7 +40,7 @@ test('private invoice evidence: signed upload/read, warehouse denial and public 
     assert.equal(invoice.error,null);invoiceId=invoice.data;
     let bucketError:Error|null=null;
     for(let attempt=0;attempt<20;attempt++){
-      const bucket=await serviceClient.storage.createBucket('ci-invoice-evidence',{public:false});
+      const bucket=await serviceClient.storage.createBucket('ci-invoice-evidence',{public:false,fileSizeLimit:10485760,allowedMimeTypes:['image/jpeg','image/png','image/heic','application/pdf']});
       bucketError=bucket.error;
       if(!bucketError)break;
       const existing=await serviceClient.storage.getBucket('ci-invoice-evidence');

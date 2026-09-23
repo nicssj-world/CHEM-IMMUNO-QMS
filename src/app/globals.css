@@ -58,3 +58,18 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   .desktop-table { display: none; }
 }
 @media (min-width: 801px) { .mobile-card-list { display: none; } }
+@page { size: A4 landscape; margin: 12mm; }
+@media print {
+  body { background: white; color: #111; font-family: Tahoma, Arial, sans-serif; font-size: 10pt; }
+  .sidebar, .topbar, .bottom-nav, .print-hide { display: none !important; }
+  .app-grid, .main-area { display: block; min-height: 0; padding: 0; }
+  .main-area > div { padding: 0; }
+  .surface { box-shadow: none; border: 1px solid #bbb; break-inside: avoid; }
+  .report-page { display: block; }
+  .report-page > * { margin-bottom: 12px; }
+  .report-table { font-size: 8pt; }
+  .report-table th, .report-table td { padding: 4px 6px; }
+  .report-table tr { break-inside: avoid; }
+  .report-page .desktop-table { display: block !important; overflow: visible; }
+  .report-page .mobile-card-list { display: none !important; }
+}

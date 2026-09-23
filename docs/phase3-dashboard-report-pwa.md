@@ -1,0 +1,11 @@
+# Phase 3 dashboard, report, and PWA
+
+The warehouse switch scopes dashboard queries, stock search, report totals, attention, reorder, movements, and vendor metrics to the selected authorized warehouse. Product and LOT/location stock searches are server-side and paged in groups of 50; they match Product Code, source/display name, and typed identifier values. Product search can filter Product type, platform, stock status, and LOT expiry bucket. The stock page labels its quantity as a page subtotal. Dashboard and report views fail visibly if their bounded result sets would be incomplete.
+
+`ci_monthly_inventory_report` reads signed movement lines and transaction timestamps using Asia/Bangkok month boundaries. For each Product it presents `Opening + Received − Issued ± Adjustments − Expired Disposal ± Reversals = Closing`. The page reconciles each row before printing and raises an error if a row is unbalanced. Transfer movement is zero net for a Product across its locations and is included in the closing signed sum. The report's reorder and expiry sections show **current** conditions; the vendor evidence section shows the selected fiscal year's objective counts, not month-only counts or a vendor score.
+
+The A4 landscape layout uses browser Print-to-PDF and fonts with Thai support. The PWA includes a web manifest, standalone metadata, PNG favicon, Apple Touch Icon, 192 and 512 pixel icons, and a maskable icon. It does not register a service worker or cache authenticated inventory responses. Browser installation requires HTTPS in Production.
+
+Security: the reporting and search RPCs run with caller rights and explicitly check warehouse access. Authenticated pages use existing RLS; the new migration does not widen table write grants. Standard response headers disable framing and MIME sniffing. The Production invoice evidence bucket must be private, with a 10 MB limit and only JPEG, PNG, HEIC, and PDF MIME types.
+
+Local verification includes the disposable PostgreSQL integration and two-session concurrency tests, local Auth and Storage checks, and synthetic authenticated Chrome E2E at 375px, 768px, and 1280px. Physical iPhone camera acceptance remains an owner test. Do not create stock transactions in Production for smoke testing.
