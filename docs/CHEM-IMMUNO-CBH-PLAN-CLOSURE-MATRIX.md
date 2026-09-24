@@ -16,7 +16,7 @@ The comparison found these differences; the attached plan governs this matrix:
 | 120 | Lists source classifications 90/27/12 and two-session concurrency requirements. | Adds owner-resolved 90+10 and 27/28 counts and 20 manifest entries. | Test both original source facts and resolution-aware active facts. |
 | 122 | Describes transactional Production acceptance, Preview/permission checks, backup and monitoring; recommends Vercel CLI. | Adds target identity/backup and local testing, removes Preview and the CLI recommendation. | The user's execution instructions explicitly prohibit fake Production stock transactions and require non-destructive Production smoke. Record the authorized deviation; verify Production without writes. |
 
-**Status meaning:** Initial-table statuses preserve the pre-fix audit. Final statuses use only `PASS`, `BLOCKED — EXTERNAL RELEASE GATE`, `OWNER ACCEPTANCE REQUIRED`, or `APPROVED DEVIATION`. `PARTIAL = 0` and `MISSING = 0` in the final closure means each original requirement has a disposition; it does not mean every release gate is complete.
+**Status meaning:** Initial-table statuses preserve the pre-fix audit. Final closure rows use only `PASS`, `OWNER ACCEPTANCE REQUIRED`, or `APPROVED DEVIATION`; `BLOCKED`, `PARTIAL`, and `MISSING` remain historical initial-audit states only. Owner-required evidence is listed separately and is never presented as a technical pass.
 
 ## Initial traceability
 
@@ -212,9 +212,9 @@ Each mapping is `current REF ← legacy REF`; the legacy REF identifies the same
 ## Initial status count
 
 Initial trace entries: 143 (94 grouped software/operational requirements plus 49 exact workbook source records). Initial status counts: `PASS = 43`, `PARTIAL = 94`, `MISSING = 2`, `OWNER ACCEPTANCE REQUIRED = 3`, `APPROVED DEVIATION = 1`. These counts are preserved as the pre-fix audit baseline. Final implementation, tests, Production read-only evidence, external release gates, and owner-only acceptance are recorded in the final closure traceability below.
-## Final closure traceability (2026-09-24)
+## Final closure traceability (updated 2026-09-25)
 
-All 143 original trace IDs are repeated below with their closure disposition. The full original requirement text remains in the initial traceability tables above. The owner's no-Preview architecture and the non-destructive Production transaction boundary are explicit approved deviations. Current counts: **PASS = 128; BLOCKED — EXTERNAL RELEASE GATE = 9; OWNER ACCEPTANCE REQUIRED = 4; APPROVED DEVIATION = 2; PARTIAL = 0; MISSING = 0.** The 9 remaining independent release gates prevent push/deployment; they are not reclassified to force closure.
+All 143 original trace IDs are repeated below with their closure disposition. The full original requirement text remains in the initial traceability tables above. The owner's no-Preview architecture and the non-destructive Production transaction boundary are explicit approved deviations. Current counts: **PASS = 132; BLOCKED = 0; OWNER ACCEPTANCE REQUIRED = 9; APPROVED DEVIATION = 2; PARTIAL = 0; MISSING = 0.** The 9 gates were individually reclassified below; Production-only evidence is now treated as post-deployment evidence, and unresolved human evidence remains `OWNER ACCEPTANCE REQUIRED`.
 
 ### Evidence register
 
@@ -224,10 +224,33 @@ All 143 original trace IDs are repeated below with their closure disposition. Th
 - **E3 — Workbook/source decisions:** docs/import-audit.md, approved workbook fixture/hash tests, immutable Production resolution rows, and source-level trace rows SRC-11-*, SRC-12-*, SRC-13-*. The 12 original Used with rows remain represented; ten have explicit owner decisions and two remain explicitly unassigned. Production SELECT for Reaction Cell REF 07700814001 returned only c503 and c513, retaining source text cobas pro c503 / c703 / ISE as provenance. No fuzzy mapping or source rewrite occurred.
 - **E4 — Approved visual identity:** user-provided icon is the master artwork; generated favicon, Apple touch icon, PWA and maskable assets are covered by PWA tests and visual inspection.
 - **E5 — Production migration and logical backups:** exact target ref `nivlnbaveanoawfbrmzz`; one pending migration appeared in the linked dry run and was applied after backup/target checks. The read-only migration-ledger and function-grant query confirmed it applied; read-only aggregates remained unchanged. Both external pre/post snapshot manifests and all 12 artifact hashes/byte sizes verified. See `docs/operations-runbook.md` for paths, hashes, coverage, limitations, and the untested restore procedure. The plan requires backup/reconciliation, not a Supabase-managed backup service; logical-backup evidence passes that requirement. Supabase-managed backup status, separate cluster-role dump, Storage object bytes, and restore rehearsal are recorded as limitations.
-- **G1 — Independent external release gates:** no current-code Vercel deployment or Ready SHA; no post-deploy authenticated smoke/logout/PWA cache-header check; no current-deployment Vercel log review; no reliable post-migration advisor result after the pooler authentication circuit breaker; no Production latency/request trace for PERF-01. Correct Chrome profile computer-use calls timed out, so these checks are not claimed. Push remains withheld under the user's zero-blocker gate. These are independent of Preview and are not waived by the architecture decision.
-- **O1 — Owner acceptance:** physical iPhone camera scanning (GS1/HIBC, LOT/expiry, repeat scan, receive) and iPhone Add to Home Screen/icon appearance remain pending owner testing.
+- **G1 — Historical pre-deployment snapshot (2026-09-24):** this records the state before the continuation audit. Its nine `BLOCKED — EXTERNAL RELEASE GATE` rows are superseded by G2, G3, and the reclassification table below; they are not current dispositions.
+- **G2 — Production deployment and public response verification (2026-09-24/25):** Vercel account `labchemcbh-2058`, team `nics-s-world`, project `chem-immuno-qms`; deployment `dpl_8tZRxRWrxNczUGdgU87sjt9p8XFt` is `READY`, target `production`, aliases include `chem-immuno-cbh.vercel.app`, and function region includes `sin1`. GitHub's Vercel status for commit `a70f73b149919d5c00c197bf780689cd191d177a` completed successfully. Production returned HTTP 200 for the login page, manifest, favicon, Apple Touch Icon, 192, 512, and maskable icon. All six downloaded branding assets have SHA-256 values matching the current repository files. Manifest name/short name are `CHEM-IMMUNO CBH`, display is `standalone`, and it lists the required `192x192`, `512x512`, and `maskable` icons. CSP includes only the confirmed Supabase origin; HSTS, X-Frame-Options, nosniff, Referrer-Policy, and Permissions-Policy are present. A headless Chrome GET of the login page produced no CSP violations, failed resources, console errors, or page errors; all page scripts and CSS returned 200. Vercel runtime logs for this deployment showed 0 error-level entries and 0 5xx in the queried one-hour window. Five anonymous login GETs measured 158–265 ms (median 171 ms); the cold headless login render measured DCL/load/FCP at about 1.98/1.98/2.03 s. These are anonymous login measurements only; authenticated shell/dashboard timings were not collected.
+- **G3 — Production database and direct security verification (2026-09-25):** linked read-only queries ran against project `nivlnbaveanoawfbrmzz`, PostgreSQL 17.6. Inventory reconciled to 162 active Products (warehouse 1/CHE 90, warehouse 2/IMM 72), product types 72/34/23/33, 353 identifiers, 100 Product relations, 28 platform mappings, 0 critical unresolved reviews, and 0 stock transactions. All 32 `public.ci_*` tables had RLS enabled; no `ci_*` table was missing RLS, and 31 authenticated read policies were present with warehouse/role predicates. Production catalog checks found 39 `ci_private` SECURITY DEFINER implementations, all with `search_path=""`, and 39 contract-matched public SECURITY INVOKER wrappers, all with empty search paths; authenticated/service-role/anon grants matched across all 39 pairs, and anon had no execution. The 42 public `ci_*` routines were all invokers with empty search paths and no anon execution; the three additional report/search routines were also invokers with the same protection. `anon` had no `ci_private` schema USAGE; `authenticated` and `service_role` did. The authenticated USAGE grant supports RLS helper calls and invoker dispatch; it makes the Production Data API Exposed Schemas setting material. The application reads `SUPABASE_SERVICE_ROLE_KEY` only in `src/lib/supabase/admin.ts`, which imports `server-only`; no client module references the service-role key. The repository's explicit API allowlist and regression test exclude `ci_private`, while the hosted `pgrst.db_schemas` value is not surfaced by PostgreSQL (`current_setting` and role overrides were empty). The account UI bridge failed, so the hosted Dashboard Exposed Schemas value still requires owner confirmation that `ci_private` is absent. No security defect was observed in the direct catalog/RLS checks. Supabase Advisor remained unavailable from the connected tooling after the reported pooler/circuit-breaker issue; this is recorded as **advisor observability unavailable**, not as a security defect or a positive Advisor result.
+- **G4 — Fresh local verification (2026-09-25):** `npm test` 35/35; `npm run test:import` 4/4; disposable PostgreSQL `scripts/db/test.ps1` 25/25; local Auth 17/17; local Storage 1/1; local authenticated E2E 1/1; typecheck, lint, `npm audit --omit=dev` (0 vulnerabilities), and production build passed. A direct `npm run test:db` without its required disposable DB runner failed before tests because `CI_TEST_DATABASE_URL` was unset; the documented runner then passed all 25 DB tests.
+- **M1 — Production migration warning:** `supabase/migrations/20260924133953_ci_private_rpc_dispatchers.sql:1` contains the migration's only `SET LOCAL`, `set local search_path = '';`. The reported warning therefore came from that statement. PostgreSQL documents `SET LOCAL` as transaction-scoped; outside a transaction block it warns and has no effect ([PostgreSQL SET](https://www.postgresql.org/docs/current/sql-set.html)). The migration's runtime RPC protections do not depend on that session setting: each of the 39 moved Production implementations has a function-level empty `search_path`, each of the 39 public wrappers is `SECURITY INVOKER` with its own empty `search_path`, and all role grants match across pairs (G3). The migration uses schema-qualified catalog/implementation references and an explicitly temporary table. No corrective migration is required; the already-applied migration was not edited. Supabase's guidance also recommends empty function search paths and schema-qualified names for definer routines ([Supabase Database Functions](https://supabase.com/docs/guides/database/functions)).
+- **O1 — Owner device acceptance:** physical iPhone camera scanning (GS1/HIBC, LOT/expiry, repeat scan, receive) and iPhone Add to Home Screen/icon appearance remain pending owner testing.
+- **O2 — Owner authenticated Production evidence:** the Windows native browser helper returned `native pipe is unavailable: The system cannot find the file specified` after retry/reset; the managed Chrome tab connector returned an internal error; and a fresh computer-use reconnection timed out after 30 seconds. No credentials were read or entered. Owner evidence is still required for the Production Data API Exposed Schemas value (`ci_private` must be absent), current authenticated non-destructive smoke/logout/warehouse switch, and authenticated shell/dashboard timing. These are not marked PASS.
 - **D2 — Approved architecture deviation:** the owner explicitly chose disposable local PostgreSQL → Production Supabase → Production Vercel, with no persistent Preview/Staging. Preview-only wording is superseded; no Preview credentials or project are to be created. Local tests/build plus guarded Production verification replace that environment gate.
 - **D1 — Approved deviation:** the attached plan's Production transaction scenarios were not run because the user explicitly required non-destructive Production verification. No Production invoice/receipt/issue/count/adjustment/reversal/disposal or stock mutation was created.
+
+### Release-gate timing and current disposition
+
+Each of the nine gates below requires or includes evidence generated by an active Production deployment. None was used as a reason to prevent the deployment that generates that evidence. A pending owner-evidence row is not recorded as a software defect or silently marked PASS.
+
+**Release accounting:** `PRE-DEPLOY BLOCKERS = 0`; `KNOWN POST-DEPLOY SOFTWARE BLOCKERS = 0`; `PARTIAL = 0`; `MISSING = 0`. Of the nine post-deploy gates, four have PASS evidence and five remain `OWNER ACCEPTANCE REQUIRED` because authenticated owner-session evidence is unavailable here. These five are open owner verifications, not completed gates; this counter does not convert them to PASS. The separate physical-device acceptances remain pending in O1.
+
+| Gate | Classification | Current evidence / disposition |
+|---|---|---|
+| PWA-03 | POST-DEPLOY VERIFICATION GATE | PASS — Production manifest and all six icon assets returned 200 and match repository hashes; G2. |
+| PH-03 | POST-DEPLOY VERIFICATION GATE | OWNER ACCEPTANCE REQUIRED — deployed software evidence is in G2/G4; physical iPhone install remains O1 and authenticated Production smoke remains O2. |
+| PERF-01 | POST-DEPLOY VERIFICATION GATE | OWNER ACCEPTANCE REQUIRED — anonymous login timings are recorded in G2; authenticated shell/dashboard timings require O2. |
+| SEC-03 | POST-DEPLOY VERIFICATION GATE | OWNER ACCEPTANCE REQUIRED — Production RLS/RPC/search-path/grants are directly checked in G3; confirm the hosted Exposed Schemas setting omits `ci_private` under O2. Advisor limitation is separate and is not a known defect. |
+| OPS-01 | POST-DEPLOY VERIFICATION GATE | PASS — current deployment error-level and 5xx logs were both zero in the one-hour query window; backup artifacts/runbook are E5. |
+| PROD-02 | POST-DEPLOY VERIFICATION GATE | OWNER ACCEPTANCE REQUIRED — authenticated Production smoke cannot be completed without the LabchemCBH browser session; see O2. No confirmed stock transaction was created. |
+| PROD-03 | POST-DEPLOY VERIFICATION GATE | PASS — exact project/team, Production target, `main` commit status, `READY`, alias, and `sin1` verified in G2. |
+| GIT-01 | POST-DEPLOY VERIFICATION GATE | PASS — `main` is pushed without force; the source release SHA and successful Vercel commit status are recorded in G2. |
+| DONE-01 | POST-DEPLOY VERIFICATION GATE | OWNER ACCEPTANCE REQUIRED — all software-fixable rows have a disposition; the remaining human evidence is listed in O1/O2. |
 
 ### Final status by requirement ID
 
@@ -291,7 +314,7 @@ All 143 original trace IDs are repeated below with their closure disposition. Th
 | REPORT-02 | PASS | E1 / E2 |
 | PWA-01 | PASS | E1 / E4 |
 | PWA-02 | PASS | E1 / E4 |
-| PWA-03 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
+| PWA-03 | PASS | G2 |
 | DB-01 | PASS | E1 |
 | DB-02 | PASS | E1 |
 | SEC-01 | PASS | E1 |
@@ -302,7 +325,7 @@ All 143 original trace IDs are repeated below with their closure disposition. Th
 | MIG-01 | APPROVED DEVIATION | D2 / E5 |
 | PH-01 | PASS | E1 |
 | PH-02 | OWNER ACCEPTANCE REQUIRED | O1 |
-| PH-03 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
+| PH-03 | OWNER ACCEPTANCE REQUIRED | G2 / G4 / O1 / O2 |
 | PH-04 | PASS | E1 / E5 |
 | TEST-01 | PASS | E1 |
 | TEST-02 | PASS | E1 |
@@ -313,20 +336,20 @@ All 143 original trace IDs are repeated below with their closure disposition. Th
 | TEST-07 | PASS | E1 |
 | TEST-08 | PASS | E1 |
 | A11Y-01 | PASS | E1 |
-| PERF-01 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
-| SEC-03 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
-| OPS-01 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
+| PERF-01 | OWNER ACCEPTANCE REQUIRED | G2 / O2 |
+| SEC-03 | OWNER ACCEPTANCE REQUIRED | G3 / O2 |
+| OPS-01 | PASS | E5 / G2 |
 | OPS-02 | PASS | E5 |
 | PROD-01 | APPROVED DEVIATION | D1 |
-| PROD-02 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
-| PROD-03 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
+| PROD-02 | OWNER ACCEPTANCE REQUIRED | G2 / O2 |
+| PROD-03 | PASS | G2 |
 | PROD-04 | PASS | E2 / E5 |
 | PROD-05 | PASS | E1 / E2 |
-| GIT-01 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
+| GIT-01 | PASS | G2 |
 | OWNER-01 | OWNER ACCEPTANCE REQUIRED | O1 |
 | OWNER-02 | OWNER ACCEPTANCE REQUIRED | O1 |
 | OWNER-03 | PASS | E1 |
-| DONE-01 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
+| DONE-01 | OWNER ACCEPTANCE REQUIRED | O1 / O2 / G4 |
 | SRC-12-01 | PASS | E3 |
 | SRC-12-02 | PASS | E3 |
 | SRC-12-03 | PASS | E3 |
