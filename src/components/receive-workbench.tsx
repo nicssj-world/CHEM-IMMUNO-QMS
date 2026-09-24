@@ -17,6 +17,17 @@ type Attachment = { id: string; attachment_type: string; uploaded_at: string };
 
 const yesNo = [{ value: '', label: 'เลือกผลตรวจ' }, { value: 'yes', label: 'ใช่ / ผ่าน' }, { value: 'no', label: 'ไม่ใช่ / พบปัญหา' }];
 
+let invoiceStorageClient: ReturnType<typeof createClient> | undefined;
+
+function getInvoiceStorageClient(url: string, key: string) {
+  if (!invoiceStorageClient) {
+    invoiceStorageClient = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+  }
+  return invoiceStorageClient;
+}
+
 export function ReceiveWorkbench({ invoiceId, idempotencyKey, lines, products, locations, warehouseIds, initialAttachments }: { invoiceId: string; idempotencyKey: string; lines: Line[]; products: Product[]; locations: Location[]; warehouseIds: number[]; initialAttachments: Attachment[] }) {
   const [warehouseId, setWarehouseId] = useState(warehouseIds[0]);
   const [scan, setScan] = useState<ScanResolution | null>(null);
@@ -114,7 +125,7 @@ export function ReceiveWorkbench({ invoiceId, idempotencyKey, lines, products, l
       const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
       const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
       if (!url || !key) throw new Error('Supabase public configuration missing');
-      const client = createClient(url,key);
+      const client = getInvoiceStorageClient(url, key);
       const { error } = await client.storage.from('ci-invoice-evidence').uploadToSignedUrl(authorization.object_key,authorization.token,image,{ contentType: image.type });
       if (error) throw error;
       setPhotoStatus('อัปโหลดภาพเอกสารส่วนตัวสำเร็จ');

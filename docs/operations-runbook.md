@@ -2,41 +2,54 @@
 
 Last reviewed: 2026-09-24
 
-## Production identity and baseline
+## Approved release architecture
 
-- Supabase project ref: `nivlnbaveanoawfbrmzz` (`https://nivlnbaveanoawfbrmzz.supabase.co`). Confirm the ref in Supabase CLI/dashboard before any hosted operation.
-- Product baseline, verified with read-only aggregates: 162 active Products (90 CHE, 72 IMM); types 72 reagent, 34 calibrator, 23 control, 33 consumable; 162 current REF, 162 manufacturer barcode, 29 legacy REF (all attached to the current Product), including 138 leading-zero current REF values.
-- Approved links: 90 source-confirmed plus 10 owner-approved Product relations; 26 source-confirmed plus 2 owner-approved Product-to-platform links. All 20 import review records have an immutable resolution event tied to its source row and workbook hash; 2 were explicitly left unassigned; critical open reviews: 0.
-- Active Admin accounts: 1. Stock transactions: 0. Invoice evidence bucket: private, 10 MiB limit, JPEG/PNG/HEIC/PDF only.
-- Verified account: Chrome profile `LabchemCBH`; Supabase organization `ChemImmuno-CBH`; project `CHEM-IMMUNO Stock`; Vercel team `nics-s-world`; project `chem-immuno-qms`; repository `nicssj-world/CHEM-IMMUNO-QMS`; Production domain `chem-immuno-cbh.vercel.app`.
-- The current Production deployment is `Ready` on `main` at source commit `4e3fc3910402ceaef324bba289679f6c1713049e`. The Vercel project has Supabase variables scoped to Production only. The Supabase organization has one Production project, no Preview branches, and reports no database backup.
-- Production currently reports 8 applied migrations through `ci_phase3_reporting_search`. Local source includes the additional migration `20260924133953_ci_private_rpc_dispatchers.sql`; it passed disposable PostgreSQL tests but has not been applied to Preview or Production.
-- No Production database writes, import, bootstrap, stock transaction, or migration were performed during this audit. Production checks were read-only SQL queries, public HTTP GETs, and authenticated UI route reads; forms, uploads, mapping decisions, and transactions were not submitted.
+The owner-approved path is disposable local PostgreSQL and application verification → Production Supabase → Production Vercel through the existing Git integration. There is intentionally no persistent Supabase Preview/Staging project and no separate Vercel Preview environment required for release. Do not create those projects or put Production credentials in a Preview environment. This decision supersedes the original plan's Preview-only gate; record it as an approved architecture deviation.
 
-## Release and verification
+## Production identity and current state
 
-Last local verification: lint and typecheck passed; unit 35/35, import 4/4, disposable PostgreSQL 25/25, local Auth 17/17, local Storage 1/1, and authenticated browser E2E 1/1 passed. `npm audit --omit=dev` found zero vulnerabilities. The isolated production build passed earlier in this audit.
+- Supabase: project `CHEM-IMMUNO Stock`, ref `nivlnbaveanoawfbrmzz`, region `ap-southeast-1`, API host `nivlnbaveanoawfbrmzz.supabase.co`. Verify the exact ref before every hosted operation.
+- Vercel: team `nics-s-world`, project `chem-immuno-qms`, repository `nicssj-world/CHEM-IMMUNO-QMS`, Production branch `main`, canonical URL `https://chem-immuno-cbh.vercel.app/`, function region `sin1`.
+- Current deployed application remains commit `4e3fc3910402ceaef324bba289679f6c1713049e`. Closure source based on `21e0877` remains local and has not been pushed or deployed. The current Production response was previously observed without the CSP header added in the local release code.
+- The forward-only migration `20260924133953_ci_private_rpc_dispatchers.sql` has been applied to the verified Production ref. Before applying it, `supabase migration list --linked` showed eight applied migrations and this one pending; `supabase db push --dry-run --linked` showed only this migration. The apply command printed `SET LOCAL can only be used in transaction blocks`; a subsequent read-only Management API query confirmed the migration ledger row and checked the live grants. Do not hide that CLI warning.
+- Read-only post-migration checks found 39 private `ci_private` SECURITY DEFINER implementations and 39 matching public wrappers; zero public `ci_*` SECURITY DEFINER implementations remain; wrappers are executable by `authenticated` and not by `anon`; private functions grant no `anon` execute. Product, identifier, relation, mapping, review, Admin, and stock-transaction aggregates were unchanged. A later CLI migration-list connection and advisor scan hit the Supabase pooler authentication circuit breaker, so no clean post-migration advisor result is claimed.
+- The pre-migration advisor scan returned 105 notices (64 INFO, 41 WARN), including three `auth_rls_initplan` policy warnings and one `auth_leaked_password_protection` warning; it also reported unindexed foreign keys, unused indexes, and one RLS-enabled table without a policy. These are pre-migration findings, not evidence of post-migration health. Re-run a read-only advisor scan when the confirmed Production connection is available; do not retry through alternate accounts.
+- Current verified database baseline: 162 active Products (90 CHE, 72 IMM); product types 72 reagent, 34 calibrator, 23 control, 33 consumable; 162 current REF, 162 manufacturer barcode, 29 same-Product legacy REF, 138 leading-zero current REF; 100 Product relations; 28 Product-to-platform mappings; 20 resolved import reviews, two explicitly unassigned, zero critical open; one active Admin; zero stock transactions. Private invoice evidence bucket is limited to 10 MiB and JPEG/PNG/HEIC/PDF.
+- An authenticated read-only smoke through the user-selected Chrome profile `LabchemCBH` previously loaded both warehouse dashboards, stock, REF search, Product detail, scan, receive, reorder, attention, vendor, and monthly report without visible errors. That smoke predates the latest code and migration; it is not post-deployment acceptance. No current-deployment login/logout, full smoke, or log review is recorded.
 
-1. Run unit/import/Auth/Storage/PostgreSQL/E2E suites and the production build against disposable/local services. Keep real iPhone camera and Add to Home Screen checks as owner acceptance.
-2. Before any hosted deployment, configure and verify a separate Preview Supabase target and Preview-scoped Vercel variables; take/confirm a provider backup; apply and verify migrations in Preview; and complete the plan's Preview smoke gate. Those prerequisites are currently absent.
-3. After that gate passes, deploy through the connected Git integration to the verified `nics-s-world/chem-immuno-qms` project, confirm Production domain/region, and wait for the exact commit to reach `Ready`.
-4. Verify only safe HTTP GETs after deployment: `/login`, `/manifest.webmanifest`, favicon, PWA icons, and other non-mutating pages. Do not confirm a receipt or create issue, transfer, adjustment, count, disposal, or mapping decisions in Production.
-5. Reconcile Product, identifier, relation, platform, review, Admin, and transaction aggregates with read-only SQL. Confirm the Supabase target again before any query.
-6. Inspect Vercel deployment/function logs for 5xx/runtime errors and verify the function region. Inspect Supabase Auth, PostgREST, Storage, and database logs for failed login/RPC/storage calls and elevated latency. Avoid copying log payloads or credentials into chat.
+## Logical backup evidence
 
-## Rollback and database changes
+The original plan requires backup and reconciliation before cutover; it does not require a Supabase-managed backup product. The verified logical dumps satisfy that backup-evidence requirement. Supabase-managed backup availability is a separate operational limitation and must not be reported as “no backup exists.”
 
-- Application-only rollback: use the prior known-good `Ready` Vercel deployment through the Vercel dashboard. Record the source commit and deployment before switching traffic.
-- Database changes are forward-only. Before a future schema/data change, verify the exact project ref, backup availability, migration list, and local plus Preview checks. Reconcile the baseline again after deployment.
-- No backup was created for this application-only audit because no Production database operation was planned or performed. Confirm provider backup status in the Supabase dashboard before any later database rollout.
+The backups are outside Git at `D:\Claude workspace\CHEM-IMMUNO-QMS-backups` and both manifests identify Production ref `nivlnbaveanoawfbrmzz`:
+
+| Snapshot | Created UTC | Manifest SHA-256 | Artifacts |
+|---|---|---|---|
+| `phase23-pre-20260924-041806` | 2026-09-23 21:20:33 | `7B3D747626D16ACE278559C2DD92C3BA070F570F8BA31B92B7D1B553E51BA249` | 6 files; 1,175,019 bytes |
+| `phase23-post-20260924-042927` | 2026-09-23 21:30:33 | `916F8877897307C931BE5AE8898BF412CF8F8F0E19E8F87B4898482644DBB9B1` | 6 files; 1,231,104 bytes |
+
+Each snapshot contains non-empty `public-schema.sql`, `public-data.sql`, `auth-schema.sql`, `auth-data.sql`, `storage-schema.sql`, and `storage-data.sql`. Every artifact's current byte length and SHA-256 matched its manifest during this closure audit. The post snapshot manifest records phase `post-phase2-3` and source commit `5935fc569077d8118a68334f2a800251d8f88b70`. These SQL dumps include public, Auth, and Storage schema/data coverage. There is no separate cluster-roles dump. `storage-data.sql` contains bucket metadata, not `storage.objects` rows or object bytes; do not claim it backs up uploaded files.
+
+The intended use is point-in-time reconciliation and a future recovery rehearsal against a fresh, isolated, compatible local Supabase/PostgreSQL target. Auth data is sensitive and remains outside Git. No restore rehearsal has been run, so these are hash-verified logical backups, not a demonstrated restorable backup. If a rehearsal is needed, first verify the target is disposable and empty, validate the manifest and all hashes, restore schemas before data in dependency order using `psql` with stop-on-error behavior, then reconcile the recorded Product/relation/review/transaction counts. Never test restoration against Production.
+
+## Release gates and safe verification
+
+1. Use the isolated local Supabase/PostgreSQL environment for import, Auth/RLS/Storage, workflow, concurrency, and E2E tests. Keep the iPhone camera and Add to Home Screen checks as owner acceptance.
+2. Before a Production schema change, verify the exact Supabase ref, inspect the migration list, take or confirm a verified logical backup, run the linked dry run, and review the exact forward-only migration. Never edit an applied migration, reset Production, reimport the workbook, bootstrap another Admin, or touch Stock-BM.
+3. Push `main` only after the final traceability matrix has `BLOCKED = 0`, `PARTIAL = 0`, `MISSING = 0`, all required suites and the Production build pass, and the final diff is clean and justified. The existing Git integration performs the Vercel Production deployment; do not run a redundant `vercel --prod`.
+4. Wait for the exact commit to reach `Ready`; record its SHA, URL, project, branch, and region. Verify the canonical URL, login/logout, manifest, favicon, Apple Touch Icon, 192/512/maskable icons, authenticated dashboard and warehouse switch, Product search/detail, stock, scan draft, receive draft/attachment UI, ROP, expiry, Attention, vendor, and report. Do not confirm a Production receipt or create any inventory, mapping, count, adjustment, transfer, disposal, or reversal transaction.
+5. Read-only reconcile the baseline above. Inspect Vercel function logs for unexpected 5xx/runtime errors and Supabase Auth/PostgREST/Storage/database logs for failed login/RPC/storage calls and latency. Record unavailable log/advisor queries as unverified, not clean.
+
+## Rollback and recovery
+
+- Application rollback uses the previous known-good `Ready` Vercel deployment at `4e3fc3910402ceaef324bba289679f6c1713049e`. Confirm the deployment in the correct Vercel project before switching traffic; the deployment ID was not captured in this audit.
+- Database migrations are forward-only. Roll back application traffic only when the older application remains compatible with the new schema. Correct schema forward with a reviewed migration; do not restore a logical snapshot over live Production as an application rollback.
 - Stock corrections after confirmation use the authorized reversal/adjustment workflows and audit trail; never edit movement history directly.
+- The hash-verified SQL snapshots support reconciliation and isolated recovery planning. Platform-managed backup/PITR status, cluster roles, Storage object bytes, and an actual restore rehearsal remain separate limitations.
 
-## Current release gate and provider findings
+## Current closure state
 
-- The correct LabchemCBH profile and exact Vercel/Supabase projects are confirmed. A previous `Siriwat` Chrome profile showed unrelated Vercel/Supabase projects; those observations are invalid for this audit.
-- The Supabase dashboard reports project health `Healthy`, region `ap-southeast-1`, and no current advisor issues. This is the existing Production state, before the pending local security-dispatcher migration.
-- On 2026-09-24, the correct LabchemCBH profile had an existing authenticated Admin session. Read-only Production UI checks loaded both warehouse dashboards (90 CHE Products, 72 IMM Products; zero stock transactions), stock, REF search, Product detail, scan, receive, reorder, attention, vendor, and monthly report without visible errors. The CHE-0077 Reaction Cell detail and a read-only SQL SELECT confirmed REF `07700814001` maps only to `c503` and `c513`; original `Used with` text remains visible as provenance. No Production forms were submitted, no attachment was uploaded, and no stock or mapping write was performed. The session was left signed in.
-- Vercel's Production `/` and `/login` returned HTTP 200 with private `no-store` caching. `/manifest.webmanifest` and `/icon-192.png` returned HTTP 200 with public `max-age=0`. The current Production response had no Content-Security-Policy header; the local code change that adds CSP has not been deployed.
-- The existing Vercel Preview deployment on `codex/phase1-inventory` is `Ready`, but no Preview-scoped Supabase variables are configured. It cannot validate authenticated database workflows or the migration gate.
-- Supabase currently has no Preview database branch and no backup. Do not push `main`, apply the pending migration, or trigger a Production deployment until the Preview target and backup gate are satisfied.
-- Vercel/Supabase secrets were not opened or copied. No Production transaction, import, bootstrap, schema change, or other data write occurred.
+- The owner-approved no-Preview architecture is recorded above. No Preview projects, Preview credentials, or extra infrastructure were created.
+- Production migration `20260924133953_ci_private_rpc_dispatchers.sql` is applied and the read-only post-migration ledger/grant/data checks are recorded above.
+- Local verification includes unit, import, disposable PostgreSQL, Auth, Storage, and authenticated browser E2E; the E2E now asserts that repeated attachment uploads do not create duplicate GoTrue clients. Final full-suite/build evidence belongs in the closure matrix.
+- No current-code push, Vercel deployment, post-deploy browser smoke, or current-deployment log inspection has occurred. These remain release gates until directly verified.

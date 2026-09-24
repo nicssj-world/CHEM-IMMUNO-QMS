@@ -7,10 +7,14 @@ import path from 'node:path';
 test('local authenticated inventory flows, responsive surfaces, CSP, photo evidence and mappings', async ({ page, request }, testInfo) => {
   test.setTimeout(150_000);
   const pageErrors: string[] = [];
+  const duplicateAuthClientWarnings: string[] = [];
   const serverErrors: string[] = [];
   const baseUrl = process.env.CI_E2E_BASE_URL ?? 'http://localhost:3100';
   const origin = new URL(baseUrl).origin;
   page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('console', message => {
+    if (message.text().includes('Multiple GoTrueClient instances detected')) duplicateAuthClientWarnings.push(message.text());
+  });
   page.on('response', response => {
     if (response.status() >= 500 && response.url().startsWith(origin)) serverErrors.push(`${response.status()} ${response.url()}`);
   });
@@ -429,6 +433,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.goto('/receive?warehouse=CHE');
   await expect(page.getByRole('heading', { name: 'สร้าง Invoice' })).toHaveCount(0);
   expect(await page.evaluate(() => (window as Window & { __cspViolations?: string[] }).__cspViolations)).toEqual([]);
+  expect(duplicateAuthClientWarnings).toEqual([]);
   expect(pageErrors).toEqual([]);
   expect(serverErrors).toEqual([]);
 });

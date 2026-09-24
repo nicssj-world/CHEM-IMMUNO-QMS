@@ -16,7 +16,7 @@ The comparison found these differences; the attached plan governs this matrix:
 | 120 | Lists source classifications 90/27/12 and two-session concurrency requirements. | Adds owner-resolved 90+10 and 27/28 counts and 20 manifest entries. | Test both original source facts and resolution-aware active facts. |
 | 122 | Describes transactional Production acceptance, Preview/permission checks, backup and monitoring; recommends Vercel CLI. | Adds target identity/backup and local testing, removes Preview and the CLI recommendation. | The user's execution instructions explicitly prohibit fake Production stock transactions and require non-destructive Production smoke. Record the authorized deviation; verify Production without writes. |
 
-**Status meaning:** `PASS` means current implementation/evidence satisfies the row; `PARTIAL` means some implementation or evidence exists but a software-fixable requirement/gate remains; `MISSING` means no adequate implementation/evidence was found; `OWNER ACCEPTANCE REQUIRED` is limited to a physical/owner-only acceptance; `APPROVED DEVIATION` records the explicit no-fake-Production-transaction decision. Final software closure may have no `PARTIAL` or `MISSING` rows.
+**Status meaning:** Initial-table statuses preserve the pre-fix audit. Final statuses use only `PASS`, `BLOCKED — EXTERNAL RELEASE GATE`, `OWNER ACCEPTANCE REQUIRED`, or `APPROVED DEVIATION`. `PARTIAL = 0` and `MISSING = 0` in the final closure means each original requirement has a disposition; it does not mean every release gate is complete.
 
 ## Initial traceability
 
@@ -214,17 +214,19 @@ Each mapping is `current REF ← legacy REF`; the legacy REF identifies the same
 Initial trace entries: 143 (94 grouped software/operational requirements plus 49 exact workbook source records). Initial status counts: `PASS = 43`, `PARTIAL = 94`, `MISSING = 2`, `OWNER ACCEPTANCE REQUIRED = 3`, `APPROVED DEVIATION = 1`. These counts are preserved as the pre-fix audit baseline. Final implementation, tests, Production read-only evidence, external release gates, and owner-only acceptance are recorded in the final closure traceability below.
 ## Final closure traceability (2026-09-24)
 
-All 143 original trace IDs are repeated below with their closure disposition. The full original requirement text remains in the initial traceability tables above. Statuses distinguish completed software requirements from provider release gates and physical owner acceptance. Final counts: **PASS = 125; BLOCKED — EXTERNAL RELEASE GATE = 13; OWNER ACCEPTANCE REQUIRED = 4; APPROVED DEVIATION = 1; PARTIAL = 0; MISSING = 0.** No software-fixable requirement remains PARTIAL or MISSING.
+All 143 original trace IDs are repeated below with their closure disposition. The full original requirement text remains in the initial traceability tables above. The owner's no-Preview architecture and the non-destructive Production transaction boundary are explicit approved deviations. Current counts: **PASS = 128; BLOCKED — EXTERNAL RELEASE GATE = 9; OWNER ACCEPTANCE REQUIRED = 4; APPROVED DEVIATION = 2; PARTIAL = 0; MISSING = 0.** The 9 remaining independent release gates prevent push/deployment; they are not reclassified to force closure.
 
 ### Evidence register
 
 - **E0 — Authoritative baseline:** attached PLAN CI.md was read in full and compared with the repository plan; both hashes and every material difference are recorded at the top of this document. The attached plan controls the closure baseline.
-- **E1 — Local implementation and verification:** npm run lint, npm run typecheck, unit tests 35/35, import tests 4/4, disposable PostgreSQL tests 25/25, local Auth tests 17/17, local Storage tests 1/1, authenticated E2E 1/1, npm audit --omit=dev (0 vulnerabilities), git diff --check, and the isolated production build passed. E2E covered authenticated CRUD, role and warehouse workflows, responsive routes at 375/768/1280, accessibility, scan/mapping and receive flows.
-- **E2 — Correct Production target and read-only checks:** Chrome profile LabchemCBH; Supabase project nivlnbaveanoawfbrmzz, region ap-southeast-1; Vercel team nics-s-world, project chem-immuno-qms, domain chem-immuno-cbh.vercel.app. Existing deployment was Ready on main at 4e3fc3910402ceaef324bba289679f6c1713049e. Authenticated read-only UI checks covered CHE/IMM dashboards (90/72 Products), stock, REF search, Product detail, scan, receive, reorder, attention, vendors, and monthly report without visible errors. Read-only aggregates confirmed 162 active Products; type counts 72/34/23/33; 162 current REF, 162 manufacturer barcodes, 29 same-Product legacy REF, 138 leading-zero current REF; 100 relations, 28 platform mappings; 20 resolved review rows, two explicitly unassigned, zero critical open; one active Admin; zero stock transactions. Private invoice evidence bucket: 10 MiB, JPEG/PNG/HEIC/PDF.
+- **E1 — Local implementation and verification:** final closure-source verification in an isolated worktree: `npm test` 35/35; `npm run test:import` 4/4; disposable PostgreSQL 25/25; local Auth 17/17; local Storage 1/1; authenticated E2E 1/1; typecheck and lint passed; `npm audit --omit=dev` 0 vulnerabilities; production build passed; `git diff --check` passed. The current attachment-upload change has a red/green E2E regression: before the fix the new assertion failed on a real duplicate GoTrue warning; after the singleton fix it passed. The generated two-page report PDF was opened in Chrome's PDF viewer and visually inspected; content, Thai glyphs, table widths, and page breaks were legible without clipping.
+- **E2 — Correct Production target and read-only checks:** Chrome profile LabchemCBH; Supabase project nivlnbaveanoawfbrmzz, region ap-southeast-1; Vercel team nics-s-world, project chem-immuno-qms, domain chem-immuno-cbh.vercel.app. Existing deployment was Ready on main at 4e3fc3910402ceaef324bba289679f6c1713049e. Earlier authenticated read-only UI checks covered CHE/IMM dashboards (90/72 Products), stock, REF search, Product detail, scan, receive, reorder, attention, vendors, and monthly report without visible errors. Read-only aggregates before and after the dispatcher migration confirmed 162 active Products; type counts 72/34/23/33; 162 current REF, 162 manufacturer barcodes, 29 same-Product legacy REF, 138 leading-zero current REF; 100 relations, 28 platform mappings; 20 resolved review rows, two explicitly unassigned, zero critical open; one active Admin; zero stock transactions. Private invoice evidence bucket: 10 MiB, JPEG/PNG/HEIC/PDF. These are not post-deployment checks for the current source.
 - **E3 — Workbook/source decisions:** docs/import-audit.md, approved workbook fixture/hash tests, immutable Production resolution rows, and source-level trace rows SRC-11-*, SRC-12-*, SRC-13-*. The 12 original Used with rows remain represented; ten have explicit owner decisions and two remain explicitly unassigned. Production SELECT for Reaction Cell REF 07700814001 returned only c503 and c513, retaining source text cobas pro c503 / c703 / ISE as provenance. No fuzzy mapping or source rewrite occurred.
 - **E4 — Approved visual identity:** user-provided icon is the master artwork; generated favicon, Apple touch icon, PWA and maskable assets are covered by PWA tests and visual inspection.
-- **G1 — External release gate:** Supabase has no Preview database branch/project and no backup. Vercel Preview has no Preview-scoped Supabase variables; only Production-scoped variables exist. The tested migration 20260924133953_ci_private_rpc_dispatchers.sql is local only. Current Production lacks the new CSP header. A push to main would trigger Production before these plan gates can be satisfied. Do not push or deploy until a separate Preview target/configuration and backup are available and the Preview gate passes. Authenticated Production smoke was intentionally limited to reads; scan/receive submissions, uploads, mapping decisions, transactions, and logout were not performed.
+- **E5 — Production migration and logical backups:** exact target ref `nivlnbaveanoawfbrmzz`; one pending migration appeared in the linked dry run and was applied after backup/target checks. The read-only migration-ledger and function-grant query confirmed it applied; read-only aggregates remained unchanged. Both external pre/post snapshot manifests and all 12 artifact hashes/byte sizes verified. See `docs/operations-runbook.md` for paths, hashes, coverage, limitations, and the untested restore procedure. The plan requires backup/reconciliation, not a Supabase-managed backup service; logical-backup evidence passes that requirement. Supabase-managed backup status, separate cluster-role dump, Storage object bytes, and restore rehearsal are recorded as limitations.
+- **G1 — Independent external release gates:** no current-code Vercel deployment or Ready SHA; no post-deploy authenticated smoke/logout/PWA cache-header check; no current-deployment Vercel log review; no reliable post-migration advisor result after the pooler authentication circuit breaker; no Production latency/request trace for PERF-01. Correct Chrome profile computer-use calls timed out, so these checks are not claimed. Push remains withheld under the user's zero-blocker gate. These are independent of Preview and are not waived by the architecture decision.
 - **O1 — Owner acceptance:** physical iPhone camera scanning (GS1/HIBC, LOT/expiry, repeat scan, receive) and iPhone Add to Home Screen/icon appearance remain pending owner testing.
+- **D2 — Approved architecture deviation:** the owner explicitly chose disposable local PostgreSQL → Production Supabase → Production Vercel, with no persistent Preview/Staging. Preview-only wording is superseded; no Preview credentials or project are to be created. Local tests/build plus guarded Production verification replace that environment gate.
 - **D1 — Approved deviation:** the attached plan's Production transaction scenarios were not run because the user explicitly required non-destructive Production verification. No Production invoice/receipt/issue/count/adjustment/reversal/disposal or stock mutation was created.
 
 ### Final status by requirement ID
@@ -297,11 +299,11 @@ All 143 original trace IDs are repeated below with their closure disposition. Th
 | AUD-01 | PASS | E1 |
 | IMP-01 | PASS | E1 |
 | IMP-02 | PASS | E1 |
-| MIG-01 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
+| MIG-01 | APPROVED DEVIATION | D2 / E5 |
 | PH-01 | PASS | E1 |
 | PH-02 | OWNER ACCEPTANCE REQUIRED | O1 |
 | PH-03 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
-| PH-04 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
+| PH-04 | PASS | E1 / E5 |
 | TEST-01 | PASS | E1 |
 | TEST-02 | PASS | E1 |
 | TEST-03 | PASS | E1 |
@@ -314,11 +316,11 @@ All 143 original trace IDs are repeated below with their closure disposition. Th
 | PERF-01 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
 | SEC-03 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
 | OPS-01 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
-| OPS-02 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
+| OPS-02 | PASS | E5 |
 | PROD-01 | APPROVED DEVIATION | D1 |
 | PROD-02 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
 | PROD-03 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
-| PROD-04 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
+| PROD-04 | PASS | E2 / E5 |
 | PROD-05 | PASS | E1 / E2 |
 | GIT-01 | BLOCKED — EXTERNAL RELEASE GATE | G1 |
 | OWNER-01 | OWNER ACCEPTANCE REQUIRED | O1 |
