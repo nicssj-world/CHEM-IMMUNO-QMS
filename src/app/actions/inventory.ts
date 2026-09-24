@@ -30,19 +30,25 @@ export async function createLocation(form: FormData) {
   success('/receive');
 }
 
-export async function createInvoice(form: FormData) {
-  const client = await clientOrFail('/receive');
-  const products = form.getAll('product_id').map(String);
-  const quantities = form.getAll('quantity').map(String);
-  const lines = products.flatMap((product_id,i) => product_id && quantities[i] && Number(quantities[i]) > 0 ? [{ product_id, quantity: quantities[i] }] : []);
-  if (!lines.length) fail('/receive','กรุณาเพิ่มสินค้าอย่างน้อยหนึ่งรายการ');
-  const payload = { vendor_id: value(form,'vendor_id'), invoice_number: value(form,'invoice_number'), invoice_date: value(form,'invoice_date'), po_number: value(form,'po_number') || null, lines };
-  const { data: existing } = await client.from('ci_invoices').select('id').eq('vendor_id',payload.vendor_id).eq('invoice_number',payload.invoice_number).limit(1).maybeSingle();
-  if (existing) redirect(`/receive?invoice=${existing.id}`);
-  const { data, error } = await client.rpc('ci_create_invoice',{ p_data: payload });
-  if (error || !data) fail('/receive',error?.message ?? 'สร้าง invoice ไม่สำเร็จ');
+export type StartInvoiceResult = { ok: true; invoiceId: string; existing: boolean } | { ok: false; message: string };
+
+/** Creates the invoice from scanned/selected lines and returns its id; an existing vendor + number reopens that invoice. */
+export async function startInvoice(input: { vendorId: string; invoiceNumber: string; invoiceDate: string; poNumber: string; lines: { productId: string; quantity: number }[] }): Promise<StartInvoiceResult> {
+  await requireAccess();
+  const client = await createClient();
+  if (!client) return { ok: false, message: 'ยังไม่ได้ตั้งค่า Supabase' };
+  const totals = new Map<string, number>();
+  for (const line of input.lines) if (line.productId && Number.isFinite(line.quantity) && line.quantity > 0) totals.set(line.productId, Math.round(((totals.get(line.productId) ?? 0) + line.quantity) * 1000) / 1000);
+  if (!totals.size) return { ok: false, message: 'กรุณาเพิ่มสินค้าอย่างน้อยหนึ่งรายการ' };
+  const invoiceNumber = input.invoiceNumber.trim();
+  if (!input.vendorId || !invoiceNumber || !input.invoiceDate) return { ok: false, message: 'กรุณากรอกผู้ขาย เลขที่ Invoice และวันที่' };
+  const { data: existing } = await client.from('ci_invoices').select('id').eq('vendor_id', input.vendorId).eq('invoice_number', invoiceNumber).limit(1).maybeSingle();
+  if (existing) return { ok: true, invoiceId: existing.id, existing: true };
+  const payload = { vendor_id: input.vendorId, invoice_number: invoiceNumber, invoice_date: input.invoiceDate, po_number: input.poNumber.trim() || null, lines: [...totals].map(([product_id, quantity]) => ({ product_id, quantity: String(quantity) })) };
+  const { data, error } = await client.rpc('ci_create_invoice', { p_data: payload });
+  if (error || !data) return { ok: false, message: error?.message ?? 'สร้าง Invoice ไม่สำเร็จ' };
   revalidatePath('/receive');
-  redirect(`/receive?invoice=${data}`);
+  return { ok: true, invoiceId: data as string, existing: false };
 }
 
 export async function confirmReceipt(form: FormData) {

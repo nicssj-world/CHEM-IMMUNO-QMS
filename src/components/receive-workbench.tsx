@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { createClient } from '@supabase/supabase-js';
 import { BarcodeScanner } from './barcode-scanner';
 import { checkLotExpiryConflict, proposeScanMapping, registerInvoiceAttachment, removeInvoiceAttachment, resolveScan, type ScanResolution } from '@/app/actions/scanner';
 import { confirmReceipt } from '@/app/actions/inventory';
+import { takeReceiveDraft } from '@/lib/receive-draft';
 
 type Product = { id: string; warehouse_id: number; product_code: string; display_name: string };
 type Location = { id: string; warehouse_id: number; code: string; name: string };
@@ -30,6 +31,37 @@ export function ReceiveWorkbench({ invoiceId, idempotencyKey, lines, products, l
   const lineById = useMemo(() => new Map(lines.map(l => [l.invoice_line_id, l])), [lines]);
   const productById = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
   const currentLine = lineById.get(draft.invoiceLineId);
+  const hydrated = useRef(false);
+
+  // Lines scanned while creating the invoice arrive as ready-made packages; the user only picks locations.
+  useEffect(() => {
+    if (hydrated.current) return;
+    hydrated.current = true;
+    const scanned = takeReceiveDraft(invoiceId);
+    if (!scanned.length) return;
+    void (async () => {
+      const accepted: Package[] = [];
+      const skipped: string[] = [];
+      const used = new Map<string, number>();
+      for (const item of scanned) {
+        const label = productById.get(item.productId)?.product_code ?? 'สินค้า';
+        const line = lines.find(l => l.product_id === item.productId && warehouseIds.includes(l.warehouse_id));
+        const quantity = Number(item.quantity);
+        if (!line) { skipped.push(`${label}: ไม่พบใน Invoice หรือไม่มีสิทธิ์รับเข้า`); continue; }
+        const total = (used.get(line.invoice_line_id) ?? 0) + quantity;
+        if (!(quantity > 0) || total > Number(line.remaining_quantity)) { skipped.push(`${label}: จำนวนเกินยอดค้างรับ`); continue; }
+        try {
+          if (await checkLotExpiryConflict(item.productId, item.lot, item.expiry)) { skipped.push(`${label} LOT ${item.lot}: วันหมดอายุไม่ตรงกับที่บันทึกไว้`); continue; }
+        } catch { skipped.push(`${label} LOT ${item.lot}: ตรวจ LOT ไม่สำเร็จ`); continue; }
+        used.set(line.invoice_line_id, total);
+        const options = locations.filter(l => l.warehouse_id === line.warehouse_id);
+        accepted.push({ id: crypto.randomUUID(), invoiceLineId: line.invoice_line_id, quantity: item.quantity, lot: item.lot, expiry: item.expiry, locationId: options.length === 1 ? options[0].id : '', raw: item.raw });
+      }
+      setPackages(prev => [...prev, ...accepted]);
+      setMessage(`นำเข้า ${accepted.length} แพ็กเกจจากที่สแกนไว้ · เลือกตำแหน่งแล้วบันทึกผลตรวจรับ${skipped.length ? ` · ข้าม ${skipped.length} รายการ: ${skipped.join(' / ')}` : ''}`);
+    })();
+  }, [invoiceId, lines, locations, productById, warehouseIds]);
+
   const candidateKind = scan?.parsed.gtin ? 'GTIN' : scan?.parsed.primary ? 'HIBC_PRIMARY' : scan?.parsed.additionalProductId ? 'GS1_AI240' : 'OTHER';
   const candidateValue = scan?.parsed.gtin ?? scan?.parsed.primary ?? scan?.parsed.additionalProductId ?? scan?.parsed.raw.trim() ?? '';
 
@@ -110,9 +142,9 @@ export function ReceiveWorkbench({ invoiceId, idempotencyKey, lines, products, l
       <button className="button min-h-12" disabled={busy} type="button" onClick={() => void addPackage()}>เพิ่มแพ็กเกจในร่าง</button>
     </section>
     <form action={confirmReceipt} onSubmit={() => setBusy(true)} className="surface p-5 sm:p-7 grid gap-5"><input type="hidden" name="invoice_id" value={invoiceId}/><input type="hidden" name="idempotency_key" value={idempotencyKey}/><h2 className="font-bold text-lg">ตรวจร่างและผลตรวจรับ</h2>
-      <div className="grid gap-2">{packages.map((item,i) => { const line=lineById.get(item.invoiceLineId); const product=line && productById.get(line.product_id); return <article className="rounded-xl border border-[#dce7eb] p-3" key={item.id}><input type="hidden" name="invoice_line_id" value={item.invoiceLineId}/><input type="hidden" name="quantity" value={item.quantity}/><input type="hidden" name="lot_number" value={item.lot}/><input type="hidden" name="expiry_date" value={item.expiry}/><input type="hidden" name="location_id" value={item.locationId}/><div className="flex justify-between gap-2"><strong>{i+1}. {product?.product_code} · {product?.display_name}</strong><button className="button secondary" type="button" onClick={() => setPackages(packages.filter(p => p.id!==item.id))}>ลบ</button></div><p className="muted text-sm">จำนวน {item.quantity} · LOT {item.lot} · หมดอายุ {item.expiry}</p>{item.raw && <p className="muted text-xs break-all">Scan: {item.raw}</p>}</article>; })}{!packages.length && <p className="muted">ยังไม่มีแพ็กเกจในร่าง</p>}</div>
+      <div className="grid gap-2">{packages.map((item,i) => { const line=lineById.get(item.invoiceLineId); const product=line && productById.get(line.product_id); return <article className="rounded-xl border border-[#dce7eb] p-3" key={item.id}><input type="hidden" name="invoice_line_id" value={item.invoiceLineId}/><input type="hidden" name="quantity" value={item.quantity}/><input type="hidden" name="lot_number" value={item.lot}/><input type="hidden" name="expiry_date" value={item.expiry}/><input type="hidden" name="location_id" value={item.locationId}/><div className="flex justify-between gap-2"><strong>{i+1}. {product?.product_code} · {product?.display_name}</strong><button className="button secondary" type="button" onClick={() => setPackages(packages.filter(p => p.id!==item.id))}>ลบ</button></div><p className="muted text-sm">จำนวน {item.quantity} · LOT {item.lot} · หมดอายุ {item.expiry}</p><label className="field mt-2 max-w-sm">ตำแหน่ง<select className="input" value={item.locationId} onChange={e => setPackages(prev => prev.map(p => p.id === item.id ? { ...p, locationId: e.target.value } : p))}><option value="">เลือกตำแหน่ง</option>{locations.filter(l => l.warehouse_id === line?.warehouse_id).map(l => <option key={l.id} value={l.id}>{l.code} · {l.name}</option>)}</select></label>{item.raw && <p className="muted text-xs break-all">Scan: {item.raw}</p>}</article>; })}{!packages.length && <p className="muted">ยังไม่มีแพ็กเกจในร่าง</p>}</div>
       <div className="grid sm:grid-cols-2 gap-3">{([['correct_product','สินค้า/รายการถูกต้อง'],['correct_quantity','จำนวนถูกต้อง'],['packaging_ok','สภาพบรรจุภัณฑ์ดี'],['temperature_required','ต้องควบคุมอุณหภูมิ'],['temperature_ok','ผลอุณหภูมิเหมาะสม'],['shelf_life_ok','อายุคงเหลือเพียงพอ'],['documentation_complete','เอกสารครบถ้วน'],['delivery_discrepancy','พบความคลาดเคลื่อน']] as const).map(([key,label]) => <label className="field" key={key}>{label}<select className="input" name={key} required={['correct_product','correct_quantity','packaging_ok','temperature_required','shelf_life_ok','documentation_complete','delivery_discrepancy'].includes(key)} defaultValue="">{yesNo.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>)}</div>
-      <label className="field">บันทึกผลตรวจ / ความคลาดเคลื่อน<textarea className="input min-h-24" name="assessment_notes"/></label><p className="muted text-sm">ยืนยันแล้วจึงบันทึก Stock แบบ atomic ตามคลังของสินค้าแต่ละรายการ</p><button className="button min-h-12" disabled={busy || !packages.length} type="submit">ยืนยันรับเข้า {packages.length} แพ็กเกจ</button>
+      <label className="field">บันทึกผลตรวจ / ความคลาดเคลื่อน<textarea className="input min-h-24" name="assessment_notes"/></label><p className="muted text-sm">ยืนยันแล้วจึงบันทึก Stock แบบ atomic ตามคลังของสินค้าแต่ละรายการ</p><button className="button min-h-12" disabled={busy || !packages.length || packages.some(p => !p.locationId)} type="submit">ยืนยันรับเข้า {packages.length} แพ็กเกจ</button>{packages.some(p => !p.locationId) && <p className="muted text-sm" role="status">เลือกตำแหน่งให้ครบทุกแพ็กเกจก่อนยืนยัน</p>}
     </form>
   </div>;
 }

@@ -3,20 +3,32 @@
 import { useEffect, useRef, useState } from 'react';
 import type { IScannerControls } from '@zxing/browser';
 
-export function BarcodeScanner({ onScan }: { onScan: (raw: string, symbology: string) => Promise<void> | void }) {
+/** The continuous prop keeps the camera open across scans; a code held in view counts once, and counts again only after it left the frame. */
+export function BarcodeScanner({ onScan, continuous = false }: { onScan: (raw: string, symbology: string) => Promise<void> | void; continuous?: boolean }) {
   const video = useRef<HTMLVideoElement>(null);
   const controls = useRef<IScannerControls | null>(null);
   const last = useRef<{ raw: string; at: number } | null>(null);
+  const manualInput = useRef<HTMLInputElement>(null);
   const [active, setActive] = useState(false);
   const [manual, setManual] = useState('');
   const [status, setStatus] = useState('กล้องยังไม่เปิด · พิมพ์หรือวาง Barcode ได้');
 
   useEffect(() => () => controls.current?.stop(), []);
 
-  async function accept(raw: string, symbology: string) {
+  async function accept(raw: string, symbology: string, fromCamera = false) {
     if (!raw.trim()) return;
     const now = Date.now();
-    if (last.current?.raw === raw && now - last.current.at < 2500) { setStatus('สแกนซ้ำเร็วเกินไป · ตรวจรายการก่อนสแกนอีกครั้ง'); return; }
+    const previous = last.current;
+    if (continuous) {
+      // Every frame that still shows the same code refreshes the timestamp, so only a code that left the view can count again.
+      if (fromCamera && previous?.raw === raw && now - previous.at < 1500) { previous.at = now; return; }
+      last.current = { raw, at: now };
+      navigator.vibrate?.(60);
+      setStatus('อ่านแล้ว · สแกนชิ้นถัดไปได้เลย');
+      await onScan(raw, symbology);
+      return;
+    }
+    if (previous?.raw === raw && now - previous.at < 2500) { setStatus('สแกนซ้ำเร็วเกินไป · ตรวจรายการก่อนสแกนอีกครั้ง'); return; }
     last.current = { raw, at: now };
     controls.current?.stop();
     controls.current = null;
@@ -36,9 +48,9 @@ export function BarcodeScanner({ onScan }: { onScan: (raw: string, symbology: st
       hints.set(DecodeHintType.TRY_HARDER, true);
       const reader = new BrowserMultiFormatReader(hints);
       controls.current = await reader.decodeFromConstraints({ audio: false, video: { facingMode: { ideal: 'environment' } } }, video.current!, (result) => {
-        if (result) void accept(result.getText(), BarcodeFormat[result.getBarcodeFormat()] ?? 'camera');
+        if (result) void accept(result.getText(), BarcodeFormat[result.getBarcodeFormat()] ?? 'camera', true);
       });
-      setStatus('เล็ง Barcode ให้อยู่ในกรอบ');
+      setStatus(continuous ? 'เล็ง Barcode ทีละชิ้น · กล้องเปิดค้างไว้ต่อเนื่อง' : 'เล็ง Barcode ให้อยู่ในกรอบ');
     } catch {
       setActive(false);
       setStatus('เปิดกล้องไม่สำเร็จ · ตรวจสิทธิ์กล้องหรือใช้ช่องพิมพ์');
@@ -46,9 +58,9 @@ export function BarcodeScanner({ onScan }: { onScan: (raw: string, symbology: st
   }
 
   return <section className="grid gap-3" aria-label="สแกน Barcode">
-    <div className="flex flex-wrap gap-2"><button type="button" className="button min-h-12" onClick={() => void start()}>{active ? 'กล้องกำลังทำงาน' : 'สแกนอีกครั้ง / เปิดกล้อง'}</button>{active && <button type="button" className="button secondary" onClick={() => { controls.current?.stop(); controls.current=null; setActive(false); }}>หยุดกล้อง</button>}</div>
+    <div className="flex flex-wrap gap-2"><button type="button" className="button min-h-12" onClick={() => void start()}>{active ? 'กล้องกำลังทำงาน' : continuous ? 'เปิดกล้องสแกนต่อเนื่อง' : 'สแกนอีกครั้ง / เปิดกล้อง'}</button>{active && <button type="button" className="button secondary" onClick={() => { controls.current?.stop(); controls.current=null; setActive(false); }}>หยุดกล้อง</button>}</div>
     <video ref={video} muted playsInline className={`w-full max-w-lg rounded-xl bg-slate-900 ${active ? '' : 'hidden'}`} aria-label="ภาพจากกล้องเพื่อสแกน Barcode"/>
     <p className="muted text-sm" role="status">{status}</p>
-    <form className="flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); void accept(manual, 'manual'); setManual(''); }}><label className="field flex-1 min-w-48">พิมพ์หรือวาง Barcode<input className="input" value={manual} onChange={event => setManual(event.target.value)} autoCapitalize="off" autoComplete="off"/></label><button className="button secondary self-end" type="submit">ตรวจ Barcode</button></form>
+    <form className="flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); void accept(manual, 'manual'); setManual(''); manualInput.current?.focus(); }}><label className="field flex-1 min-w-48">พิมพ์หรือวาง Barcode<input ref={manualInput} className="input" value={manual} onChange={event => setManual(event.target.value)} autoCapitalize="off" autoComplete="off"/></label><button className="button secondary self-end" type="submit">ตรวจ Barcode</button></form>
   </section>;
 }

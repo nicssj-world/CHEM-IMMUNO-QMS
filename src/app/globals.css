@@ -31,6 +31,17 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .button.secondary:hover { background: #eef6f7; }
 .button.danger { background: #a83442; }
 .button:disabled { opacity: .55; cursor: not-allowed; }
+.password-wrap { position: relative; }
+.password-wrap .input { padding-right: 52px; }
+.password-toggle { position: absolute; top: 50%; right: 3px; transform: translateY(-50%); display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; transition: color .15s, background-color .15s; }
+.password-toggle:hover { color: var(--ink); background: #eef6f7; }
+.password-toggle[aria-pressed="true"] { color: var(--blue); }
+.spinner { width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.6s; } .password-toggle { transition: none; } }
+.button:disabled[aria-busy="true"] { opacity: 1; cursor: progress; background: var(--blue); }
+.dialog { width: min(92vw, 420px); margin: auto; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 60px rgba(21,48,68,.22); }
+.dialog::backdrop { background: rgba(13,56,87,.45); }
 .badge { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 999px; background: #e7f4f3; color: #096f70; font-size: .75rem; font-weight: 750; }
 .error { padding: 12px 15px; border-radius: 10px; color: #8c2534; background: #fff1f2; border: 1px solid #efc8cf; }
 .notice { padding: 12px 15px; border-radius: 10px; color: #235270; background: #eaf5fa; border: 1px solid #c9e5f2; }

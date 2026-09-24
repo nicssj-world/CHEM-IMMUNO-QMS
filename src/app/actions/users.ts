@@ -68,3 +68,44 @@ export async function provisionUser(form: FormData) {
   revalidatePath('/admin/users');
   redirect('/admin/users?saved=1');
 }
+
+export type PasswordResetState = { status: 'idle' | 'success' | 'error'; message?: string };
+
+const resetError = (message: string): PasswordResetState => ({ status: 'error', message });
+
+export async function resetUserPassword(_previous: PasswordResetState, form: FormData): Promise<PasswordResetState> {
+  const actor = await requireAccess();
+  if (!actor.warehouses.some(w => w.id === '1' && w.role === 'admin') ||
+      !actor.warehouses.some(w => w.id === '2' && w.role === 'admin')) {
+    return resetError('ต้องเป็น Admin ทั้งสองคลังเพื่อเปลี่ยนรหัสผ่านผู้ใช้');
+  }
+
+  const ephisId = normalizeEphisId(String(form.get('ephis_id') ?? ''));
+  const password = String(form.get('new_password') ?? '');
+  const confirmation = String(form.get('confirm_password') ?? '');
+  if (!ephisId) return resetError('Ephis ID ไม่ถูกต้อง');
+  if (password.length < 12 || password.length > 128) return resetError('รหัสผ่านใหม่ต้องมี 12–128 ตัวอักษร');
+  if (password !== confirmation) return resetError('รหัสผ่านทั้งสองช่องไม่ตรงกัน');
+
+  const authClient = await createClient();
+  const adminClient = createAdminClient();
+  const email = internalAuthEmail(ephisId);
+  if (!authClient || !adminClient || !email) return resetError('ยังไม่ได้ตั้งค่า Supabase Auth สำหรับจัดการผู้ใช้');
+
+  // The browser only names the Ephis ID; the Auth UUID is resolved server-side and
+  // must belong to that Ephis ID's private internal email before it is touched.
+  const { data: profile, error: profileError } = await authClient
+    .from('ci_user_profiles').select('user_id').eq('ephis_id', ephisId).maybeSingle();
+  if (profileError || !profile) return resetError('ไม่พบผู้ใช้ Ephis ID นี้');
+  const { data: found, error: lookupError } = await adminClient.auth.admin.getUserById(profile.user_id);
+  if (lookupError || !found.user || found.user.email?.toLowerCase() !== email) {
+    return resetError('Ephis ID นี้มี identity conflict; ระบบยังไม่เปลี่ยนรหัสผ่าน');
+  }
+
+  const { error } = await adminClient.auth.admin.updateUserById(found.user.id, { password });
+  if (error) {
+    console.warn('[auth] password reset refused', JSON.stringify({ code: error.code, status: error.status }));
+    return resetError('เปลี่ยนรหัสผ่านไม่สำเร็จ ตรวจสอบว่ารหัสผ่านผ่านเงื่อนไขของระบบ');
+  }
+  return { status: 'success' };
+}
