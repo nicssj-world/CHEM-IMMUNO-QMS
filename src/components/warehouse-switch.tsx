@@ -6,7 +6,7 @@ export function WarehouseSwitch({ warehouses, selected, path = '/' }: { warehous
     {(['CHE', 'IMM'] as const).map((code) => {
       const item = warehouses.find((w) => w.code === code);
       const label = code === 'CHE' ? 'CLINICAL CHEMISTRY' : 'IMMUNOLOGY';
-      return item ? <Link key={code} href={`${path}?warehouse=${code}`} aria-current={selected.code === code ? 'page' : undefined} className={`min-h-11 flex items-center justify-center rounded-[9px] px-2 text-center text-[.72rem] sm:text-sm font-extrabold no-underline ${selected.code === code ? 'bg-white text-[#095d79] shadow-sm' : 'text-[#587181]'}`}>{label}</Link> : <span key={code} aria-disabled className="min-h-11 flex items-center justify-center rounded-[9px] px-2 text-center text-[.72rem] sm:text-sm font-bold text-[#93a5ad]">{label}</span>;
+      return item ? <Link key={code} href={`${path}?warehouse=${code}`} aria-current={selected.code === code ? 'page' : undefined} className={`min-h-11 flex items-center justify-center rounded-[9px] px-2 text-center text-[.72rem] sm:text-sm font-extrabold no-underline ${selected.code === code ? 'bg-white text-[#095d79] shadow-sm' : 'text-[#455e6d]'}`}>{label}</Link> : <span key={code} aria-disabled className="min-h-11 flex items-center justify-center rounded-[9px] px-2 text-center text-[.72rem] sm:text-sm font-bold text-[#93a5ad]">{label}</span>;
     })}
   </nav>;
 }

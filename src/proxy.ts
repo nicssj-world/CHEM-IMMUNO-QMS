@@ -1,19 +1,38 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { randomBytes } from 'node:crypto';
 import { AUTH_COOKIE_OPTIONS } from '@/lib/supabase/cookies';
+import { buildContentSecurityPolicy } from '@/lib/csp';
 
 export async function proxy(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) return NextResponse.next({ request });
-  let response = NextResponse.next({ request });
+  const nonce = randomBytes(16).toString('base64');
+  const contentSecurityPolicy = buildContentSecurityPolicy({
+    nonce,
+    supabaseUrl: url,
+    development: process.env.NODE_ENV === 'development',
+  });
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-nonce', nonce);
+  requestHeaders.set('Content-Security-Policy', contentSecurityPolicy);
+
+  const continueRequest = () => {
+    requestHeaders.set('cookie', request.cookies.toString());
+    const next = NextResponse.next({ request: { headers: requestHeaders } });
+    next.headers.set('Content-Security-Policy', contentSecurityPolicy);
+    return next;
+  };
+
+  let response = continueRequest();
+  if (!url || !key) return response;
   const client = createServerClient(url, key, {
     cookieOptions: AUTH_COOKIE_OPTIONS,
     cookies: {
       getAll() { return request.cookies.getAll(); },
       setAll(items) {
         items.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = NextResponse.next({ request });
+        response = continueRequest();
         items.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
       },
     },

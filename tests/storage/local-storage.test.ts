@@ -51,6 +51,12 @@ test('private invoice evidence: signed upload/read, warehouse denial and public 
     assert.equal(bucketError,null);
     const details=await serviceClient.storage.getBucket('ci-invoice-evidence');
     assert.equal(details.data?.public,false);
+    assert.equal(details.data?.file_size_limit,10*1024*1024);
+    assert.deepEqual([...(details.data?.allowed_mime_types??[])].sort(),['application/pdf','image/heic','image/jpeg','image/png']);
+    const disallowedMime=await userClient.rpc('ci_register_invoice_attachment',{p_invoice_id:invoiceId,p_warehouse_id:1,p_type:'invoice_photo',p_mime:'text/plain',p_size:8});
+    assert.ok(disallowedMime.error,'unsupported MIME types must be rejected before a signed upload is issued');
+    const oversized=await userClient.rpc('ci_register_invoice_attachment',{p_invoice_id:invoiceId,p_warehouse_id:1,p_type:'invoice_photo',p_mime:'image/png',p_size:10*1024*1024+1});
+    assert.ok(oversized.error,'attachments over 10 MiB must be rejected before a signed upload is issued');
     const registered=await userClient.rpc('ci_register_invoice_attachment',{p_invoice_id:invoiceId,p_warehouse_id:1,p_type:'invoice_photo',p_mime:'image/png',p_size:8});
     assert.equal(registered.error,null);key=registered.data[0].object_key;
     const deniedSign=await outsider.storage.from('ci-invoice-evidence').createSignedUploadUrl(key!);

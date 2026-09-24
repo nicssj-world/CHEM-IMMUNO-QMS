@@ -18,12 +18,12 @@ export function ChangePasswordDialog({ ephisId, displayName }: { ephisId: string
 
   return <>
     <button type="button" className="button secondary text-sm" onClick={() => dialogRef.current?.showModal()}>เปลี่ยนรหัสผ่าน</button>
-    {state.status === 'success' && <p className="text-xs mt-1" role="status" style={{ color: 'var(--teal)' }}>เปลี่ยนรหัสผ่านแล้ว</p>}
+    {state.status === 'success' && <p className="text-xs mt-1 text-[var(--teal)]" role="status">เปลี่ยนรหัสผ่านแล้ว</p>}
     <dialog ref={dialogRef} className="dialog" aria-labelledby={`${idBase}-title`}>
       <form action={action} className="grid gap-4">
         <div>
           <h2 id={`${idBase}-title`} className="font-extrabold text-lg">เปลี่ยนรหัสผ่าน</h2>
-          <p className="muted text-sm mt-1"><span className="font-bold" style={{ color: 'var(--ink)' }}>{ephisId}</span> · {displayName}</p>
+          <p className="muted text-sm mt-1"><span className="font-bold text-[var(--ink)]">{ephisId}</span> · {displayName}</p>
         </div>
         <input type="hidden" name="ephis_id" value={ephisId} />
         {state.status === 'error' && <p className="error text-sm" role="alert">{state.message}</p>}

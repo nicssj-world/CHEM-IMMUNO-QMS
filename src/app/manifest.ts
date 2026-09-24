@@ -3,7 +3,7 @@ import type { MetadataRoute } from 'next';
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'CHEM-IMMUNO CBH',
-    short_name: 'CHEM-IMMUNO',
+    short_name: 'CHEM-IMMUNO CBH',
     description: 'Clinical Chemistry and Immunology inventory',
     start_url: '/',
     scope: '/',

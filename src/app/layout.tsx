@@ -9,7 +9,8 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: 'CHEM-IMMUNO CBH', statusBarStyle: 'default' },
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: '16x16 32x32 48x48', type: 'image/x-icon' },
+      { url: '/favicon.ico', sizes: '16x16 32x32 48x48 64x64', type: 'image/x-icon' },
+      { url: '/favicon-64.png', sizes: '64x64', type: 'image/png' },
       { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
       { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],

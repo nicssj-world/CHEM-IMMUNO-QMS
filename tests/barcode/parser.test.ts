@@ -21,6 +21,16 @@ test('GS1 DataMatrix and parenthesized manual payload parse without rewriting ra
   assert.equal(parseBarcode('(01)00012345678905(17)251231(10)L2').expiry, '2025-12-31');
 });
 
+test('standalone parenthesized AI 240 remains a distinct proposal value and bare 240 is not guessed', () => {
+  const parsed = parseBarcode('(240)UNKNOWN-CATALOG-CODE');
+  assert.equal(parsed.standard, 'GS1');
+  assert.equal(parsed.additionalProductId, 'UNKNOWN-CATALOG-CODE');
+  assert.equal(parsed.gtin, undefined);
+  assert.equal(parsed.primary, undefined);
+  assert.deepEqual(parsed.warnings, []);
+  assert.equal(parseBarcode('240UNKNOWN-CATALOG-CODE').standard, 'UNKNOWN');
+});
+
 test('malformed GS1 retains warnings without guessing LOT or expiry', () => {
   const parsed = parseBarcode(']d201000123456789051799999910LOT');
   assert.equal(parsed.expiry, undefined);
