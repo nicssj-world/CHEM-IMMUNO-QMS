@@ -46,6 +46,6 @@ export function StockOperationForm({ kind, options, locations, submissionKey, wa
   const className = 'surface p-5 sm:p-7 grid gap-5';
   if (kind === 'transfer') return <form action={action} className={className}>{fields}</form>;
   return <ConfirmForm action={action} className={className} message={data => kind === 'adjust'
-    ? `ยืนยันปรับยอด ${what}\nจำนวน ${delta > 0 ? '+' : ''}${delta} · ยอดหลังปรับ ${Math.round((Number(selected?.balance ?? 0) + delta) * 1000) / 1000}\n\nบันทึกแล้วแก้ไขไม่ได้ ต้องใช้การย้อนรายการ`
-    : `ยืนยันกำจัด ${what}\nจำนวน ${data.get('quantity')}\n\nบันทึกแล้วแก้ไขไม่ได้ ต้องใช้การย้อนรายการ`}>{fields}</ConfirmForm>;
+    ? `ยืนยันปรับยอด ${what}\nจำนวน ${delta > 0 ? '+' : ''}${delta} · ยอดหลังปรับ ${Math.round((Number(selected?.balance ?? 0) + delta) * 1000) / 1000}\n\nบันทึกแล้วแก้ไขไม่ได้ ต้องใช้การยกเลิกรายการ`
+    : `ยืนยันกำจัด ${what}\nจำนวน ${data.get('quantity')}\n\nบันทึกแล้วแก้ไขไม่ได้ ต้องใช้การยกเลิกรายการ`}>{fields}</ConfirmForm>;
 }

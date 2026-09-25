@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { requireAccess, canSupervise } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { logUserMessage } from '@/lib/messages';
+import { isStockUnit } from '@/lib/units';
 
 function text(form: FormData, field: string) { return String(form.get(field) ?? '').trim(); }
 function fail(path: string, message: string): never { redirect(`${path}?error=${encodeURIComponent(logUserMessage(path, message))}`); }
@@ -45,7 +46,9 @@ export async function updateProduct(form: FormData) {
   const id = text(form,'id');
   const client = await createClient();
   if (!client) fail(`/products/${id}`,'ยังไม่ได้ตั้งค่า Supabase');
-  const data = { display_name: text(form,'display_name'), packing_size_raw: text(form,'packing_size_raw') || null, product_type: text(form,'product_type'), base_stock_unit: text(form,'base_stock_unit') || 'pack', active: form.get('active') === 'on' };
+  const unit = text(form,'base_stock_unit') || 'pack';
+  if (!isStockUnit(unit)) fail(`/products/${id}`,'หน่วยนับไม่อยู่ในรายการที่กำหนด กรุณาเลือกจากรายการ');
+  const data = { display_name: text(form,'display_name'), packing_size_raw: text(form,'packing_size_raw') || null, product_type: text(form,'product_type'), base_stock_unit: unit, active: form.get('active') === 'on' };
   const { error } = await client.rpc('ci_update_product',{ p_id: id, p_data: data });
   if (error) fail(`/products/${id}`,error.message);
   revalidatePath(`/products/${id}`);
