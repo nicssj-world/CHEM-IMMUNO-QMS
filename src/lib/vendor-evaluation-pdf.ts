@@ -672,12 +672,12 @@ export async function generateVendorAnnualEvaluationPdf(revision: AnnualPdfRevis
   page3State.y = drawMonthlyChart(page3State.page, receipts, issues, page3State.y - 16, regular, bold)
 
   // Page 4 — Judgment / Recommendation / Signatures
-  const page4 = addReportPage(document, '5. คำวินิจฉัยและข้อเสนอแนะ / Annual Judgment & Recommendation', context, logo, regular, bold)
-  let page4State: PageState = { page: page4.page, y: drawSubheading(page4.page, '5.1 คำวินิจฉัย', page4.y, bold) }
+  const page4 = addReportPage(document, '5. ผลการประเมินและข้อเสนอแนะ / Annual Evaluation Result & Recommendation', context, logo, regular, bold)
+  let page4State: PageState = { page: page4.page, y: drawSubheading(page4.page, '5.1 ผลการประเมิน', page4.y, bold) }
   const signatureReserve = 184
   const addJudgmentContinuation = () => {
-    const next = addReportPage(document, '5. คำวินิจฉัยและข้อเสนอแนะ (ต่อ)', context, logo, regular, bold)
-    page4State = { page: next.page, y: drawSubheading(next.page, 'คำวินิจฉัยและข้อเสนอแนะ (ต่อ)', next.y, bold) }
+    const next = addReportPage(document, '5. ผลการประเมินและข้อเสนอแนะ (ต่อ)', context, logo, regular, bold)
+    page4State = { page: next.page, y: drawSubheading(next.page, 'ผลการประเมินและข้อเสนอแนะ (ต่อ)', next.y, bold) }
   }
   const drawJudgmentPanel = (x: number, width: number, title: string, lines: string[], minimumHeight: number, continuation: boolean) => {
     let offset = 0
