@@ -5,9 +5,10 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { requireAccess, canSupervise } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { logUserMessage } from '@/lib/messages';
 
 function text(form: FormData, field: string) { return String(form.get(field) ?? '').trim(); }
-function fail(path: string, message: string): never { redirect(`${path}?error=${encodeURIComponent(message)}`); }
+function fail(path: string, message: string): never { redirect(`${path}?error=${encodeURIComponent(logUserMessage(path, message))}`); }
 
 export async function createProduct(form: FormData) {
   const access = await requireAccess();

@@ -4,6 +4,9 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'CHEM-IMMUNO CBH',
     short_name: 'CHEM-IMMUNO CBH',
+    id: '/',
+    lang: 'th',
+    orientation: 'any',
     description: 'Clinical Chemistry and Immunology inventory',
     start_url: '/',
     scope: '/',

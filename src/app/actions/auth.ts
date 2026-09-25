@@ -4,14 +4,17 @@ import { redirect } from 'next/navigation';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { signInWithEphisId } from '@/lib/ephis-auth';
+import { safeReturnPath } from '@/lib/return-path';
 
 export async function signIn(formData: FormData) {
   const client = await createClient();
-  if (!client) redirect('/login?error=configuration');
+  const next = safeReturnPath(String(formData.get('next') ?? ''));
+  const keep = next ? `&next=${encodeURIComponent(next)}` : '';
+  if (!client) redirect(`/login?error=configuration${keep}`);
   const ephisId = String(formData.get('ephisId') ?? '').trim();
   const password = String(formData.get('password') ?? '');
-  if (!await signInWithEphisId(client, ephisId, password)) redirect('/login?error=credentials');
-  redirect('/');
+  if (!await signInWithEphisId(client, ephisId, password)) redirect(`/login?error=credentials${keep}`);
+  redirect(next ?? '/');
 }
 
 export async function signOut() {

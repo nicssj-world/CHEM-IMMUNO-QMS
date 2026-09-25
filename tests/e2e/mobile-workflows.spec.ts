@@ -79,7 +79,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
     if (current_ref === 'E2E-CAL') chemCalibrator = created.data as string;
   }
   expect((await admin.from('ci_product_identifiers').insert({ product_id: chemProduct, warehouse_id: 1, kind: 'GTIN', value: '00012345678905', source: 'synthetic_e2e' })).error).toBeNull();
-  const vendor = await client.rpc('ci_create_vendor', { p_name: 'Synthetic E2E Vendor' });
+  const vendor = await client.rpc('ci_create_vendor', { p_data: { vendorCode: 'V-E2E', name: 'Synthetic E2E Vendor' } });
   expect(vendor.error).toBeNull();
   const location = await client.rpc('ci_create_location', { p_warehouse_id: 1, p_code: 'E2E-A', p_name: 'Synthetic shelf' });
   expect(location.error).toBeNull();
@@ -107,10 +107,10 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.getByRole('textbox', { name: 'รหัสผ่าน' }).fill(password);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
   await expect(page.getByRole('heading', { name: /ภาพรวมคลัง/ })).toBeVisible();
-  await expect(page.getByText('Products', { exact: true }).locator('..').getByText('3')).toBeVisible();
+  await expect(page.getByRole('link', { name: /^สินค้าที่ใช้งาน 3/ })).toBeVisible();
   const dashboardMetricLabels = [
-    'Products', 'Stockout', 'ต่ำกว่า ROP', 'หมดอายุ ≤30 วัน', 'หมดอายุ ≤90 วัน',
-    'LOT ทั้งหมด', 'รับเข้าล่าสุด', 'เบิกล่าสุด', 'Need Attention',
+    'สินค้าที่ใช้งาน', 'หมดสต็อก', 'ต่ำกว่า ROP', 'LOT หมดอายุแล้ว', 'หมดอายุใน 30 วัน', 'หมดอายุใน 90 วัน',
+    'ยังไม่ตั้ง ROP', 'LOT ทั้งหมด', 'รับเข้า 7 วัน', 'เบิกใช้ 7 วัน',
   ];
   async function expectDashboardMetrics() {
     for (const label of dashboardMetricLabels) {
@@ -119,9 +119,9 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
     }
   }
   await expectDashboardMetrics();
-  await page.getByRole('link', { name: 'IMMUNOLOGY' }).first().click();
+  await page.getByRole('navigation', { name: 'เลือกคลัง' }).getByRole('link', { name: 'IMMUNOLOGY' }).click();
   await expect(page).toHaveURL(/warehouse=IMM/);
-  await expect(page.getByText('Products', { exact: true }).locator('..').getByText('1')).toBeVisible();
+  await expect(page.getByRole('link', { name: /^สินค้าที่ใช้งาน 1/ })).toBeVisible();
   await expectDashboardMetrics();
 
   await page.goto('/products/new?warehouse=CHE');
@@ -170,14 +170,16 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page.getByRole('link', { name: 'CHE-0001', exact: true })).toHaveCount(0);
 
   await page.goto('/vendors?warehouse=CHE');
-  await expect(page.getByRole('heading', { name: 'ผู้ขายและการประเมินประจำปี' })).toBeVisible();
-  await expect(page.getByText(/ปีงบประมาณ 1 ต\.ค\. – 30 ก\.ย\./)).toBeVisible();
-  await expect(page.getByText(/ไม่มีคะแนนหรือเกณฑ์ตัดสินอัตโนมัติ/)).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'บันทึกปัญหาผู้ขาย' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'ตัวชี้วัดจากหลักฐานจริง' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'สร้าง/ปรับร่างประเมินประจำปี' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'รายการประเมิน' })).toBeVisible();
-  await expect(page.getByRole('option', { name: 'Synthetic E2E Vendor' }).first()).toBeAttached();
+  await expect(page.getByRole('heading', { name: 'ผู้ขาย', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: /Synthetic E2E Vendor/ }).first().click();
+  await expect(page.getByRole('heading', { name: /ผลงานผู้ขาย · .* · ปีงบประมาณ 25\d\d/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /รายงานประเมินประจำปี/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /ผลตรวจรับรายครั้ง/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /ปัญหาผู้ขาย/ })).toBeVisible();
+  await expect(page.getByText('ผลตามเกณฑ์ 8 ข้อ (ข้อมูลสด)')).toBeVisible();
+  await expect(page.getByText(/ยังไม่ใช่คะแนนอย่างเป็นทางการ/)).toBeVisible();
+  await page.goto('/vendors/evaluation-policy');
+  await expect(page.getByRole('heading', { name: /นโยบาย/ }).first()).toBeVisible();
 
   await page.setViewportSize({ width: 375, height: 900 });
   await page.goto('/');
@@ -249,7 +251,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
 
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'เมนูมือถือ' }).getByRole('link', { name: 'Scan' }).click();
+  await page.getByRole('navigation', { name: 'เมนูมือถือ' }).getByRole('link', { name: 'สแกน' }).click();
   await expect(page).toHaveURL(/\/scan$/);
   await page.goto('/scan');
   await expect(page.getByRole('button', { name: /สแกนอีกครั้ง/ })).toBeVisible();
@@ -359,7 +361,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(target.getByRole('option', { name: /CHE-0002/ })).toHaveCount(0);
   await target.selectOption(chemCalibrator);
   await page.getByRole('button', { name: 'เพิ่มความสัมพันธ์' }).click();
-  await expect(page.locator('section.surface').filter({ hasText: 'Related Products' }).locator('span.badge').filter({ hasText: 'uses_calibrator' })).toBeVisible();
+  await expect(page.locator('section.surface').filter({ hasText: 'Related Products' }).locator('span.badge').filter({ hasText: 'ใช้ Calibrator' })).toBeVisible();
   const relationRow = await admin.from('ci_product_relations').select('id').eq('source_product_id', chemProduct).eq('target_product_id', chemCalibrator).single();
   expect(relationRow.error).toBeNull();
   await page.getByText('แก้ไข', { exact: true }).first().click();
@@ -371,7 +373,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(editTarget.getByRole('option', { name: /CHE-0002/ })).toHaveCount(1);
   await editTarget.selectOption(chemReagent2);
   await page.getByRole('button', { name: 'บันทึกความสัมพันธ์' }).click();
-  await expect(page.locator('section.surface').filter({ hasText: 'Related Products' }).locator('span.badge').filter({ hasText: 'compatible_with' })).toBeVisible();
+  await expect(page.locator('section.surface').filter({ hasText: 'Related Products' }).locator('span.badge').filter({ hasText: 'ใช้ร่วมกันได้' })).toBeVisible();
   const updatedRelation = await admin.from('ci_product_relations').select('id,relation_type,target_product_id').eq('id', relationRow.data!.id).single();
   expect(updatedRelation.data?.relation_type).toBe('compatible_with');
   expect(updatedRelation.data?.target_product_id).toBe(chemReagent2);
@@ -386,7 +388,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   const movementCount = await admin.from('ci_stock_transactions').select('id', { count: 'exact', head: true });
   expect(movementCount.error).toBeNull();
   expect(movementCount.count).toBe(0);
-  await page.getByRole('navigation', { name: 'เมนูมือถือ' }).getByRole('link', { name: 'More' }).click();
+  await page.getByRole('navigation', { name: 'เมนูมือถือ' }).getByRole('link', { name: 'เพิ่มเติม' }).click();
   await expect(page).toHaveURL(/\/more$/);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/reports/monthly?warehouse=CHE&month=2026-09');
@@ -422,7 +424,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.goto('/products?warehouse=IMM');
   await expect(page.getByRole('link', { name: 'เพิ่มสินค้า' })).toBeVisible();
   await page.goto('/admin/users');
-  await expect(page.getByText('หน้านี้ใช้ได้เฉพาะ Admin ที่มีสิทธิ์ทั้งสองคลัง')).toBeVisible();
+  await expect(page.getByText('หน้านี้ใช้ได้เฉพาะผู้ดูแลระบบที่มีสิทธิ์ทั้งสองคลัง')).toBeVisible();
   await page.getByRole('button', { name: 'ออกจากระบบ' }).click();
   await expect(page).toHaveURL(/\/login/);
   await signInAs('e2eviewer');

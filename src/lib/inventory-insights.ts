@@ -26,3 +26,21 @@ export function fiscalYear(date: string): number {
   const month = Number(date.slice(5, 7));
   return month >= 10 ? year + 1 : year;
 }
+
+export type ReorderAttention = 'stockout' | 'below' | 'no-rop' | 'ok';
+
+/** For attention counts: a product with no ROP yet is a setup task, not a stockout, so a freshly imported warehouse does not read "everything is out". */
+export function reorderAttention(usable: number, rop: number | null): ReorderAttention {
+  if (rop === null || !Number.isFinite(rop)) return 'no-rop';
+  if (usable <= 0) return 'stockout';
+  return usable < rop ? 'below' : 'ok';
+}
+
+export function addDays(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+/** Buddhist-era fiscal year (1 Oct – 30 Sep), as vendor evaluation reports use: 2026-10-01 → 2570. */
+export function fiscalYearBE(date: string): number { return fiscalYear(date) + 543; }

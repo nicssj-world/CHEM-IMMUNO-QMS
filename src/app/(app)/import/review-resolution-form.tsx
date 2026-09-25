@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { resolveImportReview } from '@/app/actions/import';
+import { SubmitButton } from '@/components/submit-button';
 
 type ReagentOption = { ref: string; name: string };
 
@@ -66,6 +67,6 @@ export function ReviewResolutionForm({
     <label className="field">หลักฐาน / เหตุผลการตัดสิน
       <textarea className="input min-h-24" name="note" minLength={3} maxLength={2000} required placeholder="ระบุผลตรวจและหลักฐานประกอบ" />
     </label>
-    <button type="submit" className="button w-full sm:w-fit">บันทึกผลตรวจ</button>
+    <SubmitButton className="button w-full sm:w-fit" label="บันทึกผลตรวจ" pendingLabel="กำลังบันทึก…"/>
   </form>;
 }

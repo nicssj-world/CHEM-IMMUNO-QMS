@@ -90,7 +90,7 @@ test('Phase 1 PostgreSQL gate: auth, ledger, workflows, concurrency', { timeout:
     const cheLocation = await rpc<string>(ADMIN, 'ci_create_location', [1, 'A1', 'Chem shelf A1'], ['smallint', 'text', 'text']);
     const cheLocation2 = await rpc<string>(ADMIN, 'ci_create_location', [1, 'A2', 'Chem shelf A2'], ['smallint', 'text', 'text']);
     const immLocation = await rpc<string>(ADMIN, 'ci_create_location', [2, 'I1', 'Imm shelf I1'], ['smallint', 'text', 'text']);
-    const vendor = await rpc<string>(ADMIN, 'ci_create_vendor', ['Vendor A'], ['text']);
+    const vendor = await rpc<string>(ADMIN, 'ci_create_vendor', [{ vendorCode: 'V-A', name: 'Vendor A' }], ['jsonb']);
 
     await t.test('Product hard delete is admin-only, blocks invoice and LOT history, and audits an unused product', async () => {
       const deletable = await product(ADMIN, 1, 'consumable', 'Disposable product', 'DELETE-NO-HISTORY');

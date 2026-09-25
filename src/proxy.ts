@@ -15,6 +15,8 @@ export async function proxy(request: NextRequest) {
   });
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-nonce', nonce);
+  // Lets requireAccess send an expired session back to this page after login.
+  requestHeaders.set('x-return-to', `${request.nextUrl.pathname}${request.nextUrl.search}`);
   requestHeaders.set('Content-Security-Policy', contentSecurityPolicy);
 
   const continueRequest = () => {

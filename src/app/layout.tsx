@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from 'next';
+import { IBM_Plex_Sans_Thai } from 'next/font/google';
 import './globals.css';
+
+// Arial has no Thai glyphs, so Thai text fell back to a different system font per device; one self-hosted face covers both scripts.
+const sans = IBM_Plex_Sans_Thai({ subsets: ['thai', 'latin'], weight: ['400', '500', '600', '700'], display: 'swap', variable: '--font-plex' });
 
 export const metadata: Metadata = {
   title: { default: 'CHEM-IMMUNO CBH', template: '%s | CHEM-IMMUNO CBH' },
@@ -18,8 +22,9 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = { themeColor: '#0d3857' };
+// viewport-fit lets the safe-area padding in globals.css reach the iPhone home bar; navy stays the brand colour for the browser bar.
+export const viewport: Viewport = { themeColor: '#0d3857', viewportFit: 'cover', colorScheme: 'only light' };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="th"><body>{children}</body></html>;
+  return <html lang="th" className={sans.variable}><body>{children}</body></html>;
 }

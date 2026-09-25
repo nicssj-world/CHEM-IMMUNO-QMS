@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef } from 'react';
+import { useActionState, useEffect, useId, useRef } from 'react';
 import { resetUserPassword, type PasswordResetState } from '@/app/actions/users';
 import { PasswordField } from './password-field';
 import { SubmitButton } from './submit-button';
@@ -10,7 +10,8 @@ const initialState: PasswordResetState = { status: 'idle' };
 export function ChangePasswordDialog({ ephisId, displayName }: { ephisId: string; displayName: string }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [state, action] = useActionState(resetUserPassword, initialState);
-  const idBase = `pw-${ephisId}`;
+  // The page renders each person twice (desktop table and phone cards), so ids must be per instance, not per person.
+  const idBase = `pw-${useId()}`;
 
   useEffect(() => {
     if (state.status === 'success') dialogRef.current?.close();

@@ -7,6 +7,7 @@ import { requireAccess } from '@/lib/auth';
 import { internalAuthEmail, normalizeEphisId } from '@/lib/auth-identity';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+import { logUserMessage } from '@/lib/messages';
 
 function fail(message: string): never { redirect(`/admin/users?error=${encodeURIComponent(message)}`); }
 
@@ -64,7 +65,7 @@ export async function provisionUser(form: FormData) {
     p_warehouse_ids: warehouseIds,
     p_active: active,
   });
-  if (error) fail(error.message);
+  if (error) fail(logUserMessage('users', error));
   revalidatePath('/admin/users');
   redirect('/admin/users?saved=1');
 }
