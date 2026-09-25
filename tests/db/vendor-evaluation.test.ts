@@ -160,12 +160,14 @@ test('Vendor evaluation (LABCBH port): master data, short close',{timeout:180000
     const policyInput=(version:string,from=FY,to:number|null=FY+5)=>({version,effectiveFromFiscalYear:from,effectiveToFiscalYear:to,passThreshold:80,minimumCoveragePercent:70,coverageStartDate:'2026-09-25',note:'QP'});
     let policyId='';
 
-    await t.test('policy: seeded V1 is an unapproved proposal that cannot be approved until complete',async()=>{
-      const v1=await asUser(ADMIN,c=>c.query("select id,status,pass_threshold from public.ci_vendor_evaluation_policies where version='VE-POLICY-V1'"));
-      assert.equal(v1.rows[0].status,'proposed');assert.equal(v1.rows[0].pass_threshold,null);
-      const crit=await asUser(ADMIN,c=>c.query('select count(*)::int n,count(weight)::int w from public.ci_vendor_evaluation_policy_criteria where policy_id=$1',[v1.rows[0].id]));
-      assert.equal(crit.rows[0].n,8);assert.equal(crit.rows[0].w,0);
-      await assert.rejects(rpc(ADMIN,'ci_approve_vendor_evaluation_policy',[v1.rows[0].id],['uuid']),/CI_POLICY_INCOMPLETE/);
+    await t.test('policy: seeded V1 carries the LABCBH-Stock numbers but is still an unapproved proposal',async()=>{
+      const v1=await asUser(ADMIN,c=>c.query("select id,status,pass_threshold,minimum_coverage_percent,effective_from_fiscal_year,effective_to_fiscal_year,coverage_start_date::text d,approved_by from public.ci_vendor_evaluation_policies where version='VE-POLICY-V1'"));
+      assert.equal(v1.rows[0].status,'proposed');assert.equal(v1.rows[0].approved_by,null);
+      assert.equal(Number(v1.rows[0].pass_threshold),80);assert.equal(Number(v1.rows[0].minimum_coverage_percent),80);
+      assert.equal(v1.rows[0].effective_from_fiscal_year,2569);assert.equal(v1.rows[0].effective_to_fiscal_year,null);assert.equal(v1.rows[0].d,'2026-09-23');
+      const crit=await asUser(ADMIN,c=>c.query('select criterion_code,weight from public.ci_vendor_evaluation_policy_criteria where policy_id=$1 order by display_order',[v1.rows[0].id]));
+      assert.deepEqual(crit.rows.map(r=>Number(r.weight)),[20,15,10,10,15,15,10,5]);
+      await assert.rejects(rpc(SUPERVISOR,'ci_approve_vendor_evaluation_policy',[v1.rows[0].id],['uuid']),/CI_ACCESS_DENIED/);
     });
 
     await t.test('policy: only an admin of every warehouse may propose or approve; weights must total 100 over the 8 criteria',async()=>{
