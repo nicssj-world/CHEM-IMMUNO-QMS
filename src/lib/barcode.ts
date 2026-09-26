@@ -146,7 +146,7 @@ export function parseBarcode(raw: string, symbology = 'manual'): ParsedBarcode {
   const result: ParsedBarcode = { raw, symbology, standard: 'UNKNOWN', warnings: [] };
   const text = raw.trim();
   if (!text) { result.warnings.push('Empty barcode'); return result; }
-  if (/^\](?:C1|d2|e0)/.test(text) || /^(?:\x1d|<GS>)?\(?01\)?\d{14}/.test(text)) parseGs1(text, result);
+  if (/^\](?:C1|d2|e0)/.test(text) || /^\(240\)/.test(text) || /^(?:\x1d|<GS>)?\(?01\)?\d{14}/.test(text)) parseGs1(text, result);
   else if (/^(?:\](?:A0|C0|d1))?\*?\+/.test(text)) parseHibc(text, result);
   else result.warnings.push('Unrecognized barcode standard; use manual Product search');
   return result;
