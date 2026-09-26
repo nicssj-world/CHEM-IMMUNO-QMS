@@ -267,55 +267,129 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
     await expect(page.getByRole('heading', { name: 'ไม่พบข้อมูลที่ต้องการ' }), why).toBeVisible();
     await expect(page.getByRole('heading', { name: /E2E-/ }), `${why}: nothing about the location is shown`).toHaveCount(0);
   }
-  // ---- Phase 1: workspace navigation ------------------------------------------------------------------------------------
+  // ---- Phase 1 / 1.1: workspace navigation (desktop accordion, mobile tab strip) ----------------------------------------------
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/');
   const sidebar = page.getByRole('navigation', { name: 'เมนูหลัก' });
-  await expect(sidebar.getByRole('link'), 'compact sidebar: the Scan quick action plus five workspaces').toHaveCount(6);
-  for (const name of ['สแกน Barcode', 'ภาพรวม', 'คลังสินค้า', 'ปฏิบัติงาน', 'รายงาน', 'จัดการระบบ']) await expect(sidebar.getByRole('link', { name, exact: true })).toBeVisible();
+  const workspaceNames = ['ภาพรวม', 'คลังสินค้า', 'ปฏิบัติงาน', 'รายงาน', 'จัดการระบบ'];
+  const parent = (name: string) => sidebar.getByRole('button', { name, exact: true });
+  await expect(sidebar.getByRole('link', { name: 'สแกน Barcode' }), 'the Scan quick action stays at the top').toBeVisible();
+  await expect(sidebar.getByRole('button'), 'five workspace accordion controls').toHaveCount(5);
+  for (const name of workspaceNames) await expect(parent(name)).toBeVisible();
   await expect(page.getByText(/Morning Talk|อุณหภูมิ ?\/ ?ความชื้น/), 'no placeholder links for later phases').toHaveCount(0);
-  const dashboardTabs = page.getByRole('navigation', { name: 'เมนูย่อย ภาพรวม' });
-  await expect(dashboardTabs.getByRole('link', { name: 'ภาพรวม', exact: true })).toHaveAttribute('aria-current', 'page');
-  await sidebar.getByRole('link', { name: 'คลังสินค้า', exact: true }).click();
+  // The current workspace is open by itself; the others are closed and render no links.
+  await expect(parent('ภาพรวม')).toHaveAttribute('aria-expanded', 'true');
+  for (const name of workspaceNames.slice(1)) await expect(parent(name)).toHaveAttribute('aria-expanded', 'false');
+  await expect(sidebar.getByRole('link', { name: 'ภาพรวม', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(sidebar.getByRole('link', { name: 'รายการที่ต้องติดตาม', exact: true })).toBeVisible();
+  await expect(sidebar.getByRole('link', { name: 'คงคลัง', exact: true })).toBeHidden();
+  await expect(page.getByRole('navigation', { name: /^เมนูย่อย/ }), 'no horizontal tab strip on desktop').toBeHidden();
+  const stripDisplay = await page.evaluate(() => { const strip = document.querySelector('.workspace-tabs'); return strip ? getComputedStyle(strip).display : 'absent'; });
+  expect(['none', 'absent']).toContain(stripDisplay);
+
+  // Keyboard: the workspace control is a real button, reachable by Tab and operated with Enter / Space.
+  const inventoryButton = parent('คลังสินค้า');
+  await inventoryButton.focus();
+  await expect(inventoryButton).toBeFocused();
+  const outline = await inventoryButton.evaluate(node => getComputedStyle(node).outlineStyle);
+  expect(outline).not.toBe('none');
+  expect(await inventoryButton.evaluate(node => node.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  expect(await inventoryButton.getAttribute('aria-controls')).toBe('side-sub-inventory');
+  await page.keyboard.press('Enter');
+  await expect(inventoryButton).toHaveAttribute('aria-expanded', 'true');
+  await expect(parent('ภาพรวม'), 'only one workspace is open at a time').toHaveAttribute('aria-expanded', 'false');
+  await expect(sidebar.getByRole('link'), 'Scan + the current page of the closed workspace + the five inventory pages').toHaveCount(7);
+  for (const name of ['คงคลัง', 'สินค้า', 'ตำแหน่งจัดเก็บ', 'ROP / สั่งซื้อ', 'ผู้ขาย']) await expect(sidebar.getByRole('link', { name, exact: true })).toBeVisible();
+  await page.keyboard.press('Space');
+  await expect(inventoryButton).toHaveAttribute('aria-expanded', 'false');
+  await expect(sidebar.getByRole('link', { name: 'สินค้า', exact: true })).toBeHidden();
+  await page.keyboard.press('Space');
+  await expect(inventoryButton).toHaveAttribute('aria-expanded', 'true');
+
+  // A child navigates normally, carries only the warehouse, and becomes the highlighted current page.
+  await sidebar.getByRole('link', { name: 'คงคลัง', exact: true }).click();
   await expect(page).toHaveURL(/\/stock$/);
-  const inventoryTabs = page.getByRole('navigation', { name: 'เมนูย่อย คลังสินค้า' });
-  await expect(inventoryTabs.getByRole('link')).toHaveCount(5);
-  await expect(inventoryTabs.getByRole('link', { name: 'คงคลัง', exact: true })).toHaveAttribute('aria-current', 'page');
-  await expect(sidebar.getByRole('link', { name: 'คลังสินค้า', exact: true })).toHaveAttribute('aria-current', 'page');
-  // Tabs carry the warehouse and nothing else; browser back/forward restore the previous tab and its state.
+  await expect(sidebar.getByRole('link', { name: 'คงคลัง', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(parent('คลังสินค้า')).toHaveAttribute('aria-expanded', 'true');
+  // Hierarchy: the workspace parent is visibly stronger than the current child.
+  const weights = await page.evaluate(() => {
+    const parentNode = [...document.querySelectorAll('.side-parent')].find(node => node.getAttribute('aria-expanded') === 'true')!;
+    const child = document.querySelector('.side-child[aria-current="page"]')!;
+    return {
+      indent: child.getBoundingClientRect().left - parentNode.getBoundingClientRect().left,
+      sizeGap: parseFloat(getComputedStyle(parentNode).fontSize) - parseFloat(getComputedStyle(child).fontSize),
+      parentShadow: getComputedStyle(parentNode).boxShadow,
+      childShadow: getComputedStyle(child).boxShadow,
+    };
+  });
+  expect(weights.indent, 'children are indented under their workspace').toBeGreaterThan(12);
+  expect(weights.sizeGap, 'children are set slightly smaller than their workspace').toBeGreaterThan(0);
+  expect(weights.parentShadow).not.toBe('none');
+  expect(weights.childShadow, 'the current child has a lighter treatment than the workspace').toBe('none');
+
+  // Navigating into another workspace opens it and closes the previous one; the current page is never hidden.
+  await page.goto('/scan/review?warehouse=CHE');
+  await expect(parent('จัดการระบบ')).toHaveAttribute('aria-expanded', 'true');
+  await expect(parent('คลังสินค้า')).toHaveAttribute('aria-expanded', 'false');
+  await expect(sidebar.getByRole('link', { name: 'คิวอนุมัติ Barcode', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(sidebar.getByRole('link', { name: 'สแกน Barcode' }), '/scan/review is not the Scan quick action').not.toHaveAttribute('aria-current', 'page');
+  await parent('จัดการระบบ').click();
+  await expect(parent('จัดการระบบ')).toHaveAttribute('aria-expanded', 'false');
+  await expect(sidebar.getByRole('link', { name: 'คิวอนุมัติ Barcode', exact: true }), 'collapsing the active workspace still shows where you are').toBeVisible();
+  await expect(sidebar.getByRole('link', { name: 'นำเข้าสินค้า', exact: true })).toBeHidden();
+  await parent('จัดการระบบ').click();
+  await expect(sidebar.getByRole('link', { name: 'นำเข้าสินค้า', exact: true })).toBeVisible();
+  await expect(sidebar.getByRole('link', { name: 'ผู้ใช้', exact: true })).toBeVisible();
+
+  // Browser back/forward restore the previous page and re-open its workspace; only the warehouse is carried by child links.
   await page.goto('/stock?warehouse=IMM&q=zzz');
-  await inventoryTabs.getByRole('link', { name: 'ตำแหน่งจัดเก็บ', exact: true }).click();
+  await parent('คลังสินค้า').waitFor();
+  await sidebar.getByRole('link', { name: 'ตำแหน่งจัดเก็บ', exact: true }).click();
   await expect(page).toHaveURL(/\/locations\?warehouse=IMM$/);
-  await expect(inventoryTabs.getByRole('link', { name: 'ตำแหน่งจัดเก็บ', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(sidebar.getByRole('link', { name: 'ตำแหน่งจัดเก็บ', exact: true })).toHaveAttribute('aria-current', 'page');
   await page.goBack();
   await expect(page).toHaveURL(/\/stock\?warehouse=IMM&q=zzz$/);
-  await expect(inventoryTabs.getByRole('link', { name: 'คงคลัง', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(sidebar.getByRole('link', { name: 'คงคลัง', exact: true })).toHaveAttribute('aria-current', 'page');
   await page.goForward();
   await expect(page).toHaveURL(/\/locations\?warehouse=IMM$/);
-  // Existing deep links keep working and land on the right workspace and tab.
-  for (const [url, workspace, tab] of [
+
+  // Existing deep links keep working and land on the right workspace and child.
+  for (const [url, workspace, child] of [
     ['/vendors/evaluation-policy', 'คลังสินค้า', 'ผู้ขาย'], [`/products/${chemProduct}`, 'คลังสินค้า', 'สินค้า'], ['/counts?warehouse=CHE', 'ปฏิบัติงาน', 'ตรวจนับ'],
     ['/adjust?warehouse=CHE', 'ปฏิบัติงาน', 'ปรับยอด'], ['/reports/monthly?warehouse=CHE&month=2026-09', 'รายงาน', 'รายงานรายเดือน'], ['/audit?warehouse=CHE', 'รายงาน', 'บันทึกการตรวจสอบ'],
     ['/scan/review?warehouse=CHE', 'จัดการระบบ', 'คิวอนุมัติ Barcode'], ['/admin/users', 'จัดการระบบ', 'ผู้ใช้'], ['/attention?warehouse=CHE', 'ภาพรวม', 'รายการที่ต้องติดตาม'],
+    [`/locations/${fridge.data}`, 'คลังสินค้า', 'ตำแหน่งจัดเก็บ'], ['/movements?warehouse=CHE', 'รายงาน', 'ประวัติเคลื่อนไหว'],
   ] as const) {
     await page.goto(url);
-    await expect(sidebar.getByRole('link', { name: workspace, exact: true }), `${url} sidebar`).toHaveAttribute('aria-current', 'page');
-    await expect(page.getByRole('navigation', { name: `เมนูย่อย ${workspace}` }).getByRole('link', { name: tab, exact: true }), `${url} tab`).toHaveAttribute('aria-current', 'page');
+    await expect(parent(workspace), `${url} opens its workspace`).toHaveAttribute('aria-expanded', 'true');
+    await expect(sidebar.getByRole('link', { name: child, exact: true }), `${url} highlights its child`).toHaveAttribute('aria-current', 'page');
+    expect(await sidebar.locator('[aria-current="page"]').count(), `${url}: exactly one current page in the sidebar`).toBe(1);
   }
-  await expect(sidebar.getByRole('link', { name: 'สแกน Barcode' }), '/scan/review is not the Scan quick action').not.toHaveAttribute('aria-current', 'page');
+  await page.goto('/scan?warehouse=CHE');
+  await expect(sidebar.getByRole('link', { name: 'สแกน Barcode' })).toHaveAttribute('aria-current', 'page');
+  await expect(sidebar.locator('.side-parent[aria-expanded="true"]'), '/scan opens no workspace').toHaveCount(0);
+
   await page.goto('/locations?warehouse=CHE');
   await page.emulateMedia({ media: 'print' });
-  await expect(page.getByRole('navigation', { name: 'เมนูย่อย คลังสินค้า' })).toBeHidden();
   await expect(sidebar).toBeHidden();
   await page.emulateMedia({ media: 'screen' });
+
+  // Narrow screens: no sidebar accordion, the horizontal tab strip is back, the bottom bar and /more are unchanged.
+  await page.setViewportSize({ width: 768, height: 900 });
+  await page.goto('/stock?warehouse=CHE');
+  await expect(sidebar, 'the sidebar is not used at tablet-portrait width').toBeHidden();
+  await expect(page.getByRole('navigation', { name: 'เมนูย่อย คลังสินค้า' }).getByRole('link')).toHaveCount(5);
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto('/locations?warehouse=CHE');
+  await expect(sidebar).toBeHidden();
+  const strip = page.getByRole('navigation', { name: 'เมนูย่อย คลังสินค้า' });
+  await expect(strip.getByRole('link', { name: 'ตำแหน่งจัดเก็บ', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(strip.getByRole('link')).toHaveCount(5);
   const bottom = page.getByRole('navigation', { name: 'เมนูมือถือ' });
   await expect(bottom.getByRole('link'), 'the accepted mobile bottom navigation is unchanged').toHaveText(['ภาพรวม', 'คงคลัง', 'สแกน', 'รับเข้า', 'เพิ่มเติม']);
   await expect(bottom.getByRole('link', { name: 'คงคลัง' }), 'Stock also lights up for Inventory pages').toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole('navigation', { name: 'เมนูย่อย คลังสินค้า' }).getByRole('link', { name: 'ตำแหน่งจัดเก็บ', exact: true })).toBeVisible();
   await page.goto('/more');
-  for (const heading of ['ภาพรวม', 'คลังสินค้า', 'ปฏิบัติงาน', 'รายงาน', 'จัดการระบบ']) await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+  for (const heading of workspaceNames) await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'คลังสินค้า', exact: true }).getByRole('link', { name: 'ตำแหน่งจัดเก็บ' })).toBeVisible();
   await expect(page.getByText(/Morning Talk|อุณหภูมิ ?\/ ?ความชื้น/)).toHaveCount(0);
   await page.setViewportSize({ width: 1280, height: 900 });

@@ -98,3 +98,43 @@ export function activeWorkspace(pathname: string, source: readonly Workspace[] =
 export function tabHref(href: string, warehouse: string | null | undefined) {
   return warehouse === 'CHE' || warehouse === 'IMM' ? `${href}?warehouse=${warehouse}` : href;
 }
+
+// ---------------------------------------------------------------------------
+// Desktop sidebar accordion. Pure helpers over the same workspace list, so the sidebar, the mobile tab strip and /more can
+// never disagree about which pages exist, which the user may see, or which one is current.
+// ---------------------------------------------------------------------------
+export type SidebarSection = {
+  workspace: Workspace;
+  /** The workspace the current page belongs to. */
+  active: boolean;
+  /** The workspace's list is fully open (one workspace at a time). */
+  expanded: boolean;
+  /** Links to render: every visible tab when expanded; only the current page when collapsed but active; otherwise none. */
+  tabs: WorkspaceTab[];
+  /** href of the tab that is the current page, if it is among the visible tabs. */
+  activeHref: string | null;
+};
+
+/** The workspace that should be open for a path (null for /scan, /account, /more and other pages outside the workspaces). */
+export function openWorkspaceFor(pathname: string, source: readonly Workspace[] = workspaces): WorkspaceKey | null {
+  return activeWorkspace(pathname, source)?.key ?? null;
+}
+
+/** Clicking a workspace opens it; clicking the open one closes it. Only one is ever open. */
+export function toggleWorkspace(open: WorkspaceKey | null, key: WorkspaceKey): WorkspaceKey | null {
+  return open === key ? null : key;
+}
+
+/**
+ * What the desktop sidebar shows. The active page is never hidden: collapsing the active workspace leaves just its current
+ * page visible, so the user can always see where they are.
+ */
+export function sidebarSections(permissions: NavPermissions, pathname: string, open: WorkspaceKey | null, source: readonly Workspace[] = workspaces): SidebarSection[] {
+  const current = activeTab(pathname, source);
+  return visibleWorkspaces(permissions, source).map(workspace => {
+    const active = current?.workspace.key === workspace.key;
+    const expanded = open === workspace.key;
+    const currentTab = active ? workspace.tabs.find(tab => tab.href === current.tab.href) : undefined;
+    return { workspace, active, expanded, tabs: expanded ? workspace.tabs : currentTab ? [currentTab] : [], activeHref: currentTab?.href ?? null };
+  });
+}

@@ -78,8 +78,18 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .side-heading { padding: 0 12px 4px; font-size: .68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #8fb4c3; }
 .side-scan { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 44px; border-radius: 10px; background: #1b6fa3; color: white; text-decoration: none; font-weight: 800; font-size: .92rem; }
 .side-scan:hover, .side-scan[aria-current="page"] { background: #2280b8; }
-.side-scan:focus-visible, .side-link:focus-visible { outline: 2px solid #5eead4; outline-offset: 2px; }
+.side-scan:focus-visible, .side-link:focus-visible, .side-parent:focus-visible, .side-child:focus-visible { outline: 2px solid #5eead4; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .side-link { transition: none; } }
+/* Desktop accordion: a workspace is a button that opens its pages downward inside the sidebar (strong = the workspace of the current page, subordinate = the current page). */
+.side-parent { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; color: #d6e8ed; font: inherit; font-size: .92rem; text-align: left; cursor: pointer; transition: background-color .15s, color .15s; }
+.side-parent:hover { background: #1a5472; color: white; }
+.side-parent[data-active] { background: #1a5472; color: white; font-weight: 700; box-shadow: inset 3px 0 0 #5eead4; }
+.side-sub { margin: 2px 0 6px 21px; padding: 0 0 0 8px; border-left: 1px solid rgba(143,180,195,.35); list-style: none; display: grid; gap: 1px; }
+.side-sub[hidden] { display: none; }
+.side-child { display: flex; align-items: center; min-height: 44px; padding: 6px 12px; border-radius: 8px; color: #b9d2db; font-size: .86rem; text-decoration: none; transition: background-color .15s, color .15s; }
+.side-child:hover { background: rgba(255,255,255,.08); color: white; }
+.side-child[aria-current="page"] { background: rgba(94,234,212,.14); color: #ecfffb; font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .side-parent, .side-child { transition: none; } }
 .main-area { min-width: 0; padding: 0 28px 38px; }
 /* Route-backed workspace sub-navigation: plain links in a strip that scrolls inside itself, never the page. */
 .workspace-tabs { display: flex; gap: 6px; margin: 0; padding: 12px 0 2px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
@@ -87,6 +97,8 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .workspace-tabs a:hover { background: #eef6f7; border-color: #b9cdd7; }
 .workspace-tabs a[aria-current="page"] { background: var(--blue); border-color: var(--blue); color: #fff; }
 @media (prefers-reduced-motion: reduce) { .workspace-tabs a { transition: none; } }
+/* On desktop the sidebar accordion shows these pages, so the strip is for narrow screens only (same 800px breakpoint as the sidebar). */
+@media (min-width: 801px) { .workspace-tabs { display: none; } }
 .topbar { display: flex; align-items: center; justify-content: space-between; min-height: 82px; border-bottom: 1px solid var(--line); gap: 15px; }
 .kpi { transition: border-color .15s, background-color .15s; }
 .kpi:hover { border-color: #b9cdd7; }
