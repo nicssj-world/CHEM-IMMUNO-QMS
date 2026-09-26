@@ -57,11 +57,49 @@ The intended use is point-in-time reconciliation and a future recovery rehearsal
 
 ## Next workstream: Location Master, Morning Talk, Temperature / Humidity
 
-The approved plan is `docs/CHEM-IMMUNO-CBH-NEXT-WORKSTREAM-PLAN.md` (three phases, each released separately through the gates above).
+The approved plan is `docs/CHEM-IMMUNO-CBH-NEXT-WORKSTREAM-PLAN.md` (three phases, each released separately through the gates above). The inventory implementation baseline (closure matrix) remains closed; this workstream does not reopen it.
 
-- **Phase 1 (Navigation + Location Foundation)** is implemented in the repository and verified only on disposable local PostgreSQL/Supabase and local browsers. It has **not** been applied to Production or deployed. Its migration is `supabase/migrations/20260926150000_ci_location_master.sql` (forward-only, additive).
-- Phase 1 environment variables: `NEXT_PUBLIC_APP_ORIGIN` (public origin printed in Location QR labels; defaults to `https://chem-immuno-cbh.vercel.app`) and `PORTAL_ALLOWED_HOSTS` (server-only, comma-separated Portal hostnames allowed in equipment links; defaults to `lab-management-cbh.vercel.app`). Set them in the Vercel Production environment before the Phase 1 deployment if the defaults are not right.
-- Phase 1 also adds a BEFORE INSERT trigger on `ci_stock_movement_lines` (`ci_movement_location_active`) that refuses stock-increasing lines into an inactive location, plus the index `ci_movement_location_idx`. This closes a race in which a receipt or transfer committed concurrently with a deactivation could leave stock in an inactive location.
-- Phase 1 pre-migration check (must return no rows): `select id, code, name from public.ci_locations where code <> btrim(code) or char_length(btrim(code)) not between 1 and 40 or name <> btrim(name) or char_length(btrim(name)) not between 1 and 120;`
-- Owner acceptance that automated tests cannot provide (real iPhone QR scanning, label legibility, Portal link from a phone, Add to Home Screen) is listed in section 23 of the plan.
+| Phase | Status |
+|---|---|
+| 1. Navigation + Location Foundation | **DEPLOYED TO PRODUCTION** (2026-09-26). Authenticated and physical owner acceptance: **PARTIALLY PENDING** (see below). |
+| 2. Morning Talk | NOT STARTED |
+| 3. Temperature / Humidity + QR workflow | NOT STARTED |
+
+### Phase 1 Production rollout record (2026-09-26)
+
+- **Production Supabase:** `nivlnbaveanoawfbrmzz`. Applied migration: `20260926150000_ci_location_master.sql` (forward-only, additive), after a dry run that listed only this migration and printed no warnings (no `SET LOCAL` warning).
+- **Release commit:** `eec5b73348235a7ab5dfcea9fe680e3694bfecbf` ("feat: Phase 1 navigation workspaces and Location Master"), pushed to `main` on top of `9d3ed83`.
+- **Production URL:** `https://chem-immuno-cbh.vercel.app/`. The Git-integrated Vercel Production deployment completed successfully (GitHub commit status "Deployment has completed"; responses served from `sin1`).
+- **Vercel CLI metadata verification: NOT VERIFIED.** The CLI account available on the release machine cannot access the owning Vercel team, so the deployment ID and Ready state were not read through the CLI, and the Production environment variables were not read or set through it. This is an operational/tooling limitation, not a failed deployment. The application ships with safe defaults for `NEXT_PUBLIC_APP_ORIGIN` (`https://chem-immuno-cbh.vercel.app`) and `PORTAL_ALLOWED_HOSTS` (`lab-management-cbh.vercel.app`), so both variables are optional unless the domain changes.
+- **Backup (outside Git):** `D:\Claude workspace\CHEM-IMMUNO-QMS-backups\location-master-pre-20260926-161317` (7 hash-verified logical artifacts with `manifest.json`). No restore rehearsal was run, so this is a hash-verified logical backup, not a demonstrated restorable one.
+- **Pre-check:** the documented `ci_locations` code/name query returned no rows. Production had zero locations, so the backfill touched no rows.
+
+### Verified after rollout
+
+- **Migration and schema (read-only):** the migration ledger shows `20260926150000` applied; `ci_locations` has the new columns with every constraint validated; `ci_location_env_configs` exists with RLS enabled, `SELECT`-only access for `authenticated` and none for `anon`; the location triggers, the ledger trigger `ci_movement_location_active` and the new indexes are present.
+- **Functions and security:** zero SECURITY DEFINER functions in `public`; `ci_private` went from 80 to 88 definer implementations (the 8 new ones); every `ci_private` function fixes its `search_path`; the six new public wrappers are SECURITY INVOKER and not executable by `anon`.
+- **Data baseline unchanged:** 162 active Products (90 CHE, 72 IMM), 353 identifiers, 100 Product relations, 0 stock transactions, movement lines, LOTs, receipts, invoices and vendors, 693 audit rows with the same highest id. A schema diff against the backup showed only Phase 1 additions, and every existing RLS policy was identical, so CHE/IMM isolation was unchanged.
+- **Public deployment (no login):** the Phase 1 routes `/q/{token}`, `/locations/new` and `/locations/qr` returned 404 before the deploy and redirect to `/login` with the return path preserved afterwards; existing routes still redirect to login; login, manifest and icons return 200; security headers are intact. A headless-browser check at 375 and 1280 px confirmed the QR deep link returns through login, the login page has no overflow or page errors, and an unknown Ephis ID is refused with the return path kept.
+- **Production data state:** zero locations and zero inventory transactions. No Production data was created for verification, so Location Detail, printed-QR and full QR-to-detail behaviour have **not** been exercised in Production.
+
+### Still pending (do not treat as passed)
+
+Authenticated UI checks by the owner after login:
+
+- desktop workspace navigation (Scan quick action plus ภาพรวม, คลังสินค้า, ปฏิบัติงาน, รายงาน, จัดการระบบ; Locations under คลังสินค้า)
+- `/locations`, Dashboard, Stock, Products, Reports and Receive
+- mobile bottom navigation
+
+Owner acceptance once a real Production location exists (no fake data is to be created for this):
+
+- scan a printed QR with a real iPhone while logged in
+- scan while logged out and confirm login returns to the location
+- confirm label legibility on the actual label stock and refrigerator conditions
+- open the Portal equipment link from a phone
+- confirm Add to Home Screen and the bottom navigation on the real phone
+
+### Reference
+
+- Phase 1 environment variables: `NEXT_PUBLIC_APP_ORIGIN` (public origin printed in Location QR labels) and `PORTAL_ALLOWED_HOSTS` (server-only, comma-separated Portal hostnames allowed in equipment links). Set them in the Vercel Production environment only if the defaults above stop being right.
+- Phase 1 also added a BEFORE INSERT trigger on `ci_stock_movement_lines` (`ci_movement_location_active`) that refuses stock-increasing lines into an inactive location, plus the index `ci_movement_location_idx`. It closes a race in which a receipt or transfer committed concurrently with a deactivation could leave stock in an inactive location.
 - Morning Talk (Phase 2) and Temperature / Humidity readings, schedules and QR check-in (Phase 3) are not implemented.
