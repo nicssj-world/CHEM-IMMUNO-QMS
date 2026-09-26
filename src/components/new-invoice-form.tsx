@@ -48,6 +48,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
     setError('');
     try {
       const result = await resolveProductScan(raw, symbology);
+      if (result.locationQr) { say('warn', 'นี่คือ QR ตำแหน่งจัดเก็บ', 'ไม่ใช่ Barcode สินค้า · ไม่ได้เพิ่มรายการ'); return; }
       const trusted = result.parsed.warnings.length === 0;
       const lot = trusted ? result.parsed.lot ?? '' : '';
       const expiry = trusted ? result.parsed.expiry ?? '' : '';

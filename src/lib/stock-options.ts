@@ -17,12 +17,15 @@ export async function getStockOptions(warehouseId: string, { includeZero = false
   const [balanceResult, productResult, locationResult] = await Promise.all([
     loadRows ? balances.order('expiry_date').order('lot_number').limit(1000) : Promise.resolve({ data: [], error: null }),
     client.from('ci_products').select('id,product_code,display_name').eq('warehouse_id',warehouseId).eq('active',true).order('product_code').limit(1000),
-    client.from('ci_locations').select('id,code,name').eq('warehouse_id',warehouseId).eq('active',true).order('code'),
+    client.from('ci_locations').select('id,code,name,parent_location_id').eq('warehouse_id',warehouseId).eq('active',true).order('code'),
   ]);
   const error = balanceResult.error?.message ?? productResult.error?.message ?? locationResult.error?.message ?? null;
   const products = (productResult.data ?? []) as PickerProduct[];
   const productMap = new Map(products.map(p => [p.id,p]));
-  const locations = (locationResult.data ?? []) as LocationOption[];
+  // A shelf reads as "parent › code" so identical shelf names in different fridges stay distinguishable; selection still uses the id.
+  const locationRows = (locationResult.data ?? []) as (LocationOption & { parent_location_id: string | null })[];
+  const codeById = new Map(locationRows.map(l => [l.id,l.code]));
+  const locations: LocationOption[] = locationRows.map(l => ({ id: l.id, code: l.code, name: l.name, parent_code: l.parent_location_id ? codeById.get(l.parent_location_id) ?? null : null }));
   const locationMap = new Map(locations.map(l => [l.id,l]));
   const options = ((balanceResult.data ?? []) as { lot_id: string; lot_number: string; expiry_date: string; location_id: string; product_id: string; balance: number }[]).map(b => ({ lot_id: b.lot_id, lot_number: b.lot_number, expiry_date: b.expiry_date, location_id: b.location_id, location_code: locationMap.get(b.location_id)?.code ?? '—', product_code: productMap.get(b.product_id)?.product_code ?? '—', product_name: productMap.get(b.product_id)?.display_name ?? '', balance: Number(b.balance) }));
   return { options, locations, products, error };

@@ -38,9 +38,24 @@ The CLI refuses a `--password` argument because npm can echo command arguments. 
 
 An Admin with active Admin access to both warehouses can provision a user from **ผู้ใช้**. The form accepts Ephis ID, display name, role, warehouse access, active status, and an initial password for new accounts. Updating an existing Ephis ID never changes its password. The browser never supplies a Supabase Auth UUID; the server creates/resolves the internal Auth account, and the database resolves the target UUID from the normalized Ephis ID.
 
+## Modules
+
+### Navigation
+
+The desktop sidebar lists workspaces (ภาพรวม, คลังสินค้า, ปฏิบัติงาน, รายงาน, จัดการระบบ) plus the Scan quick action; each workspace's own pages are route-backed tabs above the page (`src/components/workspace-tabs.tsx`). `src/lib/nav.ts` is the single source for the sidebar, the tabs and the mobile **More** page. Navigation only decides where a link appears: every page, server action and database function still enforces its own role check, and all existing URLs are unchanged. The mobile bottom bar (Home, Stock, Scan, Receive, More) is unchanged.
+
+### Location Master (ตำแหน่งจัดเก็บ)
+
+- `/locations` lists a warehouse's locations (search, type and status filters); `/locations/new`, `/locations/[id]` and `/locations/[id]/edit` create, show and edit them. Admins and supervisors of the location's own warehouse manage locations; every other role reads them.
+- A location has a type (room, refrigerator, freezer, cabinet, shelf, rack, bench, other), an optional parent one level up (refrigerator → shelf), room, storage condition, an optional Portal equipment link, and a stable QR token. Stock is never stored on a location: `/locations/[id]` derives it from the signed ledger for the location and its direct children. A location with stock, or with active children, cannot be deactivated; its code cannot change once ledger history references it. The database refuses any stock-increasing ledger line into an inactive location (`CI_LOCATION_INACTIVE`, enforced under a row lock so it also holds against a concurrent deactivation). Stock can still leave an inactive location, but a reversal or count adjustment that would add stock back requires reactivating the location first.
+- Acceptable temperature / humidity **ranges** are versioned in `ci_location_env_configs` (append-only). They belong to the monitored container (room, refrigerator, freezer, cabinet); shelves inherit their parent's monitoring unless given their own. Readings, schedules and out-of-range workflows are a later phase.
+- QR labels: `/locations/qr` prints 50 × 30 mm labels whose QR opens `{NEXT_PUBLIC_APP_ORIGIN}/q/{token}`. The route requires login and resolves the token under row-level security, so a QR never bypasses authorization. Rotating a token (with a reason) revokes the printed label. The product barcode scanner recognises a Location QR and never treats it as a product barcode.
+- The Portal equipment link is a validated HTTPS link only (allowed hosts in `PORTAL_ALLOWED_HOSTS`); there is no API, sync or copied equipment data.
+
 ## Verification
 
-- `npm test` / `npm run test:unit` run the identity, cookie, and approved workbook unit checks.
+
+- `npm test` / `npm run test:unit` run the identity, cookie, approved workbook, barcode, inventory, navigation, Location Master (ranges, monitor resolution, Portal link, QR) and security unit checks.
 - `npm run test:db` runs the real PostgreSQL import, RLS, ledger, role, and two-session concurrency tests against the disposable database script.
 - `scripts/db/test.ps1` starts/reuses the named loopback-only PostgreSQL test container, creates isolated databases per test suite, applies every migration, runs the tests, then drops the test databases. It never targets a hosted Supabase project.
 - `npm run test:auth:local` starts/resets the local Supabase project and runs the real GoTrue/PostgreSQL Auth integration checks. It is destructive to that local Supabase database and must not be pointed at a hosted project.

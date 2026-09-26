@@ -17,7 +17,7 @@ import { ISSUE_COLUMNS, type IssueAttachment, type VendorIssue } from '@/lib/ven
 
 type Product = { id: string; warehouse_id: number; product_code: string; display_name: string };
 type Vendor = { id: string; name: string };
-type Location = { id: string; warehouse_id: number; code: string; name: string };
+type Location = { id: string; warehouse_id: number; code: string; name: string; parent_code?: string | null };
 type Invoice = { id: string; invoice_number: string; invoice_date: string; status: string; vendor_id: string };
 type Line = { invoice_line_id: string; warehouse_id: number; product_id: string; ordered_quantity: number; received_quantity: number; remaining_quantity: number };
 
@@ -29,12 +29,14 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const [productsResult, vendorsResult, locationsResult, invoicesResult] = client ? await Promise.all([
     client.from('ci_products').select('id,warehouse_id,product_code,display_name').eq('active',true).in('warehouse_id',warehouseIds).order('product_code').limit(300),
     client.from('ci_vendors').select('id,name').eq('active',true).order('name').limit(100),
-    client.from('ci_locations').select('id,warehouse_id,code,name').eq('active',true).in('warehouse_id',warehouseIds).order('code').limit(200),
+    client.from('ci_locations').select('id,warehouse_id,code,name,parent_location_id').eq('active',true).in('warehouse_id',warehouseIds).order('code').limit(200),
     client.from('ci_invoices').select('id,invoice_number,invoice_date,status,vendor_id').order('created_at',{ascending:false}).limit(30),
   ]) : [{data:[],error:null},{data:[],error:null},{data:[],error:null},{data:[],error:null}];
   const products = (productsResult.data ?? []) as Product[];
   const vendors = (vendorsResult.data ?? []) as Vendor[];
-  const locations = (locationsResult.data ?? []) as Location[];
+  const locationRows = (locationsResult.data ?? []) as (Location & { parent_location_id: string | null })[];
+  const locationCodes = new Map(locationRows.map(l => [l.id,l.code]));
+  const locations: Location[] = locationRows.map(l => ({ id: l.id, warehouse_id: l.warehouse_id, code: l.code, name: l.name, parent_code: l.parent_location_id ? locationCodes.get(l.parent_location_id) ?? null : null }));
   const invoices = (invoicesResult.data ?? []) as Invoice[];
   const invoice = params.invoice ? invoices.find(item => item.id === params.invoice) ?? (client ? (await client.from('ci_invoices').select('id,invoice_number,invoice_date,status,vendor_id').eq('id',params.invoice).maybeSingle()).data as Invoice | null : null) : null;
   const { data: lineData, error: lineError } = invoice && client ? await client.from('ci_invoice_line_progress').select('invoice_line_id,warehouse_id,product_id,ordered_quantity,received_quantity,remaining_quantity').eq('invoice_id',invoice.id).limit(100) : {data:[],error:null};

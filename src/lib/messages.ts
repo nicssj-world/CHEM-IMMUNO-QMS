@@ -116,6 +116,20 @@ const codeMessages: Record<string, string> = {
   CI_STALE_DATA: 'มีผู้อื่นแก้ข้อมูลนี้ก่อนหน้า · โหลดหน้าใหม่แล้วแก้อีกครั้ง',
   CI_REASON_REQUIRED: 'กรุณาระบุเหตุผล',
   CI_INVOICE_NOTHING_OUTSTANDING: 'Invoice นี้ไม่มีรายการค้างรับ',
+  CI_STALE_UPDATE: 'มีผู้อื่นแก้ข้อมูลนี้ก่อนหน้า · โหลดหน้าใหม่แล้วแก้อีกครั้ง',
+  CI_LOCATION_CODE_EXISTS: 'รหัสตำแหน่งนี้ถูกใช้แล้วในคลังนี้',
+  CI_LOCATION_FIELD_INVALID: 'ข้อมูลตำแหน่งไม่ถูกต้อง · ตรวจรหัส ชื่อ ประเภท และลิงก์ Portal',
+  CI_LOCATION_PARENT_INVALID: 'ตำแหน่งแม่ไม่ถูกต้อง · ต้องอยู่ในคลังเดียวกันและไม่ใช่ตัวเอง',
+  CI_LOCATION_PARENT_INACTIVE: 'ตำแหน่งแม่ปิดการใช้งานอยู่ · เปิดตำแหน่งแม่ก่อน',
+  CI_LOCATION_HIERARCHY_DEPTH: 'ซ้อนตำแหน่งได้ไม่เกิน 2 ระดับ (เช่น ตู้เย็น → ชั้นวาง)',
+  CI_LOCATION_HAS_CHILDREN: 'ตำแหน่งนี้มีตำแหน่งย่อยอยู่ จึงย้ายไปอยู่ใต้ตำแหน่งอื่นไม่ได้',
+  CI_LOCATION_HAS_ACTIVE_CHILDREN: 'ยังมีตำแหน่งย่อยที่ใช้งานอยู่ · ปิดตำแหน่งย่อยก่อน',
+  CI_LOCATION_HAS_STOCK: 'ตำแหน่งนี้ยังมีสินค้าคงเหลือ · ย้ายหรือปรับยอดออกให้หมดก่อนปิดการใช้งาน',
+  CI_LOCATION_CODE_IMMUTABLE: 'รหัสตำแหน่งนี้ถูกใช้ในประวัติแล้ว แก้ไขไม่ได้',
+  CI_LOCATION_WAREHOUSE_IMMUTABLE: 'ย้ายตำแหน่งไปคลังอื่นไม่ได้',
+  CI_LOCATION_INACTIVE: 'ตำแหน่งนี้ปิดการใช้งานแล้ว · รับเข้า ย้ายเข้า หรือเพิ่มยอดเข้าตำแหน่งนี้ไม่ได้ · เปิดใช้งานตำแหน่งก่อน',
+  CI_ENV_CONFIG_INVALID: 'ช่วงอุณหภูมิ/ความชื้นไม่ถูกต้อง · ตรวจค่าต่ำสุด สูงสุด และหน่วย',
+  CI_LOCATION_QR_NOT_A_BARCODE: 'นี่คือ QR ตำแหน่งจัดเก็บ ไม่ใช่ Barcode สินค้า · เสนอเป็น Barcode สินค้าไม่ได้',
 };
 
 // Check-constraint names that reach users through PostgREST when a value slips past the form.
@@ -123,6 +137,9 @@ const constraintMessages: Record<string, string> = {
   ci_vendors_tax_id_check: 'เลขประจำตัวผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก',
   ci_vendors_tax_branch_check: 'รหัสสาขาต้องเป็นตัวเลข 5 หลัก',
   ci_vendors_email_check: 'รูปแบบอีเมลไม่ถูกต้อง',
+  ci_locations_portal_url_chk: 'ลิงก์ Portal ต้องขึ้นต้นด้วย https:// และไม่เกิน 500 ตัวอักษร',
+  ci_locations_code_format_chk: 'รหัสตำแหน่งต้องมี 1–40 ตัวอักษรและไม่มีช่องว่างหน้าหลัง',
+  ci_locations_name_format_chk: 'ชื่อตำแหน่งต้องมี 1–120 ตัวอักษรและไม่มีช่องว่างหน้าหลัง',
 };
 
 const thai = /[฀-๿]/;

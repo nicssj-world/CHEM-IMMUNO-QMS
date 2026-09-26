@@ -48,6 +48,16 @@ test('privileged RPC implementations stay private behind contract-preserving inv
       `);
       assert.equal(Number(publicDefiners.rows[0].count), 0, 'public ci_* RPCs must not be SECURITY DEFINER');
 
+      // Function-level hardening: every private function (helpers, triggers and RPC implementations alike) fixes its own search_path.
+      const unfixedSearchPath = await client.query<{ proname: string }>(`
+        SELECT p.proname
+        FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'ci_private' AND NOT (coalesce(p.proconfig, '{}'::text[]) @> ARRAY['search_path=""'])
+        ORDER BY p.proname
+      `);
+      assert.deepEqual(unfixedSearchPath.rows.map((row) => row.proname), [], 'every ci_private function must declare set search_path = \'\'');
+
       const wrappers = await client.query<{
         proname: string;
         identity_arguments: string;

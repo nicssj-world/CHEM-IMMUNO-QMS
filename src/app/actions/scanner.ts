@@ -5,8 +5,9 @@ import { requireAccess, canMutate } from '@/lib/auth';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { logUserMessage } from '@/lib/messages';
+import { locationQrScan, looksLikeLocationQr } from '@/lib/location-qr';
 
-export type ScanResolution = { parsed: ParsedBarcode; productId?: string; productCode?: string; invoiceLineId?: string; message?: string; scanId?: string; otherWarehouse?: boolean };
+export type ScanResolution = { parsed: ParsedBarcode; locationQr?: { path: string | null }; productId?: string; productCode?: string; invoiceLineId?: string; message?: string; scanId?: string; otherWarehouse?: boolean };
 
 /** Approved identifier matches for a scan as product id -> warehouse id. */
 async function matchApprovedIdentifiers(client: SupabaseClient, parsed: ParsedBarcode, raw: string) {
@@ -29,6 +30,8 @@ export async function resolveScan(raw: string, symbology: string, warehouseId: n
   const access = await requireAccess();
   const selected = access.warehouses.find(w => Number(w.id) === warehouseId);
   if (!selected || !canMutate(selected.role)) throw new Error('CI_ACCESS_DENIED');
+  const locationQr = locationQrScan(raw, symbology);
+  if (locationQr) return locationQr;
   const client = await createClient();
   if (!client) throw new Error('ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล');
   const parsed = parseBarcode(raw, symbology);
@@ -59,6 +62,8 @@ export async function resolveScan(raw: string, symbology: string, warehouseId: n
 
 export async function proposeScanMapping(productId: string, kind: string, value: string, raw: string) {
   await requireAccess();
+  // Server-side backstop for the scanner guard: a Location QR must never be proposed as a product barcode, whatever the client sent.
+  if (looksLikeLocationQr(raw) || looksLikeLocationQr(value)) throw new Error('CI_LOCATION_QR_NOT_A_BARCODE');
   const client = await createClient();
   if (!client) throw new Error('ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล');
   const { data, error } = await client.rpc('ci_propose_identifier_mapping', { p_product_id: productId, p_kind: kind, p_value: value, p_raw: raw });
@@ -106,13 +111,15 @@ export async function removeInvoiceAttachment(attachmentId: string) {
   if (error) throw new Error(logUserMessage('scanner', error));
 }
 
-export type ProductScan = { parsed: ParsedBarcode; product?: { id: string; code: string; name: string; warehouseId: number }; message?: string };
+export type ProductScan = { parsed: ParsedBarcode; locationQr?: { path: string | null }; product?: { id: string; code: string; name: string; warehouseId: number }; message?: string };
 
 /** Resolves a scan to a product in any warehouse the user can receive into, for building an invoice before it exists. */
 export async function resolveProductScan(raw: string, symbology: string): Promise<ProductScan> {
   const access = await requireAccess();
   const writable = access.warehouses.filter(w => canMutate(w.role)).map(w => Number(w.id));
   if (!writable.length) throw new Error('CI_ACCESS_DENIED');
+  const locationQr = locationQrScan(raw, symbology);
+  if (locationQr) return locationQr;
   const client = await createClient();
   if (!client) throw new Error('ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล');
   const parsed = parseBarcode(raw, symbology);

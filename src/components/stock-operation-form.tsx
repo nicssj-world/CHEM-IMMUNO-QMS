@@ -6,7 +6,7 @@ import { ConfirmForm } from './confirm-form';
 import { SubmitButton } from './submit-button';
 
 export type StockOption = { lot_id: string; lot_number: string; expiry_date: string; location_id: string; location_code: string; product_code: string; product_name: string; balance: number };
-export type LocationOption = { id: string; code: string; name: string };
+export type LocationOption = { id: string; code: string; name: string; parent_code?: string | null };
 type Kind = 'transfer' | 'adjust' | 'dispose';
 
 const submitLabel = { transfer: 'ยืนยันย้ายตำแหน่ง', adjust: 'ยืนยันปรับยอด', dispose: 'ยืนยันกำจัดของหมดอายุ' };
@@ -31,7 +31,7 @@ export function StockOperationForm({ kind, options, locations, submissionKey, wa
       {options.map((item,i) => <option key={`${item.lot_id}:${item.location_id}`} value={i}>{showProduct ? `${item.product_code} · ` : ''}LOT {item.lot_number} · หมดอายุ {item.expiry_date} · {item.location_code} · คงเหลือ {Number(item.balance)}</option>)}
     </select></label>
     {selected && <p className="notice text-sm">{showProduct && <><strong>{selected.product_code}</strong> · {selected.product_name} · </>}คงเหลือ {Number(selected.balance)} · หมดอายุ {selected.expiry_date} · ตำแหน่ง {selected.location_code}</p>}
-    {kind === 'transfer' && <label className="field">ปลายทาง<select className="input" name="to_location_id" required defaultValue=""><option value="">เลือกตำแหน่งปลายทาง</option>{locations.filter(l => l.id !== selected?.location_id).map(l => <option key={l.id} value={l.id}>{l.code} · {l.name}</option>)}</select></label>}
+    {kind === 'transfer' && <label className="field">ปลายทาง<select className="input" name="to_location_id" required defaultValue=""><option value="">เลือกตำแหน่งปลายทาง</option>{locations.filter(l => l.id !== selected?.location_id).map(l => <option key={l.id} value={l.id}>{l.parent_code ? `${l.parent_code} › ` : ''}{l.code} · {l.name}</option>)}</select></label>}
     {kind === 'adjust' ? <fieldset className="grid gap-2"><legend className="field mb-2">ทิศทางและจำนวนที่ปรับ</legend>
       <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="ทิศทางการปรับ">{([[1,'เพิ่มยอด (+)'],[-1,'ลดยอด (−)']] as const).map(([value,text]) => <label key={value} className={`button secondary cursor-pointer ${direction === value ? '!border-[var(--blue)] !bg-[#e8f1f8]' : ''}`}><input type="radio" className="sr-only" name="direction" checked={direction === value} onChange={() => setDirection(value)}/>{text}</label>)}</div>
       <input className="input" aria-label="จำนวนที่ปรับ" type="number" inputMode="decimal" min="0.001" step="0.001" value={amount} onChange={e => setAmount(e.target.value)} required/>

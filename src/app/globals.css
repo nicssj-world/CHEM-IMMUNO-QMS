@@ -81,6 +81,12 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .side-scan:focus-visible, .side-link:focus-visible { outline: 2px solid #5eead4; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .side-link { transition: none; } }
 .main-area { min-width: 0; padding: 0 28px 38px; }
+/* Route-backed workspace sub-navigation: plain links in a strip that scrolls inside itself, never the page. */
+.workspace-tabs { display: flex; gap: 6px; margin: 0; padding: 12px 0 2px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.workspace-tabs a { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font-size: .9rem; font-weight: 650; text-decoration: none; white-space: nowrap; transition: background-color .15s, border-color .15s, color .15s; }
+.workspace-tabs a:hover { background: #eef6f7; border-color: #b9cdd7; }
+.workspace-tabs a[aria-current="page"] { background: var(--blue); border-color: var(--blue); color: #fff; }
+@media (prefers-reduced-motion: reduce) { .workspace-tabs a { transition: none; } }
 .topbar { display: flex; align-items: center; justify-content: space-between; min-height: 82px; border-bottom: 1px solid var(--line); gap: 15px; }
 .kpi { transition: border-color .15s, background-color .15s; }
 .kpi:hover { border-color: #b9cdd7; }
@@ -141,9 +147,20 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   .desktop-table { display: none; }
 }
 @media (min-width: 801px) { .mobile-card-list { display: none; } }
+/* Location QR labels: 50 x 30 mm, printed on a portrait A4 page (named page, so reports keep their landscape default). */
+.label-sheet { page: location-labels; display: grid; grid-template-columns: repeat(auto-fill, 50mm); gap: 4mm; justify-content: start; }
+.location-label { width: 50mm; height: 30mm; padding: 1.5mm; display: grid; grid-template-columns: 24mm minmax(0, 1fr); gap: 1.5mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; border: 1px solid #8aa0ab; border-radius: 1mm; background: #fff; color: #000; }
+.location-label img { width: 24mm; height: 24mm; align-self: center; }
+.location-label-text { display: flex; flex-direction: column; gap: .4mm; min-width: 0; }
+.location-label-code { font: 700 8.5pt/1.1 ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+.location-label-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 7pt; line-height: 1.15; }
+.location-label-meta { font-size: 6.5pt; line-height: 1.15; overflow-wrap: anywhere; }
+.location-label-foot { margin-top: auto; font-size: 5.5pt; line-height: 1.1; color: #333; }
 @page { size: A4 landscape; margin: 12mm; }
+@page location-labels { size: A4 portrait; margin: 8mm; }
 @media print {
   .print-only { display: block; }
+  .workspace-tabs { display: none !important; }
   body { background: white; color: #111; font-family: var(--font-plex), Tahoma, sans-serif; font-size: 10pt; }
   .sidebar, .topbar, .bottom-nav, .print-hide { display: none !important; }
   .app-grid, .main-area { display: block; min-height: 0; padding: 0; }
