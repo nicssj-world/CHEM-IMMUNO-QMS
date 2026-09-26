@@ -50,12 +50,14 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
     { ephis: 'e2estaff', role: 'staff', warehouseIds: [1] },
     { ephis: 'e2esupervisor', role: 'supervisor', warehouseIds: [2] },
     { ephis: 'e2eviewer', role: 'viewer', warehouseIds: [1] },
+    // Supervises both warehouses without being an admin: the "dual manager" who may manage ALL-scope Morning Talks.
+    { ephis: 'e2edual', role: 'supervisor', warehouseIds: [1, 2], name: 'Synthetic dual supervisor' },
   ] as const) {
     const roleUser = await admin.auth.admin.createUser({ email: `ephis.${identity.ephis}@chem-immuno.internal`, password, email_confirm: true });
     expect(roleUser.error).toBeNull();
     const provisioned = await client.rpc('ci_provision_user', {
       p_ephis_id: identity.ephis,
-      p_display_name: `Synthetic ${identity.role}`,
+      p_display_name: 'name' in identity ? identity.name : `Synthetic ${identity.role}`,
       p_role: identity.role,
       p_warehouse_ids: identity.warehouseIds,
       p_active: true,
@@ -95,6 +97,21 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   const locationTokens = await admin.from('ci_locations').select('id,qr_token').in('id', [fridge.data as string, fridgeShelf.data as string, immFridge.data as string]);
   expect(locationTokens.error).toBeNull();
   const tokenOf = (id: string) => locationTokens.data!.find(row => row.id === id)!.qr_token as string;
+  // Phase 2 fixtures: real Morning Talks created through the published RPCs by the people who would create them.
+  const profiles = await admin.from('ci_user_profiles').select('user_id,ephis_id');
+  expect(profiles.error).toBeNull();
+  const uid = (ephis: string) => profiles.data!.find(row => row.ephis_id === ephis)!.user_id as string;
+  const dual = createClient(url, publishable, { auth: { persistSession: false, autoRefreshToken: false } });
+  expect((await dual.auth.signInWithPassword({ email: 'ephis.e2edual@chem-immuno.internal', password })).error).toBeNull();
+  const cancelTalk = await dual.rpc('ci_save_morning_talk', { p: { scope: 'CHE', title: 'E2E Morning Talk to cancel', attendees: [uid('e2eviewer')], checklist: [], actions: [] } });
+  expect(cancelTalk.error).toBeNull();
+  const cheTalk = await dual.rpc('ci_save_morning_talk', { p: { scope: 'CHE', title: 'E2E Morning Talk CHE', agenda: 'E2E agenda', attendees: [uid('e2estaff'), uid('e2eviewer'), uid('e2edual')],
+    checklist: [{ title: 'ตรวจเครื่อง E2E' }, { title: 'ตรวจน้ำยา E2E' }], actions: [{ title: 'ส่งซ่อมเครื่อง E2E', owner_id: uid('e2estaff'), due_date: '2020-01-01' }] } });
+  expect(cheTalk.error).toBeNull();
+  const allTalk = await dual.rpc('ci_save_morning_talk', { p: { scope: 'ALL', title: 'E2E Morning Talk ALL', agenda: 'E2E all agenda', attendees: [uid('e2estaff'), uid('e2esupervisor'), uid('e2eviewer')], checklist: [{ title: 'ตรวจความพร้อมทั้งสองคลัง E2E' }], actions: [] } });
+  expect(allTalk.error).toBeNull();
+  const bangkokNow = new Date(Date.now() + 7 * 3600_000).toISOString();
+  const bangkokMonth = bangkokNow.slice(0, 7);
   const invoice = await client.rpc('ci_create_invoice', { p_data: { vendor_id: vendor.data, invoice_number: 'E2E-INV-1', invoice_date: '2026-09-24', lines: [{ product_id: chemProduct, quantity: 10 }] } });
   expect(invoice.error).toBeNull();
   const invoiceLine = await admin.from('ci_invoice_lines').select('id').eq('invoice_id', invoice.data).single();
@@ -212,6 +229,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
     '/reports/monthly?warehouse=CHE&month=2026-09', '/more', '/vendors?warehouse=CHE',
     '/admin/users', '/scan/review?warehouse=CHE', '/audit?warehouse=CHE',
     '/locations?warehouse=CHE', '/locations/new?warehouse=CHE', `/locations/${fridge.data}`, `/locations/${fridgeShelf.data}`, `/locations/${fridge.data}/edit`, '/locations/qr?warehouse=CHE',
+    '/morning-talk', '/morning-talk/history', '/morning-talk/actions', '/morning-talk/new', `/morning-talk/${cheTalk.data}`, `/morning-talk/${cheTalk.data}/edit`, `/reports/morning-talk?month=${bangkokMonth}`,
   ];
   for (const width of [375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
@@ -238,7 +256,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
       const smallTargets = await page.locator('.button, .input, .bottom-nav a').evaluateAll(elements => elements
         .map(element => Math.round((element as HTMLElement).getBoundingClientRect().height)).filter(height => height > 0 && height < 44));
       expect(smallTargets, `${route} has undersized touch targets`).toEqual([]);
-      if (width === 375 && ['/', '/receive?warehouse=CHE', '/reports/monthly?warehouse=CHE&month=2026-09', '/locations?warehouse=CHE', '/locations/new?warehouse=CHE', `/locations/${fridge.data}`].includes(route)) {
+      if (width === 375 && ['/', '/receive?warehouse=CHE', '/reports/monthly?warehouse=CHE&month=2026-09', '/locations?warehouse=CHE', '/locations/new?warehouse=CHE', `/locations/${fridge.data}`, '/morning-talk', '/morning-talk/new'].includes(route)) {
         await page.addScriptTag({ content: axe.source });
         const violations = await page.evaluate(async () => {
           type AxeApi = {
@@ -271,12 +289,12 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/');
   const sidebar = page.getByRole('navigation', { name: 'เมนูหลัก' });
-  const workspaceNames = ['ภาพรวม', 'คลังสินค้า', 'ปฏิบัติงาน', 'รายงาน', 'จัดการระบบ'];
+  const workspaceNames = ['ภาพรวม', 'Morning Talk', 'คลังสินค้า', 'ปฏิบัติงาน', 'รายงาน', 'จัดการระบบ'];
   const parent = (name: string) => sidebar.getByRole('button', { name, exact: true });
   await expect(sidebar.getByRole('link', { name: 'สแกน Barcode' }), 'the Scan quick action stays at the top').toBeVisible();
-  await expect(sidebar.getByRole('button'), 'five workspace accordion controls').toHaveCount(5);
+  await expect(sidebar.getByRole('button'), 'six workspace accordion controls').toHaveCount(6);
   for (const name of workspaceNames) await expect(parent(name)).toBeVisible();
-  await expect(page.getByText(/Morning Talk|อุณหภูมิ ?\/ ?ความชื้น/), 'no placeholder links for later phases').toHaveCount(0);
+  await expect(page.getByText(/อุณหภูมิ ?\/ ?ความชื้น/), 'no placeholder links for the later Temperature/Humidity phase').toHaveCount(0);
   // The current workspace is open by itself; the others are closed and render no links.
   await expect(parent('ภาพรวม')).toHaveAttribute('aria-expanded', 'true');
   for (const name of workspaceNames.slice(1)) await expect(parent(name)).toHaveAttribute('aria-expanded', 'false');
@@ -391,7 +409,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.goto('/more');
   for (const heading of workspaceNames) await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'คลังสินค้า', exact: true }).getByRole('link', { name: 'ตำแหน่งจัดเก็บ' })).toBeVisible();
-  await expect(page.getByText(/Morning Talk|อุณหภูมิ ?\/ ?ความชื้น/)).toHaveCount(0);
+  await expect(page.getByText(/อุณหภูมิ ?\/ ?ความชื้น/)).toHaveCount(0);
   await page.setViewportSize({ width: 1280, height: 900 });
 
   // ---- Phase 1: Location Master through the UI ---------------------------------------------------------------------------
@@ -710,6 +728,124 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   expect((await manifest.json()).display).toBe('standalone');
   for (const icon of ['/favicon-64.png', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png', '/apple-touch-icon.png']) expect((await request.get(icon)).ok()).toBeTruthy();
 
+
+  // ---- Phase 2: Morning Talk as a dual-warehouse manager (admin of both warehouses) ----------------------------------------------
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/');
+  await expect(page.getByRole('link', { name: /^วันนี้ Morning Talk: มี 3 รายการวันนี้/ }), 'the compact dashboard line').toBeVisible();
+  await page.goto('/morning-talk/history');
+  const talkSidebar = page.getByRole('navigation', { name: 'เมนูหลัก' });
+  await expect(talkSidebar.getByRole('button', { name: 'Morning Talk', exact: true }), 'the desktop accordion opens the Morning Talk workspace').toHaveAttribute('aria-expanded', 'true');
+  await expect(talkSidebar.getByRole('link', { name: 'วันนี้', exact: true })).toBeVisible();
+  await expect(talkSidebar.getByRole('link', { name: 'ประวัติ', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(talkSidebar.getByRole('link', { name: 'งานค้าง', exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: /^เมนูย่อย/ }), 'no horizontal tab strip on desktop').toBeHidden();
+  await page.goto('/reports/morning-talk?month=' + bangkokMonth);
+  await expect(talkSidebar.getByRole('button', { name: 'รายงาน', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await expect(talkSidebar.getByRole('link', { name: 'Morning Talk', exact: true })).toHaveAttribute('aria-current', 'page');
+
+  await page.goto('/morning-talk');
+  await expect(page.getByRole('heading', { name: 'Morning Talk วันนี้' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'E2E Morning Talk CHE' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'E2E Morning Talk ALL' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /รอให้คุณรับทราบ/ }), 'the admin is not an attendee, so there is nothing to acknowledge').toHaveCount(0);
+  await expect(page.getByText('รับทราบ 0/3').first(), 'attendee progress x/y').toBeVisible();
+
+  // A manager can tick the checklist; the copy that follows must not inherit that state.
+  await page.goto(`/morning-talk/${cheTalk.data}`);
+  await page.getByRole('checkbox', { name: /ตรวจเครื่อง E2E/ }).click();
+  await expect(page.getByRole('checkbox', { name: /ตรวจเครื่อง E2E/ })).toBeChecked();
+  await expect(page.getByText(/เสร็จเมื่อ/)).toBeVisible();
+  await expect(page.getByRole('link', { name: 'แก้ไข', exact: true })).toBeVisible();
+
+  // Create from the UI: ALL is offered because this account supervises both warehouses; copy-from-previous brings agenda + checklist only.
+  await page.goto('/morning-talk/new');
+  const scopeSelect = page.getByLabel('ขอบเขต');
+  await expect(scopeSelect.locator('option')).toHaveText([/ทั้งสองคลัง/, /Clinical Chemistry/, /Immunology/]);
+  await scopeSelect.selectOption('CHE');
+  await page.getByRole('button', { name: 'คัดลอกหัวข้อจากครั้งก่อน' }).click();
+  await expect(page.getByLabel('รายการตรวจสอบข้อ 1')).toHaveValue('ตรวจเครื่อง E2E');
+  await expect(page.getByLabel('รายการตรวจสอบข้อ 2')).toHaveValue('ตรวจน้ำยา E2E');
+  await expect(page.getByLabel(/วาระ/)).toHaveValue('E2E agenda');
+  await page.getByLabel('หัวข้อ', { exact: true }).fill('E2E Morning Talk จากหน้าเว็บ');
+  await page.getByRole('button', { name: 'ทุกคนในขอบเขต' }).click();
+  await expect(page.getByRole('checkbox', { name: /Synthetic staff/ })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /Synthetic supervisor$/ }), 'an IMM-only user is not offered for a CHE talk').toHaveCount(0);
+  await page.getByRole('button', { name: 'เพิ่มงาน' }).click();
+  await page.getByLabel('งานที่ต้องทำ').fill('ตรวจตู้เย็น E2E');
+  const ownerOptions = await page.getByLabel('ผู้รับผิดชอบ').locator('option').allTextContents();
+  expect(ownerOptions.join('|'), 'a viewer can attend but is never offered as an action owner').not.toContain('Synthetic viewer');
+  await page.getByLabel('ผู้รับผิดชอบ').selectOption({ label: 'Synthetic staff' });
+  await page.getByRole('button', { name: 'สร้าง Morning Talk' }).click();
+  await expect(page).toHaveURL(/\/morning-talk\/[0-9a-f-]{36}\?/);
+  await expect(page.getByText(/สร้าง Morning Talk แล้ว/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'E2E Morning Talk จากหน้าเว็บ' })).toBeVisible();
+  await expect(page.getByText(/ผู้เข้าร่วม · รับทราบ 0\/\d+/)).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: /ตรวจเครื่อง E2E/ }), 'the copied checklist starts unticked').not.toBeChecked();
+  // Edit: rename, keep everything else; the stale-version guard is exercised by the database suite.
+  await page.getByRole('link', { name: 'แก้ไข', exact: true }).click();
+  await expect(page.getByLabel('ขอบเขต')).toHaveAttribute('readonly', '');
+  await page.getByLabel('หัวข้อ', { exact: true }).fill('E2E Morning Talk จากหน้าเว็บ (แก้ไข)');
+  await page.getByRole('button', { name: 'บันทึกการแก้ไข' }).click();
+  await expect(page.getByRole('heading', { name: 'E2E Morning Talk จากหน้าเว็บ (แก้ไข)' })).toBeVisible();
+  await expect(page.getByText(/บันทึกการแก้ไขแล้ว/)).toBeVisible();
+
+  // Cancel needs a reason, is confirmed, and never deletes.
+  await page.goto(`/morning-talk/${cancelTalk.data}`);
+  page.once('dialog', dialog => void dialog.accept());
+  await page.getByLabel('เหตุผลที่ยกเลิก').fill('จัดผิดวัน E2E');
+  await page.getByRole('button', { name: 'ยกเลิก Morning Talk', exact: true }).click();
+  await expect(page.getByText('ยกเลิก Morning Talk แล้ว')).toBeVisible();
+  await expect(page.getByText(/ยกเลิกแล้ว/).first()).toBeVisible();
+  await expect(page.getByText(/เหตุผล: จัดผิดวัน E2E/)).toBeVisible();
+  await expect(page.getByRole('link', { name: 'แก้ไข', exact: true }), 'a cancelled talk cannot be edited').toHaveCount(0);
+
+  // History: search, scope filter and the cancelled badge.
+  await page.goto('/morning-talk/history?q=E2E');
+  await expect(page.getByRole('link', { name: /E2E Morning Talk CHE/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /E2E Morning Talk to cancel/ })).toContainText('ยกเลิกแล้ว');
+  await page.goto('/morning-talk/history?q=' + encodeURIComponent('ทั้งสองคลัง E2E'));
+  await expect(page.getByText('ไม่พบ Morning Talk ตามเงื่อนไขที่เลือก')).toBeVisible();
+  await page.goto('/morning-talk/history?scope=ALL');
+  await expect(page.getByRole('link', { name: /E2E Morning Talk ALL/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /E2E Morning Talk CHE/ })).toHaveCount(0);
+  await page.goto('/morning-talk/history?scope=IMM');
+  await expect(page.getByText('ไม่พบ Morning Talk ตามเงื่อนไขที่เลือก')).toBeVisible();
+
+  // Open actions: overdue first with an icon + word, filters, and a link back to the talk.
+  await page.goto('/morning-talk/actions');
+  const overdueRow = page.locator('li', { hasText: 'ส่งซ่อมเครื่อง E2E' });
+  await expect(overdueRow.getByText('เกินกำหนด').first()).toBeVisible();
+  await expect(overdueRow.getByRole('link', { name: /จาก: E2E Morning Talk CHE/ })).toBeVisible();
+  await page.goto('/morning-talk/actions?mine=1');
+  await expect(page.getByText('ไม่มีงานค้างตามเงื่อนไขนี้')).toBeVisible();
+  await page.goto('/morning-talk/actions?overdue=1&scope=CHE');
+  await expect(page.locator('li', { hasText: 'ส่งซ่อมเครื่อง E2E' })).toBeVisible();
+  await expect(page.locator('li', { hasText: 'ตรวจตู้เย็น E2E' }), 'an action without a due date is not overdue').toHaveCount(0);
+
+  // Attention: a manager sees the overdue action of a scope they manage even though they do not own it.
+  await page.goto('/attention?warehouse=CHE&type=mt_overdue');
+  await expect(page.getByRole('link', { name: /ส่งซ่อมเครื่อง E2E/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /^งาน Morning Talk เกินกำหนด 1$/ })).toBeVisible();
+  await page.goto('/attention?warehouse=CHE&type=mt_unack');
+  // The admin picked "everyone in scope" for the talk created above, so that talk (and only that one) awaits their own acknowledgement.
+  await expect(page.getByRole('link', { name: /^E2E Morning Talk จากหน้าเว็บ \(แก้ไข\)/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /^Morning Talk รอรับทราบ 1$/ })).toBeVisible();
+
+  // Printable report.
+  await page.goto('/reports/morning-talk?month=' + bangkokMonth);
+  await expect(page.getByRole('heading', { name: 'รายงาน Morning Talk ประจำเดือน' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'E2E Morning Talk CHE' })).toBeVisible();
+  const talkReportPdf = await page.pdf({ format: 'A4', landscape: true, printBackground: true });
+  expect(talkReportPdf.length).toBeGreaterThan(1000);
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.getByRole('button', { name: 'พิมพ์ / บันทึก PDF' })).toBeHidden();
+  await page.emulateMedia({ media: 'screen' });
+  await page.goto('/reports/morning-talk?month=2026-13');
+  await expect(page.getByText('เดือนรายงานไม่ถูกต้อง')).toBeVisible();
+  await page.goto('/morning-talk/not-a-uuid');
+  await expect(page.getByRole('heading', { name: 'ไม่พบข้อมูลที่ต้องการ' })).toBeVisible();
+
   async function signInAs(ephisId: string) {
     await page.goto('/login');
     await page.getByRole('textbox', { name: 'Ephis ID' }).fill(ephisId);
@@ -748,6 +884,51 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.goto(`/q/${immToken}`);
   await expect(page.getByText(generic), 'a QR from a warehouse this account cannot open looks like any unknown QR').toBeVisible();
   await expectNotFound(`/locations/${immFridge.data}`, "another warehouse's location is indistinguishable from a missing one");
+  // ---- Phase 2: Morning Talk as CHE staff on a phone ----------------------------------------------------------------------------
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto('/');
+  await expect(page.getByText(/Morning Talk: รับทราบแล้ว 0\/3 · ยังไม่รับทราบ 3/)).toBeVisible();
+  await page.goto('/morning-talk');
+  await expect(page.getByRole('link', { name: /สร้าง Morning Talk/ }), 'staff cannot create').toHaveCount(0);
+  await expect(page.getByRole('heading', { name: /รอให้คุณรับทราบ \(3\)/ }), 'the prominent acknowledge card').toBeVisible();
+  await expect(page.getByText(/ไม่ใช่การลงนาม/)).toBeVisible();
+  await page.getByRole('button', { name: 'รับทราบ' }).first().click();
+  await expect(page.getByRole('heading', { name: /รอให้คุณรับทราบ \(2\)/ })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 'no horizontal overflow at 375px').toBeLessThanOrEqual(2);
+  // The sticky acknowledge button on the talk page.
+  await page.goto(`/morning-talk/${allTalk.data}`);
+  const ackButton = page.getByRole('button', { name: 'รับทราบ', exact: true });
+  await expect(ackButton).toBeVisible();
+  const ackBox = await ackButton.boundingBox();
+  expect(ackBox && ackBox.height >= 44, 'the acknowledge target is at least 44px').toBeTruthy();
+  await ackButton.click();
+  await expect(page.getByText(/รับทราบแล้ว · /).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'รับทราบ', exact: true })).toHaveCount(0);
+  await page.goto('/attention?warehouse=CHE&type=mt_unack');
+  await expect(page.getByRole('link', { name: /^E2E Morning Talk จากหน้าเว็บ/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /^Morning Talk รอรับทราบ 1$/ })).toBeVisible();
+  // An attendee with work rights ticks the checklist, and the owner completes their own overdue action.
+  await page.goto(`/morning-talk/${cheTalk.data}`);
+  await page.getByRole('checkbox', { name: /ตรวจน้ำยา E2E/ }).click();
+  await expect(page.getByRole('checkbox', { name: /ตรวจน้ำยา E2E/ })).toBeChecked();
+  const ownRow = page.locator('li', { hasText: 'ส่งซ่อมเครื่อง E2E' });
+  await expect(ownRow.getByText('เกินกำหนด').first()).toBeVisible();
+  await ownRow.getByLabel('สถานะ').selectOption('done');
+  await ownRow.getByLabel('หมายเหตุ').fill('ซ่อมแล้ว E2E');
+  await ownRow.getByRole('button', { name: 'บันทึก' }).click();
+  await expect(page.locator('li', { hasText: 'ส่งซ่อมเครื่อง E2E' }).getByText('เสร็จแล้ว').first()).toBeVisible();
+  await expect(page.locator('li', { hasText: 'ส่งซ่อมเครื่อง E2E' }).getByText('เกินกำหนด')).toHaveCount(0);
+  await page.goto('/morning-talk/actions?mine=1');
+  await expect(page.locator('li', { hasText: 'ตรวจตู้เย็น E2E' }), 'an open action assigned to me is listed').toBeVisible();
+  await expect(page.locator('li', { hasText: 'ส่งซ่อมเครื่อง E2E' }), 'a completed action leaves the open list').toHaveCount(0);
+  // No management surface: create, edit and cancel are hidden and routed away.
+  await page.goto('/morning-talk/new');
+  await expect(page).toHaveURL(/\/morning-talk$/);
+  await page.goto(`/morning-talk/${cheTalk.data}/edit`);
+  await expect(page).toHaveURL(new RegExp(`/morning-talk/${cheTalk.data}$`));
+  await expect(page.getByRole('link', { name: 'แก้ไข', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'ยกเลิก Morning Talk นี้' })).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/');
   await page.getByRole('button', { name: 'ออกจากระบบ' }).click();
   await expect(page).toHaveURL(/\/login/);
@@ -767,6 +948,20 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page.getByText(generic)).toBeVisible();
   await expectNotFound(`/locations/${fridge.data}`, 'another warehouse or a missing id renders the same not-found page');
   await expectNotFound(`/locations/${fridge.data}/edit`, 'another warehouse or a missing id renders the same not-found page');
+  // ---- Phase 2: Morning Talk as an IMM-only supervisor ---------------------------------------------------------------------------
+  await page.goto('/morning-talk/new');
+  await expect(page.getByLabel('ขอบเขต').locator('option'), 'ALL and CHE are hidden from a single-warehouse supervisor').toHaveText([/Immunology/]);
+  await page.goto(`/morning-talk/${allTalk.data}`);
+  await expect(page.getByRole('heading', { name: 'E2E Morning Talk ALL' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'แก้ไข', exact: true }), 'an ALL talk can be read but not edited by a single-warehouse supervisor').toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'ยกเลิก Morning Talk นี้' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'รับทราบ', exact: true }), 'but they can acknowledge for themselves when assigned').toBeVisible();
+  await page.goto(`/morning-talk/${allTalk.data}/edit`);
+  await expect(page).toHaveURL(new RegExp(`/morning-talk/${allTalk.data}$`));
+  await expectNotFound(`/morning-talk/${cheTalk.data}`, 'a CHE talk is invisible to an IMM-only account');
+  await page.goto('/morning-talk/history?q=E2E');
+  await expect(page.getByRole('link', { name: /E2E Morning Talk ALL/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /E2E Morning Talk CHE/ })).toHaveCount(0);
   await page.goto('/');
   await page.getByRole('button', { name: 'ออกจากระบบ' }).click();
   await expect(page).toHaveURL(/\/login/);
@@ -808,6 +1003,18 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.goto(`/q/${immToken}`);
   await expect(page.getByText(generic), 'a QR from a warehouse this account cannot open looks like any unknown QR').toBeVisible();
   await expectNotFound(`/locations/${immFridge.data}`, "another warehouse's location is indistinguishable from a missing one");
+  // ---- Phase 2: Morning Talk as a viewer ------------------------------------------------------------------------------------------
+  await page.goto(`/morning-talk/${cheTalk.data}`);
+  await expect(page.getByRole('checkbox', { name: /ตรวจเครื่อง E2E/ }), 'a viewer cannot tick the checklist').toBeDisabled();
+  await expect(page.getByLabel('สถานะ'), 'a viewer cannot update actions').toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'แก้ไข', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'รับทราบ', exact: true }), 'a viewer can acknowledge their own attendance').toBeVisible();
+  await page.getByRole('button', { name: 'รับทราบ', exact: true }).click();
+  await expect(page.getByText(/รับทราบแล้ว · /).first()).toBeVisible();
+  await page.goto('/attention?warehouse=CHE&type=mt_overdue');
+  await expect(page.getByText('ไม่มีงานเกินกำหนด')).toBeVisible();
+  await page.goto('/morning-talk/new');
+  await expect(page).toHaveURL(/\/morning-talk$/);
   await page.goto('/');
   expect(await page.evaluate(() => (window as Window & { __cspViolations?: string[] }).__cspViolations)).toEqual([]);
   expect(duplicateAuthClientWarnings).toEqual([]);

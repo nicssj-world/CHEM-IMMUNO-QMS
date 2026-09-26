@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ArrowUpFromLine, Boxes, ClipboardCheck, ClipboardList, FileUp, History, House, ListChecks, MapPin, NotebookTabs, PackagePlus, QrCode, ScanLine, ScrollText, ShieldCheck, SlidersHorizontal, Trash2, UserCog, Users, Wrench, type LucideIcon } from 'lucide-react';
+import { ArrowLeftRight, ArrowUpFromLine, Boxes, CalendarDays, ClipboardCheck, ClipboardList, FileUp, History, House, ListChecks, MapPin, Megaphone, NotebookTabs, PackagePlus, QrCode, ScanLine, ScrollText, ShieldCheck, SlidersHorizontal, Trash2, UserCog, Users, Wrench, type LucideIcon } from 'lucide-react';
 import type { AccessContext } from '@/lib/auth';
 
 // Navigation groups routes into workspaces. It changes where a link is shown, never who may use the page: every page, server
@@ -12,12 +12,17 @@ export type WorkspaceKey = 'dashboard' | 'morning-talk' | 'inventory' | 'operati
 export type Workspace = { key: WorkspaceKey; label: string; icon: LucideIcon; tabs: WorkspaceTab[] };
 export type NavPermissions = Record<NavNeed, boolean>;
 
-// Only workspaces that exist today are listed. Morning Talk and Temperature/Humidity join this array when they ship, with no
-// other change to the sidebar, tabs or the mobile "More" page (all of them read this one list).
+// Only workspaces that exist today are listed. Temperature/Humidity joins this array when it ships, with no other change to the
+// sidebar, tabs or the mobile "More" page (all of them read this one list).
 export const workspaces: Workspace[] = [
   { key: 'dashboard', label: 'ภาพรวม', icon: House, tabs: [
     { href: '/', label: 'ภาพรวม', icon: House },
     { href: '/attention', label: 'รายการที่ต้องติดตาม', icon: ShieldCheck },
+  ] },
+  { key: 'morning-talk', label: 'Morning Talk', icon: Megaphone, tabs: [
+    { href: '/morning-talk', label: 'วันนี้', icon: CalendarDays },
+    { href: '/morning-talk/history', label: 'ประวัติ', icon: History },
+    { href: '/morning-talk/actions', label: 'งานค้าง', icon: ListChecks },
   ] },
   { key: 'inventory', label: 'คลังสินค้า', icon: Boxes, tabs: [
     { href: '/stock', label: 'คงคลัง', icon: ClipboardList },
@@ -39,6 +44,7 @@ export const workspaces: Workspace[] = [
     { href: '/reports/monthly', label: 'รายงานรายเดือน', icon: NotebookTabs },
     { href: '/movements', label: 'ประวัติเคลื่อนไหว', icon: History },
     { href: '/audit', label: 'บันทึกการตรวจสอบ', icon: ScrollText, need: 'supervise' },
+    { href: '/reports/morning-talk', label: 'Morning Talk', icon: Megaphone },
   ] },
   { key: 'admin', label: 'จัดการระบบ', icon: UserCog, tabs: [
     { href: '/scan/review', label: 'คิวอนุมัติ Barcode', icon: QrCode, need: 'supervise' },

@@ -62,7 +62,7 @@ The approved plan is `docs/CHEM-IMMUNO-CBH-NEXT-WORKSTREAM-PLAN.md` (three phase
 | Phase | Status |
 |---|---|
 | 1. Navigation + Location Foundation | **DEPLOYED TO PRODUCTION** (2026-09-26). Authenticated and physical owner acceptance: **PARTIALLY PENDING** (see below). |
-| 2. Morning Talk | NOT STARTED |
+| 2. Morning Talk | **IMPLEMENTED LOCALLY — NOT DEPLOYED.** Awaiting independent review; the Phase 2 migration has not been applied to Production and nothing has been committed or pushed. |
 | 3. Temperature / Humidity + QR workflow | NOT STARTED |
 
 ### Phase 1 Production rollout record (2026-09-26)
@@ -102,4 +102,4 @@ Owner acceptance once a real Production location exists (no fake data is to be c
 
 - Phase 1 environment variables: `NEXT_PUBLIC_APP_ORIGIN` (public origin printed in Location QR labels) and `PORTAL_ALLOWED_HOSTS` (server-only, comma-separated Portal hostnames allowed in equipment links). Set them in the Vercel Production environment only if the defaults above stop being right.
 - Phase 1 also added a BEFORE INSERT trigger on `ci_stock_movement_lines` (`ci_movement_location_active`) that refuses stock-increasing lines into an inactive location, plus the index `ci_movement_location_idx`. It closes a race in which a receipt or transfer committed concurrently with a deactivation could leave stock in an inactive location.
-- Morning Talk (Phase 2) and Temperature / Humidity readings, schedules and QR check-in (Phase 3) are not implemented.
+- Morning Talk (Phase 2) exists only as an uncommitted local implementation (`supabase/migrations/20260927100000_ci_morning_talk.sql` plus app code); it is **not deployed** and its migration has **not** been applied to Production. Temperature / Humidity readings, schedules and QR check-in (Phase 3) are not implemented.

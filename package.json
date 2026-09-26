@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "npm run test:unit",
-    "test:unit": "node --import tsx --test tests/auth/identity.test.ts tests/auth/cookies.test.ts tests/auth/bootstrap-args.test.ts tests/auth/bootstrap-target.test.ts tests/import/approved-workbook.test.ts tests/barcode/*.test.ts tests/inventory/*.test.ts tests/locations/*.test.ts tests/nav/*.test.ts tests/pwa/*.test.ts tests/security/*.test.ts",
+    "test:unit": "node --import tsx --test tests/auth/identity.test.ts tests/auth/cookies.test.ts tests/auth/bootstrap-args.test.ts tests/auth/bootstrap-target.test.ts tests/import/approved-workbook.test.ts tests/barcode/*.test.ts tests/inventory/*.test.ts tests/locations/*.test.ts tests/nav/*.test.ts tests/morning-talk/*.test.ts tests/pwa/*.test.ts tests/security/*.test.ts",
     "test:import": "node --import tsx --test tests/import/*.test.ts",
     "test:db": "node --import tsx --test tests/db/*.test.ts",
     "test:auth:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-local-auth.ps1",

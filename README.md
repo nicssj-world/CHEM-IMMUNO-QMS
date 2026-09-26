@@ -42,7 +42,7 @@ An Admin with active Admin access to both warehouses can provision a user from *
 
 ### Navigation
 
-The desktop sidebar lists workspaces (ภาพรวม, คลังสินค้า, ปฏิบัติงาน, รายงาน, จัดการระบบ) plus the Scan quick action; each workspace's own pages are route-backed tabs above the page (`src/components/workspace-tabs.tsx`). `src/lib/nav.ts` is the single source for the sidebar, the tabs and the mobile **More** page. Navigation only decides where a link appears: every page, server action and database function still enforces its own role check, and all existing URLs are unchanged. The mobile bottom bar (Home, Stock, Scan, Receive, More) is unchanged.
+The desktop sidebar lists workspaces (ภาพรวม, Morning Talk, คลังสินค้า, ปฏิบัติงาน, รายงาน, จัดการระบบ) as a one-open-at-a-time accordion plus the Scan quick action; each workspace's own pages are route-backed tabs above the page (`src/components/workspace-tabs.tsx`). `src/lib/nav.ts` is the single source for the sidebar, the tabs and the mobile **More** page. Navigation only decides where a link appears: every page, server action and database function still enforces its own role check, and all existing URLs are unchanged. The mobile bottom bar (Home, Stock, Scan, Receive, More) is unchanged.
 
 ### Location Master (ตำแหน่งจัดเก็บ)
 
@@ -52,10 +52,18 @@ The desktop sidebar lists workspaces (ภาพรวม, คลังสิน�
 - QR labels: `/locations/qr` prints 50 × 30 mm labels whose QR opens `{NEXT_PUBLIC_APP_ORIGIN}/q/{token}`. The route requires login and resolves the token under row-level security, so a QR never bypasses authorization. Rotating a token (with a reason) revokes the printed label. The product barcode scanner recognises a Location QR and never treats it as a product barcode.
 - The Portal equipment link is a validated HTTPS link only (allowed hosts in `PORTAL_ALLOWED_HOSTS`); there is no API, sync or copied equipment data.
 
+### Morning Talk
+
+- **Status: implemented locally for independent review; NOT deployed.** The migration `supabase/migrations/20260927100000_ci_morning_talk.sql` has not been applied to Production.
+- `/morning-talk` (Today), `/morning-talk/history`, `/morning-talk/actions`, `/morning-talk/new`, `/morning-talk/[id]` (the deep link used by Attention) and `/morning-talk/[id]/edit`, plus the printable `/reports/morning-talk`. A talk has a scope (`ALL`, `CHE` or `IMM`, fixed at creation), attendees, a shared checklist and assigned actions.
+- Everyone who can read the scope can read the talk. Managing a `CHE` or `IMM` talk needs admin/supervisor in that warehouse; managing an `ALL` talk needs admin/supervisor in **both** warehouses (warehouses are resolved by `ci_warehouses.code`, never by numeric id). Every write is one published RPC (`ci_save_morning_talk` is atomic and optimistic-locked on the talk, and on each existing action it edits, so a manager's stale form cannot overwrite an owner's newer status or note); talks and actions are cancelled, never deleted, and an action is cancelled only explicitly. Actions outlive a cancelled talk: they stay open until they are done or cancelled.
+- Attendees acknowledge for themselves ("รับทราบ", not a signature): no one, including an admin, can acknowledge for another person. Action owners must be staff or above in the talk's scope; viewers can attend but never own an action. Eligibility is judged on the candidate, never on the person assigning.
+- Names of people in a talk come from a scoped RPC, so `ci_user_profiles` visibility is unchanged. Attention gains "Morning Talk รอรับทราบ" and "งาน Morning Talk เกินกำหนด"; the dashboard gains one compact "วันนี้" line. Overdue is judged on the Asia/Bangkok date.
+
 ## Verification
 
 
-- `npm test` / `npm run test:unit` run the identity, cookie, approved workbook, barcode, inventory, navigation, Location Master (ranges, monitor resolution, Portal link, QR) and security unit checks.
+- `npm test` / `npm run test:unit` run the identity, cookie, approved workbook, barcode, inventory, navigation, Location Master (ranges, monitor resolution, Portal link, QR), Morning Talk (domain rules, UI contract) and security unit checks.
 - `npm run test:db` runs the real PostgreSQL import, RLS, ledger, role, and two-session concurrency tests against the disposable database script.
 - `scripts/db/test.ps1` starts/reuses the named loopback-only PostgreSQL test container, creates isolated databases per test suite, applies every migration, runs the tests, then drops the test databases. It never targets a hosted Supabase project.
 - `npm run test:auth:local` starts/resets the local Supabase project and runs the real GoTrue/PostgreSQL Auth integration checks. It is destructive to that local Supabase database and must not be pointed at a hosted project.

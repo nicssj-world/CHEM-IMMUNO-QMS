@@ -189,4 +189,5 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   .skip-link { display: none; }
   .report-page .desktop-table { display: block !important; overflow: visible; }
   .report-page .mobile-card-list { display: none !important; }
+  .report-page .table-wrap { overflow: visible; }
 }

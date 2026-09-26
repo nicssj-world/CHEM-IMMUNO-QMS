@@ -25,27 +25,30 @@ const adminBoth = [{ code: 'CHE', role: 'admin' }, { code: 'IMM', role: 'admin' 
 test('a viewer sees the read-only tabs, and a workspace with nothing visible is dropped', () => {
   assert.deepEqual(tabsOf(viewerOnly), {
     dashboard: ['/', '/attention'],
+    'morning-talk': ['/morning-talk', '/morning-talk/history', '/morning-talk/actions'],
     inventory: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
     operations: ['/receive'],
-    reports: ['/reports/monthly', '/movements'],
+    reports: ['/reports/monthly', '/movements', '/reports/morning-talk'],
   });
 });
 
 test('CHE staff can work (issue, transfer, count) but not adjust, dispose, audit or administer', () => {
   assert.deepEqual(tabsOf(staffChe), {
     dashboard: ['/', '/attention'],
+    'morning-talk': ['/morning-talk', '/morning-talk/history', '/morning-talk/actions'],
     inventory: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
     operations: ['/receive', '/issue', '/transfer', '/counts'],
-    reports: ['/reports/monthly', '/movements'],
+    reports: ['/reports/monthly', '/movements', '/reports/morning-talk'],
   });
 });
 
 test('roles are per warehouse: a supervisor in one warehouse gets supervisor tabs, without the both-warehouse admin tabs', () => {
   assert.deepEqual(tabsOf(mixed), {
     dashboard: ['/', '/attention'],
+    'morning-talk': ['/morning-talk', '/morning-talk/history', '/morning-talk/actions'],
     inventory: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
     operations: ['/receive', '/issue', '/transfer', '/counts', '/adjust', '/dispose'],
-    reports: ['/reports/monthly', '/movements', '/audit'],
+    reports: ['/reports/monthly', '/movements', '/audit', '/reports/morning-talk'],
     admin: ['/scan/review'],
   });
 });
@@ -55,22 +58,61 @@ test('an admin of one warehouse cannot see the both-warehouse admin pages; an ad
   assert.deepEqual(tabsOf(adminBoth).admin, ['/scan/review', '/import', '/admin/users']);
 });
 
-test('the desktop sidebar is compact: at most five workspaces plus the Scan quick action', () => {
-  assert.equal(visibleWorkspaces(navPermissions(access(...adminBoth))).length, 5);
-  assert.equal(visibleWorkspaces(navPermissions(access(...viewerOnly))).length, 4);
+test('the desktop sidebar is compact: at most six workspaces plus the Scan quick action', () => {
+  assert.equal(visibleWorkspaces(navPermissions(access(...adminBoth))).length, 6);
+  assert.equal(visibleWorkspaces(navPermissions(access(...viewerOnly))).length, 5);
   assert.equal(scanItem.href, '/scan');
   assert.ok(!workspaces.some(workspace => workspace.tabs.some(tab => tab.href === '/scan')), 'Scan stays a quick action, not a tab');
 });
 
-test('no placeholder workspaces: Morning Talk and Temperature/Humidity are absent until they ship', () => {
-  assert.deepEqual(workspaces.map(workspace => workspace.key), ['dashboard', 'inventory', 'operations', 'reports', 'admin']);
+test('Morning Talk is a real workspace; Temperature/Humidity stays absent until Phase 3 ships', () => {
+  assert.deepEqual(workspaces.map(workspace => workspace.key), ['dashboard', 'morning-talk', 'inventory', 'operations', 'reports', 'admin']);
   const hrefs = workspaces.flatMap(workspace => workspace.tabs.map(tab => tab.href));
-  assert.ok(!hrefs.some(href => /morning|environment|temperature/i.test(href)));
+  assert.ok(!hrefs.some(href => /environment|temperature|humidity/i.test(href)), 'no Phase 3 route or placeholder');
+  assert.deepEqual(workspaces.find(workspace => workspace.key === 'morning-talk')!.tabs.map(tab => tab.label), ['วันนี้', 'ประวัติ', 'งานค้าง']);
+  assert.equal(workspaces.find(workspace => workspace.key === 'reports')!.tabs.at(-1)!.href, '/reports/morning-talk');
+});
+
+test('Morning Talk is visible to every role that can open a warehouse, with no role gate on any of its tabs', () => {
+  for (const grants of [viewerOnly, staffChe, mixed, adminChe, adminBoth]) assert.deepEqual(tabsOf(grants)['morning-talk'], ['/morning-talk', '/morning-talk/history', '/morning-talk/actions']);
+  for (const tab of [...workspaces.find(workspace => workspace.key === 'morning-talk')!.tabs, workspaces.find(workspace => workspace.key === 'reports')!.tabs.at(-1)!]) assert.equal(tab.need, undefined, `${tab.href} is gated inside the pages and the database, not by navigation`);
+});
+
+test('Morning Talk routes resolve to their own tab, and the printable report stays in Reports', () => {
+  const at = (pathname: string) => { const found = activeTab(pathname); return found ? `${found.workspace.key}:${found.tab.href}` : null; };
+  assert.equal(at('/morning-talk'), 'morning-talk:/morning-talk');
+  assert.equal(at('/morning-talk/history'), 'morning-talk:/morning-talk/history');
+  assert.equal(at('/morning-talk/actions'), 'morning-talk:/morning-talk/actions');
+  assert.equal(at('/morning-talk/new'), 'morning-talk:/morning-talk');
+  assert.equal(at('/morning-talk/0a1b2c'), 'morning-talk:/morning-talk');
+  assert.equal(at('/morning-talk/0a1b2c/edit'), 'morning-talk:/morning-talk');
+  assert.equal(at('/reports/morning-talk'), 'reports:/reports/morning-talk');
+  assert.equal(at('/reports/monthly'), 'reports:/reports/monthly');
+  assert.equal(at('/morning-talks'), null, 'a prefix must end at a path boundary');
+  assert.equal(openWorkspaceFor('/morning-talk/history'), 'morning-talk');
+  assert.equal(openWorkspaceFor('/reports/morning-talk'), 'reports');
+});
+
+test('the accordion opens Morning Talk by itself and shows its three children, closing the previous workspace', () => {
+  const today = section(adminBoth, '/morning-talk/actions', 'morning-talk');
+  assert.equal(today.expanded, true);
+  assert.deepEqual(today.tabs.map(tab => tab.href), ['/morning-talk', '/morning-talk/history', '/morning-talk/actions']);
+  assert.equal(today.activeHref, '/morning-talk/actions');
+  assert.deepEqual(sectionsFor(adminBoth, '/morning-talk').filter(item => item.expanded).map(item => item.workspace.key), ['morning-talk']);
+  assert.equal(section(adminBoth, '/reports/morning-talk', 'reports').activeHref, '/reports/morning-talk');
+});
+
+test('the mobile bottom bar is not changed by the new workspace', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const bottom = await readFile(path.join(process.cwd(), 'src/components/bottom-nav.tsx'), 'utf8');
+  assert.doesNotMatch(bottom, /morning/i, 'Morning Talk is reached through the tab strip and /more, not a sixth bottom tab');
+  for (const label of ['ภาพรวม', 'คงคลัง', 'สแกน', 'รับเข้า', 'เพิ่มเติม']) assert.ok(bottom.includes(label), label);
 });
 
 test('navigation does not relax any authorization: every tab keeps its previous role gate', () => {
   const previous: Record<string, string | undefined> = {
     '/': undefined, '/attention': undefined, '/receive': undefined, '/issue': 'work', '/transfer': 'work', '/counts': 'work', '/adjust': 'supervise', '/dispose': 'supervise',
+    '/morning-talk': undefined, '/morning-talk/history': undefined, '/morning-talk/actions': undefined, '/reports/morning-talk': undefined,
     '/products': undefined, '/stock': undefined, '/reorder': undefined, '/vendors': undefined, '/reports/monthly': undefined, '/movements': undefined,
     '/scan/review': 'supervise', '/locations': 'supervise', '/import': 'adminBoth', '/audit': 'supervise', '/admin/users': 'adminBoth',
   };
@@ -207,7 +249,7 @@ test('the current page is never hidden: collapsing the active workspace leaves i
   // Another workspace opened by hand does not hide the active page either.
   const other = sectionsFor(adminBoth, '/products/abc', 'reports');
   assert.deepEqual(other.find(item => item.workspace.key === 'inventory')!.tabs.map(tab => tab.href), ['/products']);
-  assert.equal(other.find(item => item.workspace.key === 'reports')!.tabs.length, 3);
+  assert.equal(other.find(item => item.workspace.key === 'reports')!.tabs.length, 4);
 });
 
 test('accordion children respect the same role gates as before, for every representative user', () => {
