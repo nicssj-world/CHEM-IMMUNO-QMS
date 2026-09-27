@@ -19,10 +19,10 @@ export function RelationEditor({ sourceId, options, relation }: { sourceId: stri
   const initialTarget = relation?.target_product_id;
   return <form action={saveRelation} className="grid gap-3 rounded-xl border border-line p-4">
     <input type="hidden" name="source_product_id" value={sourceId}/>{relation && <input type="hidden" name="id" value={relation.id}/>}
-    <div className="grid gap-3 sm:grid-cols-2"><label className="field">ความสัมพันธ์จากสินค้านี้<select name="relation_type" className="input" value={kind} onChange={e => setKind(e.target.value)}>{relationTypes.map(t => <option key={t} value={t}>{label(relationTypeLabels,t)}</option>)}</select></label><label className="field">ค้นหาเป้าหมาย<input className="input" value={query} onChange={e => setQuery(e.target.value)} placeholder="Product Code / ชื่อ"/></label></div>
-    <label className="field">สินค้าเป้าหมาย<select className="input" name="target_product_id" defaultValue={initialTarget ?? ''} required><option value="">เลือกสินค้า</option>{filtered.map(p => <option value={p.id} key={p.id}>{p.product_code} · {p.display_name}</option>)}</select></label>
+    <div className="grid gap-3 sm:grid-cols-2"><label className="field">ความสัมพันธ์จากน้ำยานี้<select name="relation_type" className="input" value={kind} onChange={e => setKind(e.target.value)}>{relationTypes.map(t => <option key={t} value={t}>{label(relationTypeLabels,t)}</option>)}</select></label><label className="field">ค้นหาเป้าหมาย<input className="input" value={query} onChange={e => setQuery(e.target.value)} placeholder="Product Code / ชื่อ"/></label></div>
+    <label className="field">น้ำยาเป้าหมาย<select className="input" name="target_product_id" defaultValue={initialTarget ?? ''} required><option value="">เลือกน้ำยา</option>{filtered.map(p => <option value={p.id} key={p.id}>{p.product_code} · {p.display_name}</option>)}</select></label>
     <label className="field">หมายเหตุ<input className="input" name="note" defaultValue={relation?.note ?? ''} placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"/></label>
-    <p className="muted text-xs">แสดงเฉพาะสินค้าในคลังเดียวกันและชนิดเป้าหมายที่เข้ากัน ฐานข้อมูลตรวจซ้ำเมื่อบันทึก</p>
+    <p className="muted text-xs">แสดงเฉพาะน้ำยาในคลังเดียวกันและชนิดเป้าหมายที่เข้ากัน ฐานข้อมูลตรวจซ้ำเมื่อบันทึก</p>
     <div><SubmitButton className="button" label={relation ? 'บันทึกความสัมพันธ์' : 'เพิ่มความสัมพันธ์'}/></div>
   </form>;
 }

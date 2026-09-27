@@ -35,7 +35,7 @@ export function ReceiptAssessmentCard({ eventNumber, invoiceNumber, receivedAt, 
   return <article className="rounded-xl border border-line p-4 grid gap-3">
     <header className="flex flex-wrap items-center justify-between gap-2">
       <div><strong className="font-mono">{eventNumber ?? '—'}</strong><span className="muted text-sm"> · Invoice {invoiceNumber} · รับเมื่อ {formatDateTime(receivedAt)}</span></div>
-      {saved && <span className={`badge ${conditional ? '!bg-[#fff3d6] !text-[#7a4f00]' : ''}`}>{conditional ? 'รับสินค้าแบบมีเงื่อนไข' : 'รับสินค้า'}</span>}
+      {saved && <span className={`badge ${conditional ? '!bg-[#fff3d6] !text-[#7a4f00]' : ''}`}>{conditional ? 'รับน้ำยาแบบมีเงื่อนไข' : 'รับน้ำยา'}</span>}
     </header>
     {!saved || !assessment ? <p className="muted text-sm">ไม่มีผลตรวจรับ</p> : editing && draft ? <div className="grid gap-4">
       <ReceiptAssessmentFields value={draft} onChange={setDraft} />

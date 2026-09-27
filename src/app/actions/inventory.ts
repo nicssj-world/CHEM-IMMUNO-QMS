@@ -46,7 +46,7 @@ export async function startInvoice(input: { vendorId: string; invoiceNumber: str
   if (!client) return { ok: false, message: 'ยังไม่ได้ตั้งค่า Supabase' };
   const totals = new Map<string, number>();
   for (const line of input.lines) if (line.productId && Number.isFinite(line.quantity) && line.quantity > 0) totals.set(line.productId, Math.round(((totals.get(line.productId) ?? 0) + line.quantity) * 1000) / 1000);
-  if (!totals.size) return { ok: false, message: 'กรุณาเพิ่มสินค้าอย่างน้อยหนึ่งรายการ' };
+  if (!totals.size) return { ok: false, message: 'กรุณาเพิ่มน้ำยาอย่างน้อยหนึ่งรายการ' };
   const invoiceNumber = input.invoiceNumber.trim();
   if (!input.vendorId || !invoiceNumber || !input.invoiceDate) return { ok: false, message: 'กรุณากรอกผู้ขาย เลขที่ Invoice และวันที่' };
   const { data: existing } = await client.from('ci_invoices').select('id').eq('vendor_id', input.vendorId).eq('invoice_number', invoiceNumber).limit(1).maybeSingle();

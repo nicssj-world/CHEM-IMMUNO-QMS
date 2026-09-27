@@ -26,7 +26,7 @@ export function StockOperationForm({ kind, options, locations, submissionKey, wa
     <input type="hidden" name="lot_id" value={selected?.lot_id ?? ''}/><input type="hidden" name="idempotency_key" value={submissionKey}/>
     <input type="hidden" name={kind === 'transfer' ? 'from_location_id' : 'location_id'} value={selected?.location_id ?? ''}/>
     <input type="hidden" name="warehouse" value={warehouseCode}/><input type="hidden" name="product" value={productId}/><input type="hidden" name="summary" value={what}/>
-    <label className="field">{showProduct ? 'สินค้า · LOT · ตำแหน่ง' : 'LOT · ตำแหน่ง'}<select className="input" value={index} required onChange={e => setIndex(Number(e.target.value))}>
+    <label className="field">{showProduct ? 'น้ำยา · LOT · ตำแหน่ง' : 'LOT · ตำแหน่ง'}<select className="input" value={index} required onChange={e => setIndex(Number(e.target.value))}>
       {options.length > 1 && <option value={-1} disabled>เลือก LOT</option>}
       {options.map((item,i) => <option key={`${item.lot_id}:${item.location_id}`} value={i}>{showProduct ? `${item.product_code} · ` : ''}LOT {item.lot_number} · หมดอายุ {item.expiry_date} · {item.location_code} · คงเหลือ {Number(item.balance)}</option>)}
     </select></label>

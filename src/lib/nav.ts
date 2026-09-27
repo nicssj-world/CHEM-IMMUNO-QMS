@@ -23,7 +23,7 @@ export const workspaces: Workspace[] = [
     { href: '/morning-talk/history', label: 'ประวัติ', icon: History },
     { href: '/morning-talk/actions', label: 'งานค้าง', icon: ListChecks },
   ] },
-  { key: 'inventory', label: 'คลังสินค้า', icon: Boxes, tabs: [
+  { key: 'inventory', label: 'คลังน้ำยา', icon: Boxes, tabs: [
     { href: '/stock', label: 'คงคลัง', icon: ClipboardList },
     { href: '/products', label: 'ทะเบียนน้ำยา', icon: Boxes },
     // Every role that can open a warehouse can read its locations; creating and editing them is gated inside the pages.

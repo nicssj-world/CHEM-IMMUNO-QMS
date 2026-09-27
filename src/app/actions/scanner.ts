@@ -39,7 +39,7 @@ export async function resolveScan(raw: string, symbology: string, warehouseId: n
   const result: ScanResolution = { parsed };
   if (ids.size === 1) {
     const [productId, matchedWarehouseId] = [...ids][0];
-    if (matchedWarehouseId !== warehouseId) { result.otherWarehouse = true; result.message = 'Barcode นี้เป็นสินค้าของอีกคลัง · สลับคลังก่อนทำรายการ'; }
+    if (matchedWarehouseId !== warehouseId) { result.otherWarehouse = true; result.message = 'Barcode นี้เป็นน้ำยาของอีกคลัง · สลับคลังก่อนทำรายการ'; }
     else {
       const { data: product } = await client.from('ci_products').select('product_code').eq('id',productId).maybeSingle();
       result.productId = productId;
@@ -47,10 +47,10 @@ export async function resolveScan(raw: string, symbology: string, warehouseId: n
       if (invoiceId) {
         const { data: line } = await client.from('ci_invoice_lines').select('id').eq('invoice_id',invoiceId).eq('product_id',productId).limit(1).maybeSingle();
         if (line) result.invoiceLineId = line.id;
-        else result.message = 'สินค้าจาก Barcode นี้ไม่อยู่ใน Invoice นี้';
+        else result.message = 'น้ำยาจาก Barcode นี้ไม่อยู่ใน Invoice นี้';
       }
     }
-  } else result.message = ids.size ? 'Barcode ตรงกับหลายสินค้า · ต้องให้หัวหน้างานตรวจสอบ' : 'ไม่พบสินค้าที่ตรงกับ Barcode';
+  } else result.message = ids.size ? 'Barcode ตรงกับหลายน้ำยา · ต้องให้หัวหน้างานตรวจสอบ' : 'ไม่พบน้ำยาที่ตรงกับ Barcode';
   const { data: scanId, error: scanError } = await client.rpc('ci_record_scan', { p_data: {
     warehouse_id: warehouseId, invoice_id: invoiceId ?? null, invoice_line_id: result.invoiceLineId ?? null,
     raw_payload: raw, symbology, parsed_fields: parsed, parse_warnings: parsed.warnings,
@@ -132,7 +132,7 @@ export async function resolveProductScan(raw: string, symbology: string): Promis
       const { data: product } = await client.from('ci_products').select('id,product_code,display_name,warehouse_id').eq('id', productId).maybeSingle();
       if (product) result.product = { id: product.id, code: product.product_code, name: product.display_name, warehouseId: Number(product.warehouse_id) };
     }
-  } else result.message = ids.size ? 'Barcode ตรงกับหลายสินค้า · ต้องให้หัวหน้างานตรวจสอบ' : 'ไม่พบสินค้าที่ตรงกับ Barcode · เลือกสินค้าเอง';
+  } else result.message = ids.size ? 'Barcode ตรงกับหลายน้ำยา · ต้องให้หัวหน้างานตรวจสอบ' : 'ไม่พบน้ำยาที่ตรงกับ Barcode · เลือกน้ำยาเอง';
   const { error } = await client.rpc('ci_record_scan', { p_data: {
     warehouse_id: result.product?.warehouseId ?? writable[0], invoice_id: null, invoice_line_id: null,
     raw_payload: raw, symbology, parsed_fields: parsed, parse_warnings: parsed.warnings,

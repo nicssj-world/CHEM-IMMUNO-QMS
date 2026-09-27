@@ -103,7 +103,7 @@ export default async function VendorDetailPage({ params, searchParams }: { param
     <section className="surface p-5 grid gap-4" aria-labelledby="vendor-receipts"><h2 id="vendor-receipts" className="font-bold">ผลตรวจรับรายครั้ง · {warehouse.name}</h2>
       {eventError && <p className="error" role="alert">อ่านผลตรวจรับไม่สำเร็จ: {logUserMessage('vendor-receipts', eventError)}</p>}
       {events.map(e => <ReceiptAssessmentCard key={e.id} eventNumber={e.event_number} invoiceNumber={e.invoice?.invoice_number ?? '—'} receivedAt={e.received_at} assessment={e.assessment} revisions={e.revisions} canRevise={canSupervise(warehouse.role)} />)}
-      {!events.length && <p className="muted text-sm">ยังไม่มีการรับสินค้าจากผู้ขายนี้ในคลังนี้</p>}
+      {!events.length && <p className="muted text-sm">ยังไม่มีการรับน้ำยาจากผู้ขายนี้ในคลังนี้</p>}
     </section>
 
     <section className="surface p-5 grid gap-3" aria-labelledby="vendor-issues"><h2 id="vendor-issues" className="font-bold">ปัญหาผู้ขาย · {warehouse.name}</h2>

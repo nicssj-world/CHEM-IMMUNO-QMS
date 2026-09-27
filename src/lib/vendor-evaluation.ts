@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export const VENDOR_EVALUATION_CRITERIA = ['delivery_completeness', 'shelf_life', 'product_packaging', 'documentation', 'item_correctness', 'cold_chain', 'complaint_performance', 'corrective_action'] as const;
 export type CriterionCode = (typeof VENDOR_EVALUATION_CRITERIA)[number];
 export const VENDOR_EVALUATION_CRITERION_LABELS: Record<CriterionCode, string> = {
-  delivery_completeness: 'การส่งมอบ / ความครบถ้วน', shelf_life: 'อายุสินค้า ณ วันที่รับ', product_packaging: 'สภาพสินค้า / บรรจุภัณฑ์', documentation: 'เอกสารประกอบ',
+  delivery_completeness: 'การส่งมอบ / ความครบถ้วน', shelf_life: 'อายุน้ำยา ณ วันที่รับ', product_packaging: 'สภาพน้ำยา / บรรจุภัณฑ์', documentation: 'เอกสารประกอบ',
   item_correctness: 'ความถูกต้องของรายการ', cold_chain: 'การควบคุมอุณหภูมิ', complaint_performance: 'ข้อร้องเรียน / ปัญหา', corrective_action: 'การแก้ไขปัญหา',
 };
 export const criterionLabel = (code: string, fallback?: string) => VENDOR_EVALUATION_CRITERION_LABELS[code as CriterionCode] ?? fallback ?? code;

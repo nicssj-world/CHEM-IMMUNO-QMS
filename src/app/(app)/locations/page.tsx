@@ -63,7 +63,7 @@ export default async function LocationsPage({ searchParams }: { searchParams: Pr
           <div className="flex items-center gap-3 min-w-0"><LocationTypeIcon type={location.location_type} className="text-[var(--teal)] shrink-0" /><div className="min-w-0"><p className="font-bold">{locationBreadcrumb(location, byId)}</p><p className="muted text-sm truncate">{location.name}{location.room ? ` · ${location.room}` : ''}</p></div></div>
           <div className="text-right shrink-0 grid gap-1 justify-items-end"><span className="flex flex-wrap justify-end gap-1"><span className="badge">{locationTypeLabel(location.location_type)}</span>{monitor && <span className="badge">{own ? 'เฝ้าระวัง' : `ตาม ${monitor.code}`}{ranges?.temperature ? ` · ${ranges.temperature}` : ''}{ranges?.humidity ? ` · ${ranges.humidity}` : ''}</span>}<span className="badge">{location.active ? 'ใช้งาน' : 'ปิดใช้งาน'}</span></span></div>
         </Link></li>;
-      })}</ul> : <p className="muted px-5 pb-5">{all.length ? 'ไม่พบตำแหน่งที่ตรงกับตัวกรอง' : 'ยังไม่มีตำแหน่งในคลังนี้ · ต้องมีอย่างน้อยหนึ่งตำแหน่งก่อนรับสินค้าเข้า'}</p>}
+      })}</ul> : <p className="muted px-5 pb-5">{all.length ? 'ไม่พบตำแหน่งที่ตรงกับตัวกรอง' : 'ยังไม่มีตำแหน่งในคลังนี้ · ต้องมีอย่างน้อยหนึ่งตำแหน่งก่อนรับน้ำยาเข้า'}</p>}
     </section>
   </main>;
 }

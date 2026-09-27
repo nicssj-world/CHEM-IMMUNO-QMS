@@ -49,7 +49,7 @@ export function looksLikeLocationQr(raw: string | null | undefined): boolean {
   return /(?:^|[^0-9a-z])q\/[0-9a-f]{32}(?=$|[/?#\s])/i.test((raw ?? '').trim());
 }
 
-export const LOCATION_QR_SCAN_MESSAGE = 'นี่คือ QR ตำแหน่งจัดเก็บ · ไม่ใช่ Barcode สินค้า';
+export const LOCATION_QR_SCAN_MESSAGE = 'นี่คือ QR ตำแหน่งจัดเก็บ · ไม่ใช่ Barcode น้ำยา';
 
 /**
  * The scanner guard. A scanned Location QR (a /q/{token} link) is never a product barcode: recognising it before any barcode

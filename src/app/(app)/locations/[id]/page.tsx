@@ -124,12 +124,12 @@ export default async function LocationDetailPage({ params, searchParams }: { par
       </>}
     </section>
 
-    <section className="surface overflow-hidden" aria-labelledby="stock-heading"><div className="px-5 py-4 flex justify-between gap-3"><h2 id="stock-heading" className="font-bold">สินค้าคงเหลือ{showSubLocation ? ' (รวมตำแหน่งย่อย)' : ''}</h2><span className="muted text-sm">{stock.length} รายการ LOT</span></div>
+    <section className="surface overflow-hidden" aria-labelledby="stock-heading"><div className="px-5 py-4 flex justify-between gap-3"><h2 id="stock-heading" className="font-bold">น้ำยาคงเหลือ{showSubLocation ? ' (รวมตำแหน่งย่อย)' : ''}</h2><span className="muted text-sm">{stock.length} รายการ LOT</span></div>
       {stockError && <p className="error mx-5 mb-4" role="alert">อ่านยอดคงเหลือไม่สำเร็จ: {logUserMessage('locationStock', stockError)}</p>}
       {stock.length ? <>
-        <div className="desktop-table table-wrap"><table className="data-table"><thead><tr><th>สินค้า</th><th>LOT</th><th>หมดอายุ</th><th>จำนวน</th>{showSubLocation && <th>ตำแหน่ง</th>}</tr></thead><tbody>{stock.map(row => { const bucket = expiryBucket(row.expiry_date); return <tr key={row.key}><td><span className="font-bold">{row.product_code}</span><br/><span className="muted text-sm">{row.product_name}</span></td><td>{row.lot_number}</td><td>{formatDate(row.expiry_date)}{expiryLabels[bucket] && <> <span className="badge">{expiryLabels[bucket]}</span></>}</td><td className="font-bold">{row.quantity.toLocaleString()} {unitLabel(row.unit)}</td>{showSubLocation && <td>{row.location_code}</td>}</tr>; })}</tbody></table></div>
+        <div className="desktop-table table-wrap"><table className="data-table"><thead><tr><th>น้ำยา</th><th>LOT</th><th>หมดอายุ</th><th>จำนวน</th>{showSubLocation && <th>ตำแหน่ง</th>}</tr></thead><tbody>{stock.map(row => { const bucket = expiryBucket(row.expiry_date); return <tr key={row.key}><td><span className="font-bold">{row.product_code}</span><br/><span className="muted text-sm">{row.product_name}</span></td><td>{row.lot_number}</td><td>{formatDate(row.expiry_date)}{expiryLabels[bucket] && <> <span className="badge">{expiryLabels[bucket]}</span></>}</td><td className="font-bold">{row.quantity.toLocaleString()} {unitLabel(row.unit)}</td>{showSubLocation && <td>{row.location_code}</td>}</tr>; })}</tbody></table></div>
         <ul className="mobile-card-list px-4 pb-4">{stock.map(row => { const bucket = expiryBucket(row.expiry_date); return <li key={row.key} className="rounded-xl border border-line p-3 grid gap-1"><p className="font-bold">{row.product_code} <span className="font-normal muted">{row.product_name}</span></p><p className="text-sm">LOT {row.lot_number} · หมดอายุ {formatDate(row.expiry_date)}{expiryLabels[bucket] && <> <span className="badge">{expiryLabels[bucket]}</span></>}</p><p className="text-sm font-bold">{row.quantity.toLocaleString()} {unitLabel(row.unit)}{showSubLocation ? <span className="font-normal muted"> · {row.location_code}</span> : null}</p></li>; })}</ul>
-      </> : <p className="muted px-5 pb-5">ไม่มีสินค้าคงเหลือในตำแหน่งนี้</p>}
+      </> : <p className="muted px-5 pb-5">ไม่มีน้ำยาคงเหลือในตำแหน่งนี้</p>}
     </section>
 
     {children.length > 0 && <section className="surface overflow-hidden" aria-labelledby="children-heading"><div className="px-5 py-4"><h2 id="children-heading" className="font-bold">ตำแหน่งย่อยในตำแหน่งนี้</h2></div>
@@ -141,7 +141,7 @@ export default async function LocationDetailPage({ params, searchParams }: { par
         <input type="hidden" name="id" value={id}/><input type="hidden" name="active" value={String(!location.active)}/>
         <label className="field">{location.active ? 'เหตุผลที่ปิดการใช้งาน' : 'เหตุผลที่เปิดใช้งานอีกครั้ง'}<input className="input" name="reason" required maxLength={200} placeholder={location.active ? 'เช่น เลิกใช้ตู้นี้แล้ว' : 'เช่น นำกลับมาใช้'}/></label>
         <button className={`button ${location.active ? 'danger' : ''}`}>{location.active ? 'ปิดการใช้งาน' : 'เปิดใช้งานอีกครั้ง'}</button>
-        {location.active && <p className="muted text-xs sm:col-span-2">ปิดได้เมื่อไม่มีสินค้าคงเหลือและไม่มีตำแหน่งย่อยที่ยังใช้งานอยู่ · ประวัติเดิมทั้งหมดยังคงอยู่</p>}
+        {location.active && <p className="muted text-xs sm:col-span-2">ปิดได้เมื่อไม่มีน้ำยาคงเหลือและไม่มีตำแหน่งย่อยที่ยังใช้งานอยู่ · ประวัติเดิมทั้งหมดยังคงอยู่</p>}
       </ConfirmForm>
       <ConfirmForm action={rotateLocationQr} className="grid gap-3 sm:grid-cols-[1fr_auto] items-end border-t border-line pt-5" message={`เปลี่ยน QR ของ ${location.code}? ป้ายที่พิมพ์ไว้เดิมจะสแกนไม่ได้อีก`}>
         <input type="hidden" name="id" value={id}/>

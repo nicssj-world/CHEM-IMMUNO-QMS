@@ -67,7 +67,7 @@ export default async function ImportPage({ searchParams }: {
   const params = await searchParams;
   const access = await requireAccess();
   const isAdminBoth = ['CHE', 'IMM'].every((code) => access.warehouses.some((warehouse) => warehouse.code === code && warehouse.role === 'admin'));
-  if (!isAdminBoth) return <main className="grid gap-5"><div><p className="eyebrow">Product master</p><h1 className="page-title mt-2">นำเข้าสินค้า</h1></div><p className="notice flex items-center gap-2"><LockKeyhole size={18} /> ต้องมีสิทธิ์ Admin ทั้งสองคลังเพื่อจัดการการนำเข้า</p></main>;
+  if (!isAdminBoth) return <main className="grid gap-5"><div><p className="eyebrow">Product master</p><h1 className="page-title mt-2">นำเข้าน้ำยา</h1></div><p className="notice flex items-center gap-2"><LockKeyhole size={18} /> ต้องมีสิทธิ์ Admin ทั้งสองคลังเพื่อจัดการการนำเข้า</p></main>;
   const client = await createClient();
   const { data: batchData, error: batchesError } = client
     ? await client.from('ci_import_batches').select('id,status,source_filename,source_sha256,staged_at,applied_at,payload').order('staged_at', { ascending: false }).limit(10)
@@ -90,9 +90,9 @@ export default async function ImportPage({ searchParams }: {
   }, { reagent: 0, calibrator: 0, control: 0, consumable: 0 } satisfies Record<ProductType, number>);
   const formatDate = (value: string) => new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' }).format(new Date(value));
   return <main className="grid gap-6">
-    <div><p className="eyebrow mb-2">Product master · source control</p><h1 className="page-title">นำเข้าสินค้าและตรวจความสัมพันธ์</h1><p className="muted mt-2 text-sm">ตรวจไฟล์ต้นทาง บันทึกชุดตรวจทาน แล้วอนุมัติทุกข้อค้างก่อนเปิดใช้สินค้า</p></div>
+    <div><p className="eyebrow mb-2">Product master · source control</p><h1 className="page-title">นำเข้าน้ำยาและตรวจความสัมพันธ์</h1><p className="muted mt-2 text-sm">ตรวจไฟล์ต้นทาง บันทึกชุดตรวจทาน แล้วอนุมัติทุกข้อค้างก่อนเปิดใช้น้ำยา</p></div>
     {params.error && <p className="error" role="alert">{errorText[params.error] ?? 'ไม่สามารถทำรายการได้'}</p>}
-    {params.staged && <p className="notice" role="status">บันทึกชุดตรวจทานแล้ว ยังไม่มีการเปิดใช้สินค้า</p>}
+    {params.staged && <p className="notice" role="status">บันทึกชุดตรวจทานแล้ว ยังไม่มีการเปิดใช้น้ำยา</p>}
     {params.reviewed && <p className="notice" role="status">บันทึกผลตรวจแล้ว</p>}
     {params.applied && <p className="notice" role="status">เปิดใช้ Product Master สำเร็จแล้ว</p>}
     {!client && <p className="error">ยังไม่ได้ตั้งค่าการเชื่อมต่อ Supabase</p>}
@@ -106,13 +106,13 @@ export default async function ImportPage({ searchParams }: {
         </label>
         <SubmitButton className="button" label="ตรวจและบันทึกชุด" pendingLabel="กำลังตรวจไฟล์…"/>
       </form>
-      <p className="muted text-xs">การบันทึกชุดนี้ไม่เพิ่มสินค้าเข้าคลัง ระบบจะตรวจชื่อไฟล์และ SHA-256 บนเซิร์ฟเวอร์ก่อนรับข้อมูล</p>
+      <p className="muted text-xs">การบันทึกชุดนี้ไม่เพิ่มน้ำยาเข้าคลัง ระบบจะตรวจชื่อไฟล์และ SHA-256 บนเซิร์ฟเวอร์ก่อนรับข้อมูล</p>
     </section>
     {batches.length > 0 && <section className="grid gap-3" aria-labelledby="batches-heading"><h2 id="batches-heading" className="font-bold">ชุดนำเข้าล่าสุด</h2><div className="flex flex-wrap gap-2">{batches.map((batch) => <Link key={batch.id} href={`/import?batch=${batch.id}`} className={`min-h-11 rounded-xl border px-4 py-3 text-sm no-underline ${current?.id === batch.id ? 'border-[var(--teal)] bg-tint text-[var(--ink)]' : 'border-[var(--line)] bg-white text-[var(--ink)]'}`}><strong>{batch.status === 'applied' ? 'เปิดใช้แล้ว' : 'รอตรวจทาน'}</strong><span className="muted ml-2">{formatDate(batch.staged_at)}</span></Link>)}</div></section>}
     {current && payload && <>
       <section className="surface p-5 grid gap-4" aria-labelledby="batch-heading"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="eyebrow">Import batch</p><h2 id="batch-heading" className="font-bold break-all">{current.id}</h2></div><span className="badge">{current.status === 'applied' ? 'เปิดใช้แล้ว' : 'รอตรวจทาน'}</span></div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-xl bg-surface-2 p-3"><p className="muted text-xs">สินค้า</p><p className="text-xl font-bold">{payload.products.length}</p></div>
+          <div className="rounded-xl bg-surface-2 p-3"><p className="muted text-xs">น้ำยา</p><p className="text-xl font-bold">{payload.products.length}</p></div>
           <div className="rounded-xl bg-surface-2 p-3"><p className="muted text-xs">Product → Product</p><p className="text-sm font-bold">90 source + 10 owner = 100</p></div>
           <div className="rounded-xl bg-surface-2 p-3"><p className="muted text-xs">Product → Platform</p><p className="text-sm font-bold">27 source rows · 28 active maps</p></div>
           <div className="rounded-xl bg-[#fff3eb] p-3"><p className="muted text-xs">ข้อค้างที่สำคัญ</p><p className="text-xl font-bold">{openCount}</p></div>
@@ -134,7 +134,7 @@ export default async function ImportPage({ searchParams }: {
           const product = payload.products.find((candidate) => candidate.source_sheet === review.source_sheet && candidate.source_row === review.source_row);
           const resolution = payload.resolution_manifest.entries.find((entry) => entry.review_id === review.review_id);
           const reagentOptions = payload.products.filter((candidate) => candidate.product_type === 'reagent' && candidate.warehouse_code === product?.warehouse_code).map((candidate) => ({ ref: candidate.ref_current, name: candidate.source_name }));
-          return <details className="surface p-5 group" key={review.id}><summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-2"><div><span className="badge">{review.review_id} · {review.kind === 'used_with' ? 'Used with' : 'ข้อมูลต้นทาง'}</span><h3 className="font-bold mt-2">{product?.source_name ?? 'ไม่พบสินค้าในชุด'}</h3><p className="muted text-xs mt-1">{review.source_sheet} · แถว Excel {review.source_row} · REF {review.source_product_ref}</p></div><span className={review.status === 'open' ? 'text-[#9b4d20] font-bold text-sm' : 'text-[#0b716e] font-bold text-sm'}>{review.status === 'open' ? 'รอตรวจ · เปิดดู' : 'ตัดสินแล้ว · เปิดดู'}</span></summary>
+          return <details className="surface p-5 group" key={review.id}><summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-2"><div><span className="badge">{review.review_id} · {review.kind === 'used_with' ? 'Used with' : 'ข้อมูลต้นทาง'}</span><h3 className="font-bold mt-2">{product?.source_name ?? 'ไม่พบน้ำยาในชุด'}</h3><p className="muted text-xs mt-1">{review.source_sheet} · แถว Excel {review.source_row} · REF {review.source_product_ref}</p></div><span className={review.status === 'open' ? 'text-[#9b4d20] font-bold text-sm' : 'text-[#0b716e] font-bold text-sm'}>{review.status === 'open' ? 'รอตรวจ · เปิดดู' : 'ตัดสินแล้ว · เปิดดู'}</span></summary>
             {review.source_text && <p className="mt-3 rounded-lg bg-surface-2 p-3 text-sm break-words">ต้นทาง: {review.source_text}</p>}
             <p className="muted text-sm mt-3">{review.details}</p>
             {resolution && <div className="mt-4 grid gap-3 sm:grid-cols-2">

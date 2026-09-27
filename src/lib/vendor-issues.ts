@@ -8,14 +8,14 @@ export const ISSUE_FILE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'appli
 export const ISSUE_FILE_MAX_BYTES = 10 * 1024 * 1024;
 
 export const ISSUE_TYPE_LABELS: Record<string, string> = {
-  packaging_damage: 'สภาพสินค้า / บรรจุภัณฑ์', documentation_discrepancy: 'เอกสารไม่ครบหรือไม่ถูกต้อง', temperature_out_of_range: 'อุณหภูมิไม่เหมาะสม',
-  complaint: 'ข้อร้องเรียน', quantity_discrepancy: 'จำนวนส่งมอบไม่ครบ', expiry_non_compliant: 'อายุสินค้าไม่เป็นไปตามเกณฑ์', item_discrepancy: 'รายการสินค้าไม่ถูกต้อง', other: 'ปัญหาอื่น',
+  packaging_damage: 'สภาพน้ำยา / บรรจุภัณฑ์', documentation_discrepancy: 'เอกสารไม่ครบหรือไม่ถูกต้อง', temperature_out_of_range: 'อุณหภูมิไม่เหมาะสม',
+  complaint: 'ข้อร้องเรียน', quantity_discrepancy: 'จำนวนส่งมอบไม่ครบ', expiry_non_compliant: 'อายุน้ำยาไม่เป็นไปตามเกณฑ์', item_discrepancy: 'รายการน้ำยาไม่ถูกต้อง', other: 'ปัญหาอื่น',
 };
 export const ISSUE_SOURCE_LABELS: Record<string, string> = {
   assessment: 'ผลตรวจรับ', receipt_line: 'รายการรับเข้า', invoice_closure: 'ปิด Invoice แบบรับไม่ครบ', manual: 'บันทึกโดยเจ้าหน้าที่',
 };
 export const ISSUE_RESOLUTION_LABELS: Record<string, string> = {
-  vendor_replaced_goods: 'ผู้ขายเปลี่ยนสินค้า', vendor_supplied_documents: 'ผู้ขายส่งเอกสารเพิ่มเติม', vendor_clarified_accepted: 'ผู้ขายชี้แจงและยอมรับได้',
+  vendor_replaced_goods: 'ผู้ขายเปลี่ยนน้ำยา', vendor_supplied_documents: 'ผู้ขายส่งเอกสารเพิ่มเติม', vendor_clarified_accepted: 'ผู้ขายชี้แจงและยอมรับได้',
   credit_note_received: 'ได้รับใบลดหนี้', verified_no_impact: 'ตรวจสอบแล้วไม่มีผลกระทบ', vendor_warned: 'แจ้งเตือนผู้ขายแล้ว', other: 'การแก้ไขอื่น',
 };
 export const ISSUE_CANCEL_REASON_LABELS: Record<string, string> = {

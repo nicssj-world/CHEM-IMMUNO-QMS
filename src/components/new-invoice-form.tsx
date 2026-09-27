@@ -48,7 +48,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
     setError('');
     try {
       const result = await resolveProductScan(raw, symbology);
-      if (result.locationQr) { say('warn', 'นี่คือ QR ตำแหน่งจัดเก็บ', 'ไม่ใช่ Barcode สินค้า · ไม่ได้เพิ่มรายการ'); return; }
+      if (result.locationQr) { say('warn', 'นี่คือ QR ตำแหน่งจัดเก็บ', 'ไม่ใช่ Barcode น้ำยา · ไม่ได้เพิ่มรายการ'); return; }
       const trusted = result.parsed.warnings.length === 0;
       const lot = trusted ? result.parsed.lot ?? '' : '';
       const expiry = trusted ? result.parsed.expiry ?? '' : '';
@@ -65,7 +65,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
       });
       setFlash({ key, n: feedbackId.current });
       const code = result.product?.code;
-      if (!result.product) say('error', result.message ?? 'ไม่พบสินค้าที่ตรงกับ Barcode', 'เพิ่มเป็นรายการว่างไว้ด้านล่างแล้ว');
+      if (!result.product) say('error', result.message ?? 'ไม่พบน้ำยาที่ตรงกับ Barcode', 'เพิ่มเป็นรายการว่างไว้ด้านล่างแล้ว');
       else if (!trusted) say('warn', `${code} · Barcode มีคำเตือน`, 'กรอก LOT และวันหมดอายุเอง');
       else if (same) say('ok', `${code} · รวม ×${quantity}`, `LOT ${lot} · นับเพิ่มอีก 1`);
       else if (!lot || !expiry) say('warn', `${code} · ${result.product.name}`, 'Barcode ไม่มี LOT หรือวันหมดอายุ · กรอกเองได้');
@@ -90,10 +90,10 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
     setError('');
     const form = new FormData(event.currentTarget);
     const usable = lines.filter(l => l.productId && Number(l.quantity) > 0);
-    if (!usable.length) { setError('กรุณาสแกนหรือเพิ่มสินค้าอย่างน้อยหนึ่งรายการ'); return; }
+    if (!usable.length) { setError('กรุณาสแกนหรือเพิ่มน้ำยาอย่างน้อยหนึ่งรายการ'); return; }
     if (usable.length !== lines.length) {
       setLines(prev => prev.map(l => (l.productId && Number(l.quantity) > 0 ? l : { ...l, open: true })));
-      setError('มีรายการที่ยังไม่ได้เลือกสินค้าหรือจำนวน');
+      setError('มีรายการที่ยังไม่ได้เลือกน้ำยาหรือจำนวน');
       return;
     }
     startTransition(async () => {
@@ -122,12 +122,12 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
       <label className="field">เลขที่ PO (ถ้ามี)<input form={FORM_ID} className="input" name="po_number" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" /></label>
     </div>
     <div className="grid gap-3">
-      <div><h3 className="font-bold">รายการสินค้า</h3><p className="muted text-sm mt-1">สแกน Datamatrix ของสินค้าแต่ละชิ้น ระบบจะเพิ่มรายการและกรอก LOT / วันหมดอายุให้ · กล้องเปิดค้างสแกนต่อเนื่องได้ · สแกน LOT เดิมซ้ำจะเพิ่มจำนวน (ถือ Barcode ค้างไว้นับครั้งเดียว ต้องเอาออกจากกรอบก่อนสแกนชิ้นใหม่)</p></div>
+      <div><h3 className="font-bold">รายการน้ำยา</h3><p className="muted text-sm mt-1">สแกน Datamatrix ของน้ำยาแต่ละชิ้น ระบบจะเพิ่มรายการและกรอก LOT / วันหมดอายุให้ · กล้องเปิดค้างสแกนต่อเนื่องได้ · สแกน LOT เดิมซ้ำจะเพิ่มจำนวน (ถือ Barcode ค้างไว้นับครั้งเดียว ต้องเอาออกจากกรอบก่อนสแกนชิ้นใหม่)</p></div>
       <BarcodeScanner onScan={onScan} continuous dock feedback={feedback} summary={summary} />
       <div className="grid gap-2">
         {[...lines].reverse().map(line => {
           const product = productById.get(line.productId);
-          const label = product?.product_code ?? 'รายการที่ยังไม่เลือกสินค้า';
+          const label = product?.product_code ?? 'รายการที่ยังไม่เลือกน้ำยา';
           const quantity = Number(line.quantity) || 0;
           return <div key={line.key} ref={el => { if (el) rows.current.set(line.key, el); else rows.current.delete(line.key); }} className={`rounded-xl border bg-surface-2 ${incomplete(line) ? 'border-amber-400' : 'border-transparent'}`}>
             <div className="flex items-center gap-2 p-2 pl-3">
@@ -147,7 +147,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
             </div>
             {line.open && <div className="grid gap-3 border-t border-line p-3">
               <div className="grid sm:grid-cols-[1fr_120px] gap-3">
-                <label className="field">สินค้า<select form={FORM_ID} className="input" value={line.productId} onChange={e => patch(line.key, { productId: e.target.value })} required><option value="">เลือกสินค้า</option>{products.map(p => <option key={p.id} value={p.id}>[{warehouseTag(p.warehouse_id)}] {p.product_code} · {p.display_name}</option>)}</select></label>
+                <label className="field">น้ำยา<select form={FORM_ID} className="input" value={line.productId} onChange={e => patch(line.key, { productId: e.target.value })} required><option value="">เลือกน้ำยา</option>{products.map(p => <option key={p.id} value={p.id}>[{warehouseTag(p.warehouse_id)}] {p.product_code} · {p.display_name}</option>)}</select></label>
                 <label className="field">จำนวน<input form={FORM_ID} className="input" type="number" inputMode="decimal" min="0.001" step="0.001" value={line.quantity} onChange={e => patch(line.key, { quantity: e.target.value })} required /></label>
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
@@ -161,12 +161,12 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
           </div>;
         })}
       </div>
-      {!lines.length && <p className="muted text-sm rounded-xl border border-dashed border-field-line p-4">ยังไม่มีรายการ · สแกน Datamatrix หรือเพิ่มสินค้าด้วยตนเอง</p>}
-      <div><button type="button" className="button secondary" onClick={addManual}>+ เพิ่มสินค้าด้วยตนเอง</button></div>
+      {!lines.length && <p className="muted text-sm rounded-xl border border-dashed border-field-line p-4">ยังไม่มีรายการ · สแกน Datamatrix หรือเพิ่มน้ำยาด้วยตนเอง</p>}
+      <div><button type="button" className="button secondary" onClick={addManual}>+ เพิ่มน้ำยาด้วยตนเอง</button></div>
     </div>
     <div className="sticky-action grid gap-2">
       {error && <p className="error" role="alert">{error}</p>}
-      {existing && <div className="notice grid gap-3" role="alert"><p><strong>เลขที่ Invoice นี้ของผู้ขายรายนี้มีอยู่แล้ว</strong> · ระบบไม่ได้เพิ่มรายการใหม่เข้า Invoice เดิม ถ้าเปิด Invoice เดิม จะใช้ได้เฉพาะแพ็กเกจที่สแกนซึ่งมีสินค้าตรงกับรายการใน Invoice นั้น</p><div className="flex flex-wrap gap-2"><button type="button" className="button" onClick={() => openInvoice(existing.id, existing.lines)}>เปิด Invoice เดิม</button><button type="button" className="button secondary" onClick={() => setExisting(null)}>แก้เลขที่ Invoice</button></div></div>}
+      {existing && <div className="notice grid gap-3" role="alert"><p><strong>เลขที่ Invoice นี้ของผู้ขายรายนี้มีอยู่แล้ว</strong> · ระบบไม่ได้เพิ่มรายการใหม่เข้า Invoice เดิม ถ้าเปิด Invoice เดิม จะใช้ได้เฉพาะแพ็กเกจที่สแกนซึ่งมีน้ำยาตรงกับรายการใน Invoice นั้น</p><div className="flex flex-wrap gap-2"><button type="button" className="button" onClick={() => openInvoice(existing.id, existing.lines)}>เปิด Invoice เดิม</button><button type="button" className="button secondary" onClick={() => setExisting(null)}>แก้เลขที่ Invoice</button></div></div>}
       <SubmitButton label={`สร้าง Invoice และเริ่มรับ${lines.length ? ` (${lines.length} รายการ)` : ''}`} pendingLabel="กำลังสร้าง Invoice…" pending={pending} form={FORM_ID} />
     </div>
   </div>;

@@ -16,9 +16,9 @@ export async function createProduct(form: FormData) {
   const parsed = z.object({ warehouse_id: z.coerce.number().int(), product_type: z.enum(['reagent','calibrator','control','consumable']), source_name: z.string().min(1).max(300), display_name: z.string().min(1).max(300), packing_size_raw: z.string().max(300), current_ref: z.string().min(1), manufacturer_barcode: z.string().min(1), default_location_id: z.string().max(64) }).safeParse({
     warehouse_id: text(form,'warehouse_id'), product_type: text(form,'product_type'), source_name: text(form,'source_name'), display_name: text(form,'display_name'), packing_size_raw: text(form,'packing_size_raw'), current_ref: text(form,'current_ref'), manufacturer_barcode: text(form,'manufacturer_barcode'), default_location_id: text(form,'default_location_id'),
   });
-  if (!parsed.success) fail('/products/new','กรอกข้อมูลสินค้าให้ครบและถูกต้อง');
+  if (!parsed.success) fail('/products/new','กรอกข้อมูลน้ำยาให้ครบและถูกต้อง');
   const warehouse = access.warehouses.find(w => Number(w.id) === parsed.data.warehouse_id);
-  if (!warehouse || !canSupervise(warehouse.role)) fail('/products/new','ไม่มีสิทธิ์จัดการสินค้าคลังนี้');
+  if (!warehouse || !canSupervise(warehouse.role)) fail('/products/new','ไม่มีสิทธิ์จัดการน้ำยาคลังนี้');
   const client = await createClient();
   if (!client) fail('/products/new','ยังไม่ได้ตั้งค่า Supabase');
   const { data: id, error } = await client.rpc('ci_create_product',{ p_data: {
@@ -27,7 +27,7 @@ export async function createProduct(form: FormData) {
     current_ref: parsed.data.current_ref, manufacturer_barcode: parsed.data.manufacturer_barcode,
     default_location_id: parsed.data.default_location_id || null,
   }});
-  if (error || !id) fail('/products/new',error?.message ?? 'สร้างสินค้าไม่สำเร็จ');
+  if (error || !id) fail('/products/new',error?.message ?? 'สร้างน้ำยาไม่สำเร็จ');
   revalidatePath('/products');
   redirect(`/products/${id}`);
 }

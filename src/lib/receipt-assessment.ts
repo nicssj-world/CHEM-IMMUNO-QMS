@@ -6,7 +6,7 @@ export type ReasonCode = (typeof ASSESSMENT_REASON_CODES)[number];
 
 export const REASON_LABELS: Record<ReasonCode, string> = {
   urgent_need: 'จำเป็นต้องใช้เร่งด่วน',
-  no_alternative: 'ไม่มีสินค้าทดแทน',
+  no_alternative: 'ไม่มีน้ำยาทดแทน',
   usable_condition: 'ยังอยู่ในสภาพใช้งานได้',
   vendor_will_correct: 'ผู้ขายจะดำเนินการแก้ไข',
   documentation_pending: 'เอกสารอยู่ระหว่างติดตาม',
@@ -46,9 +46,9 @@ export function suggestedReasonCodes(input: AssessmentAnswers): ReasonCode[] {
 export function assessmentError(input: AssessmentInput): string | null {
   if (input.coldChainApplicable && input.coldChainCondition === null) return 'กรุณาระบุสภาพการควบคุมอุณหภูมิ';
   if (deriveAcceptanceDecision(input) === 'accepted_with_justification') {
-    if (input.reasonCodes.length === 0) return 'กรุณาเลือกเหตุผลที่ยอมรับสินค้าแบบมีเงื่อนไข';
+    if (input.reasonCodes.length === 0) return 'กรุณาเลือกเหตุผลที่ยอมรับน้ำยาแบบมีเงื่อนไข';
     if (!input.note.trim()) return 'กรุณาระบุหมายเหตุเมื่อพบความผิดปกติ';
-  } else if (input.reasonCodes.length > 0) return 'ผลรับสินค้าแบบปกติไม่ต้องมีเหตุผลแบบมีเงื่อนไข';
+  } else if (input.reasonCodes.length > 0) return 'ผลรับน้ำยาแบบปกติไม่ต้องมีเหตุผลแบบมีเงื่อนไข';
   if (input.reasonCodes.includes('other') && !input.otherReasonDetail.trim()) return 'กรุณาระบุเหตุผลอื่น';
   return null;
 }
@@ -118,7 +118,7 @@ export function fromAssessmentRow(row: AssessmentRow): AssessmentInput {
 /** Words for each answer, marking the ones that made the receipt "accepted with justification". */
 export function assessmentAnswerLines(input: AssessmentInput): { label: string; value: string; exception: boolean }[] {
   return [
-    { label: 'สภาพสินค้า', value: input.productCondition === 'normal' ? 'ปกติ' : 'ผิดปกติ', exception: input.productCondition === 'abnormal' },
+    { label: 'สภาพน้ำยา', value: input.productCondition === 'normal' ? 'ปกติ' : 'ผิดปกติ', exception: input.productCondition === 'abnormal' },
     { label: 'เอกสารประกอบ', value: input.documentation === 'complete' ? 'ครบถ้วน' : 'ไม่ครบถ้วน', exception: input.documentation === 'incomplete' },
     { label: 'ความถูกต้องของรายการ', value: input.itemCorrectness === 'correct' ? 'ถูกต้อง' : 'พบปัญหา', exception: input.itemCorrectness === 'problem' },
     { label: 'การควบคุมอุณหภูมิ', value: input.coldChainApplicable ? (input.coldChainCondition === 'inappropriate' ? 'ไม่เหมาะสม' : 'เหมาะสม') : 'ไม่เกี่ยวข้อง', exception: input.coldChainApplicable && input.coldChainCondition === 'inappropriate' },

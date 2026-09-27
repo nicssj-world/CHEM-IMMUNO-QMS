@@ -6,7 +6,7 @@ export default function NotFound() {
       <p className="eyebrow">ไม่พบหน้า (404)</p>
       <h1 className="page-title">ไม่พบข้อมูลที่ต้องการ</h1>
       <p className="muted">ลิงก์อาจไม่ถูกต้อง หรือรายการนี้ถูกลบ ปิดใช้งาน หรืออยู่ในคลังที่บัญชีนี้ไม่มีสิทธิ์</p>
-      <div className="flex flex-wrap gap-2"><Link className="button" href="/">กลับหน้าภาพรวม</Link><Link className="button secondary" href="/products">ค้นหาสินค้า</Link></div>
+      <div className="flex flex-wrap gap-2"><Link className="button" href="/">กลับหน้าภาพรวม</Link><Link className="button secondary" href="/products">ค้นหาน้ำยา</Link></div>
     </div>
   </main>;
 }

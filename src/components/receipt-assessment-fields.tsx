@@ -29,7 +29,7 @@ export function ReceiptAssessmentFields({ value, onChange }: { value: Assessment
   return <div className="grid gap-4">
     <input type="hidden" name="assessment" value={JSON.stringify(value)} />
     <fieldset className="assess-questions"><legend className="font-bold mb-1">ผลการตรวจรับ</legend>
-      <Choice name="product" label="สภาพสินค้า" value={value.productCondition} options={[['normal', 'ปกติ', false], ['abnormal', 'ผิดปกติ', true]]} onChange={v => set({ productCondition: v as AssessmentInput['productCondition'] })} />
+      <Choice name="product" label="สภาพน้ำยา" value={value.productCondition} options={[['normal', 'ปกติ', false], ['abnormal', 'ผิดปกติ', true]]} onChange={v => set({ productCondition: v as AssessmentInput['productCondition'] })} />
       <Choice name="docs" label="เอกสารประกอบ" value={value.documentation} options={[['complete', 'ครบถ้วน', false], ['incomplete', 'ไม่ครบถ้วน', true]]} onChange={v => setDocumentation(v as AssessmentInput['documentation'])} />
       <Choice name="items" label="ความถูกต้องของรายการ" value={value.itemCorrectness} options={[['correct', 'ถูกต้อง', false], ['problem', 'พบปัญหา', true]]} onChange={v => set({ itemCorrectness: v as AssessmentInput['itemCorrectness'] })} />
       <Choice name="cold" label="การควบคุมอุณหภูมิ" value={value.coldChainApplicable ? 'yes' : 'no'} options={[['no', 'ไม่เกี่ยวข้อง', false], ['yes', 'เกี่ยวข้อง', false]]} onChange={v => set({ coldChainApplicable: v === 'yes', coldChainCondition: v === 'yes' ? value.coldChainCondition ?? 'appropriate' : null })} />
@@ -37,7 +37,7 @@ export function ReceiptAssessmentFields({ value, onChange }: { value: Assessment
       <Choice name="complaint" label="ข้อร้องเรียน" value={value.hasComplaint ? 'yes' : 'no'} options={[['no', 'ไม่มี', false], ['yes', 'มีข้อร้องเรียน', true]]} onChange={v => set({ hasComplaint: v === 'yes' })} />
     </fieldset>
 
-    {conditional && <fieldset className="assess-reasons"><legend className="font-bold">เหตุผลที่ยอมรับสินค้าแบบมีเงื่อนไข <span className="text-[#8a5a00]">(จำเป็น)</span></legend>
+    {conditional && <fieldset className="assess-reasons"><legend className="font-bold">เหตุผลที่ยอมรับน้ำยาแบบมีเงื่อนไข <span className="text-[#8a5a00]">(จำเป็น)</span></legend>
       <p className="muted text-sm">เลือกอย่างน้อย 1 ข้อ ระบบเสนอ “เอกสารอยู่ระหว่างติดตาม” ให้อัตโนมัติเฉพาะเมื่อเอกสารไม่ครบ</p>
       <div className="grid sm:grid-cols-2 gap-2">{ASSESSMENT_REASON_CODES.map(code => <label key={code} className="assess-reason"><input type="checkbox" checked={value.reasonCodes.includes(code)} onChange={() => toggleReason(code)} /><span>{REASON_LABELS[code]}</span></label>)}</div>
       {value.reasonCodes.includes('other') && <label className="field">ระบุเหตุผลอื่น<input className="input" value={value.otherReasonDetail} maxLength={1000} onChange={e => set({ otherReasonDetail: e.target.value })} required /></label>}
@@ -46,9 +46,9 @@ export function ReceiptAssessmentFields({ value, onChange }: { value: Assessment
     <label className="field"><span>หมายเหตุ {conditional ? <span className="text-[#8a5a00]">(จำเป็น)</span> : <span className="muted font-normal">(ไม่บังคับ)</span>}</span><textarea className="input min-h-20" maxLength={2000} value={value.note} onChange={e => set({ note: e.target.value })} required={conditional} /></label>
 
     <div className={`assess-decision ${conditional ? 'is-conditional' : ''}`} role="status">
-      <span className="muted text-xs">ผลการรับสินค้า (คำนวณจากคำตอบ)</span>
-      <strong>{conditional ? 'รับสินค้าแบบมีเงื่อนไข' : 'รับสินค้า'}</strong>
-      <small className="muted">ผลนี้ไม่กักกันสินค้าและไม่ย้อนกลับรายการรับเข้าคลัง</small>
+      <span className="muted text-xs">ผลการรับน้ำยา (คำนวณจากคำตอบ)</span>
+      <strong>{conditional ? 'รับน้ำยาแบบมีเงื่อนไข' : 'รับน้ำยา'}</strong>
+      <small className="muted">ผลนี้ไม่กักกันน้ำยาและไม่ย้อนกลับรายการรับเข้าคลัง</small>
     </div>
   </div>;
 }

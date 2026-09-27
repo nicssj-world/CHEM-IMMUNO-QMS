@@ -136,9 +136,9 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.getByRole('textbox', { name: 'รหัสผ่าน' }).fill(password);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
   await expect(page.getByRole('heading', { name: /ภาพรวมคลัง/ })).toBeVisible();
-  await expect(page.getByRole('link', { name: /^สินค้าที่ใช้งาน 3/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /^น้ำยาที่ใช้งาน 3/ })).toBeVisible();
   const dashboardMetricLabels = [
-    'สินค้าที่ใช้งาน', 'หมดสต็อก', 'ต่ำกว่า ROP', 'LOT หมดอายุแล้ว', 'หมดอายุใน 30 วัน', 'หมดอายุใน 90 วัน',
+    'น้ำยาที่ใช้งาน', 'หมดสต็อก', 'ต่ำกว่า ROP', 'LOT หมดอายุแล้ว', 'หมดอายุใน 30 วัน', 'หมดอายุใน 90 วัน',
     'ยังไม่ตั้ง ROP', 'LOT ทั้งหมด', 'รับเข้า 7 วัน', 'เบิกใช้ 7 วัน',
   ];
   async function expectDashboardMetrics() {
@@ -150,23 +150,23 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expectDashboardMetrics();
   await page.getByRole('navigation', { name: 'เลือกคลัง' }).getByRole('link', { name: 'IMMUNOLOGY' }).click();
   await expect(page).toHaveURL(/warehouse=IMM/);
-  await expect(page.getByRole('link', { name: /^สินค้าที่ใช้งาน 1/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /^น้ำยาที่ใช้งาน 1/ })).toBeVisible();
   await expectDashboardMetrics();
 
   await page.goto('/products/new?warehouse=CHE');
-  await page.getByLabel('ชื่อสินค้าตามแหล่งข้อมูล').fill('Synthetic UI product source');
+  await page.getByLabel('ชื่อน้ำยาตามแหล่งข้อมูล').fill('Synthetic UI product source');
   await page.getByLabel('ชื่อที่แสดง').fill('Synthetic UI product');
   await page.getByLabel('ประเภท').selectOption('control');
   await page.getByLabel('ขนาดบรรจุ (ข้อความต้นฉบับ)').fill('2 x 10 mL');
   await page.getByLabel('REF ปัจจุบัน').fill('E2E-UI-REF');
   await page.getByLabel('Manufacturer barcode').fill('E2E-UI-BARCODE');
-  await page.getByRole('button', { name: 'สร้างสินค้า' }).click();
+  await page.getByRole('button', { name: 'สร้างน้ำยา' }).click();
   await expect(page.getByRole('heading', { name: 'Synthetic UI product' })).toBeVisible();
   const uiProductId = new URL(page.url()).pathname.split('/').at(-1)!;
   await page.getByLabel('ชื่อที่แสดง').fill('Synthetic UI product edited');
   await page.getByLabel('ประเภท').selectOption('reagent');
   await page.getByLabel('ขนาดบรรจุ').fill('3 x 20 mL');
-  await page.getByRole('button', { name: 'บันทึกข้อมูลสินค้า' }).click();
+  await page.getByRole('button', { name: 'บันทึกข้อมูลน้ำยา' }).click();
   await expect(page.getByRole('heading', { name: 'Synthetic UI product edited' })).toBeVisible();
   const uiProduct = await admin.from('ci_products')
     .select('source_name,display_name,product_type,packing_size_raw')
@@ -293,7 +293,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   const collapsibleNames = ['STOCK', 'OPERATIONS', 'MONITORING', 'REPORTS & AUDIT', 'SYSTEM'];
   const categoryButton = (name: string) => sidebar.getByRole('button', { name, exact: true });
   // /more (mobile) still groups by the seven underlying workspaces, unaffected by the desktop category refactor.
-  const workspaceNames = ['ภาพรวม', 'Morning Talk', 'คลังสินค้า', 'ปฏิบัติงาน', 'อุณหภูมิ/ความชื้น', 'รายงาน', 'จัดการระบบ'];
+  const workspaceNames = ['ภาพรวม', 'Morning Talk', 'คลังน้ำยา', 'ปฏิบัติงาน', 'อุณหภูมิ/ความชื้น', 'รายงาน', 'จัดการระบบ'];
   await expect(sidebar.getByRole('link', { name: 'สแกน Barcode' }), 'the Scan quick action stays at the top, outside every category').toBeVisible();
   // Home is always visible and is never a button; every other category is exactly one accordion control.
   await expect(sidebar.getByText('หน้าหลัก', { exact: true })).toBeVisible();
@@ -444,11 +444,11 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.setViewportSize({ width: 768, height: 900 });
   await page.goto('/stock?warehouse=CHE');
   await expect(sidebar, 'the sidebar is not used at tablet-portrait width').toBeHidden();
-  await expect(page.getByRole('navigation', { name: 'เมนูย่อย คลังสินค้า' }).getByRole('link')).toHaveCount(5);
+  await expect(page.getByRole('navigation', { name: 'เมนูย่อย คลังน้ำยา' }).getByRole('link')).toHaveCount(5);
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto('/locations?warehouse=CHE');
   await expect(sidebar).toBeHidden();
-  const strip = page.getByRole('navigation', { name: 'เมนูย่อย คลังสินค้า' });
+  const strip = page.getByRole('navigation', { name: 'เมนูย่อย คลังน้ำยา' });
   await expect(strip.getByRole('link', { name: 'ตำแหน่งจัดเก็บ', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(strip.getByRole('link')).toHaveCount(5);
   const bottom = page.getByRole('navigation', { name: 'เมนูมือถือ' });
@@ -456,7 +456,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(bottom.getByRole('link', { name: 'คงคลัง' }), 'Stock also lights up for Inventory pages').toHaveAttribute('aria-current', 'page');
   await page.goto('/more');
   for (const heading of workspaceNames) await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
-  await expect(page.getByRole('navigation', { name: 'คลังสินค้า', exact: true }).getByRole('link', { name: 'ตำแหน่งจัดเก็บ' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'คลังน้ำยา', exact: true }).getByRole('link', { name: 'ตำแหน่งจัดเก็บ' })).toBeVisible();
   await expect(page.getByRole('link', { name: /อุณหภูมิ\/ความชื้น/ }).first()).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 900 });
 
@@ -575,7 +575,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page.locator('.location-label')).toHaveCount(1);
   await expect(page.locator('.location-label')).toContainText('ปิดใช้งาน');
   await page.emulateMedia({ media: 'print' });
-  await expect(page.getByRole('navigation', { name: 'เมนูย่อย คลังสินค้า' })).toBeHidden();
+  await expect(page.getByRole('navigation', { name: 'เมนูย่อย คลังน้ำยา' })).toBeHidden();
   await expect(page.getByRole('button', { name: 'พิมพ์ / บันทึก PDF' })).toBeHidden();
   await page.emulateMedia({ media: 'screen' });
 
@@ -681,7 +681,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
   await expect(page.getByText('นี่คือ QR ตำแหน่งจัดเก็บ', { exact: true }).first()).toBeVisible();
   await expect(page.getByRole('link', { name: 'เปิดตำแหน่งนี้' })).toHaveAttribute('href', `/q/${newShelfToken}`);
-  await expect(page.getByText(/ไม่พบสินค้า/)).toHaveCount(0);
+  await expect(page.getByText(/ไม่พบน้ำยา/)).toHaveCount(0);
   await page.goto(`/receive?invoice=${invoice.data}`);
   await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill(scannedQr);
   await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
@@ -703,7 +703,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page.getByText(/^LOT LOT-A/)).toBeVisible();
 
   await page.goto(`/receive?invoice=${invoice.data}`);
-  await expect(page.getByRole('heading', { name: 'ตรวจและรับสินค้า' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'ตรวจและรับน้ำยา' })).toBeVisible();
   const cameraInput = page.getByLabel('ถ่ายภาพด้วยกล้อง');
   expect(await cameraInput.getAttribute('capture')).toBe('environment');
   expect(await cameraInput.getAttribute('accept')).toBe('image/*');
@@ -748,7 +748,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
     await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill(`(240)${value}`);
     await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
     await expect(page.locator('code').filter({ hasText: `(240)${value}` })).toBeVisible();
-    await expect(page.getByText(/ไม่พบสินค้า/).first()).toBeVisible();
+    await expect(page.getByText(/ไม่พบน้ำยา/).first()).toBeVisible();
     await page.getByLabel('Product ใน Invoice').selectOption(invoiceLine.data!.id);
     await page.getByRole('button', { name: 'เสนอการจับคู่ Barcode กับ Product ที่เลือก' }).click();
     await expect(page.getByRole('status').filter({ hasText: 'ส่งข้อเสนอแล้ว' })).toBeVisible();
@@ -761,7 +761,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.goto('/scan?warehouse=CHE');
   await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill('(240)E2E-MAP-APPROVE');
   await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
-  await expect(page.getByText(/ไม่พบสินค้า/).first()).toBeVisible();
+  await expect(page.getByText(/ไม่พบน้ำยา/).first()).toBeVisible();
   await page.goto('/scan/review?warehouse=CHE');
   const approvalCard = page.locator('article').filter({ hasText: 'E2E-MAP-APPROVE' });
   await approvalCard.getByLabel('เหตุผล / บันทึกการตัดสิน').fill('Synthetic approval acceptance');
@@ -781,7 +781,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page.getByText('CHE-0001')).toBeVisible();
   await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill('(240)E2E-MAP-REJECT');
   await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
-  await expect(page.getByText(/ไม่พบสินค้า/).first()).toBeVisible();
+  await expect(page.getByText(/ไม่พบน้ำยา/).first()).toBeVisible();
 
   await page.goto(`/products/${chemProduct}`);
   await expect(page.getByRole('heading', { name: 'Synthetic CHE one' })).toBeVisible();
@@ -793,11 +793,11 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page.getByRole('heading', { name: 'ROP / Suggested Order' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Provenance' })).toBeVisible();
   await expect(page.getByText('E2E-C1', { exact: true })).toBeVisible();
-  const addRelation = page.getByRole('combobox', { name: 'ความสัมพันธ์จากสินค้านี้' }).first();
+  const addRelation = page.getByRole('combobox', { name: 'ความสัมพันธ์จากน้ำยานี้' }).first();
   await addRelation.selectOption('uses_calibrator');
   const targetSearch = page.getByLabel('ค้นหาเป้าหมาย').first();
   await targetSearch.fill('Synthetic CHE calibrator');
-  const target = page.getByLabel('สินค้าเป้าหมาย').first();
+  const target = page.getByLabel('น้ำยาเป้าหมาย').first();
   await expect(target.getByRole('option', { name: /CHE-0003/ })).toHaveCount(1);
   await expect(target.getByRole('option', { name: /CHE-0002/ })).toHaveCount(0);
   await target.selectOption(chemCalibrator);
@@ -806,11 +806,11 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   const relationRow = await admin.from('ci_product_relations').select('id').eq('source_product_id', chemProduct).eq('target_product_id', chemCalibrator).single();
   expect(relationRow.error).toBeNull();
   await page.getByText('แก้ไข', { exact: true }).first().click();
-  const editRelation = page.getByRole('combobox', { name: 'ความสัมพันธ์จากสินค้านี้' }).first();
+  const editRelation = page.getByRole('combobox', { name: 'ความสัมพันธ์จากน้ำยานี้' }).first();
   await editRelation.selectOption('compatible_with');
   const editSearch = page.getByLabel('ค้นหาเป้าหมาย').first();
   await editSearch.fill('Synthetic CHE two');
-  const editTarget = page.getByLabel('สินค้าเป้าหมาย').first();
+  const editTarget = page.getByLabel('น้ำยาเป้าหมาย').first();
   await expect(editTarget.getByRole('option', { name: /CHE-0002/ })).toHaveCount(1);
   await editTarget.selectOption(chemReagent2);
   await page.getByRole('button', { name: 'บันทึกความสัมพันธ์' }).click();
@@ -979,7 +979,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page).toHaveURL(/\/login/);
   await signInAs('e2estaff');
   await page.goto('/products?warehouse=CHE');
-  await expect(page.getByRole('link', { name: 'เพิ่มสินค้า' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'เพิ่มน้ำยา' })).toHaveCount(0);
   await page.goto('/receive?warehouse=CHE');
   await expect(page.getByRole('heading', { name: 'สร้าง Invoice' })).toBeVisible();
   await page.goto('/scan/review?warehouse=CHE');
@@ -1056,7 +1056,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page).toHaveURL(/\/login/);
   await signInAs('e2esupervisor');
   await page.goto('/products?warehouse=IMM');
-  await expect(page.getByRole('link', { name: 'เพิ่มสินค้า' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'เพิ่มน้ำยา' })).toBeVisible();
   await page.goto('/admin/users');
   await expect(page.getByText('หน้านี้ใช้ได้เฉพาะผู้ดูแลระบบที่มีสิทธิ์ทั้งสองคลัง')).toBeVisible();
   // IMM supervisor: manages IMM locations, cannot see CHE ones through a route or a QR.
@@ -1097,7 +1097,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page).toHaveURL(/\/login/);
   await signInAs('e2eviewer');
   await page.goto('/products?warehouse=CHE');
-  await expect(page.getByRole('link', { name: 'เพิ่มสินค้า' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'เพิ่มน้ำยา' })).toHaveCount(0);
   await page.goto('/scan?warehouse=CHE');
   await expect(page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ })).toHaveCount(0);
   await page.goto('/receive?warehouse=CHE');
@@ -1633,11 +1633,11 @@ test('product default location: New Product form, Product Detail, and receiving 
   await newProductWarehouseSelect.selectOption('1');
   await expect(defaultLocationSelect, 'switching back also resets the selection, never silently keeps an IMM id').toHaveValue('');
   await defaultLocationSelect.selectOption(locA.data as string);
-  await page.getByLabel('ชื่อสินค้าตามแหล่งข้อมูล').fill('E2E-PDL-NEW source');
+  await page.getByLabel('ชื่อน้ำยาตามแหล่งข้อมูล').fill('E2E-PDL-NEW source');
   await page.getByLabel('ชื่อที่แสดง').fill('E2E-PDL-NEW display');
   await page.getByLabel('REF ปัจจุบัน').fill('E2E-PDL-NEW');
   await page.getByLabel('Manufacturer barcode').fill('B-E2E-PDL-NEW');
-  await page.getByRole('button', { name: 'สร้างสินค้า' }).click();
+  await page.getByRole('button', { name: 'สร้างน้ำยา' }).click();
   await expect(page.getByRole('heading', { name: 'E2E-PDL-NEW display' })).toBeVisible();
   const withDefaultId = new URL(page.url()).pathname.split('/').at(-1)!;
   const created = await admin.from('ci_products').select('default_location_id').eq('id', withDefaultId).single();
@@ -1648,16 +1648,16 @@ test('product default location: New Product form, Product Detail, and receiving 
   await expect(page.getByText('E2E-PDL-A', { exact: false }).first()).toBeVisible();
   const editSelect = page.getByLabel('ตำแหน่งจัดเก็บหลัก (ค่าเริ่มต้นตอนรับเข้า)');
   await editSelect.selectOption(locB.data as string);
-  await page.getByRole('button', { name: 'บันทึกข้อมูลสินค้า' }).click();
+  await page.getByRole('button', { name: 'บันทึกข้อมูลน้ำยา' }).click();
   await expect(page.getByText('บันทึกแล้ว')).toBeVisible();
   expect((await admin.from('ci_products').select('default_location_id').eq('id', withDefaultId).single()).data?.default_location_id).toBe(locB.data);
   await page.getByLabel('ตำแหน่งจัดเก็บหลัก (ค่าเริ่มต้นตอนรับเข้า)').selectOption('');
-  await page.getByRole('button', { name: 'บันทึกข้อมูลสินค้า' }).click();
+  await page.getByRole('button', { name: 'บันทึกข้อมูลน้ำยา' }).click();
   await expect(page.getByText('ยังไม่กำหนด')).toBeVisible();
   expect((await admin.from('ci_products').select('default_location_id').eq('id', withDefaultId).single()).data?.default_location_id).toBeNull();
   // Restore a default for the receiving scenarios below.
   await page.getByLabel('ตำแหน่งจัดเก็บหลัก (ค่าเริ่มต้นตอนรับเข้า)').selectOption(locA.data as string);
-  await page.getByRole('button', { name: 'บันทึกข้อมูลสินค้า' }).click();
+  await page.getByRole('button', { name: 'บันทึกข้อมูลน้ำยา' }).click();
   await expect(page.getByText('E2E-PDL-A', { exact: false }).first()).toBeVisible();
 
   // --- Receiving: build one multi-warehouse Invoice covering every priority case at once -----------------------------------
@@ -1668,7 +1668,7 @@ test('product default location: New Product form, Product Detail, and receiving 
   ] } });
   expect(invoice.error).toBeNull();
   await page.goto(`/receive?invoice=${invoice.data}`);
-  await expect(page.getByRole('heading', { name: 'ตรวจและรับสินค้า' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'ตรวจและรับน้ำยา' })).toBeVisible();
   // The invoice mixes both warehouses; which one the workbench defaults to depends on unspecified row order, so every
   // scenario below selects its own scanning warehouse explicitly rather than assuming a default.
   await page.getByLabel('คลังที่กำลังสแกน').selectOption('1');

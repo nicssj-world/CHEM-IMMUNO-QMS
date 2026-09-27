@@ -335,7 +335,7 @@ function criterionLabel(code: unknown, provided: unknown) {
 }
 
 const ASSESSMENT_LABELS: Record<string, string> = {
-  productCondition: 'สภาพสินค้า', documentation: 'เอกสาร', itemCorrectness: 'รายการ',
+  productCondition: 'สภาพน้ำยา', documentation: 'เอกสาร', itemCorrectness: 'รายการ',
   coldChainCondition: 'อุณหภูมิ', hasComplaint: 'ข้อร้องเรียน',
 }
 
@@ -347,7 +347,7 @@ const answer = (value: unknown) => ANSWER_LABELS[text(value, '')] ?? text(value)
 
 function exceptionLabels(assessment: Record<string, unknown>) {
   const labels: string[] = []
-  if (assessment.productCondition === 'abnormal') labels.push('สภาพสินค้า: ผิดปกติ')
+  if (assessment.productCondition === 'abnormal') labels.push('สภาพน้ำยา: ผิดปกติ')
   if (assessment.documentation === 'incomplete') labels.push('เอกสาร: ไม่ครบถ้วน')
   if (assessment.itemCorrectness === 'problem') labels.push('รายการ: พบปัญหา')
   if (assessment.coldChainApplicable === true && assessment.coldChainCondition === 'inappropriate') labels.push('อุณหภูมิ: ไม่เหมาะสม')
@@ -468,13 +468,13 @@ function assessmentSummaryRows(assessments: readonly Record<string, unknown>[]) 
   const total = String(completed.length)
   if (completed.length === 0) {
     return [
-      ['สภาพสินค้า', 'N/A', 'N/A', 'N/A', total], ['เอกสารประกอบ', 'N/A', 'N/A', 'N/A', total],
+      ['สภาพน้ำยา', 'N/A', 'N/A', 'N/A', total], ['เอกสารประกอบ', 'N/A', 'N/A', 'N/A', total],
       ['ความถูกต้องของรายการ', 'N/A', 'N/A', 'N/A', total], ['การควบคุมอุณหภูมิ', 'N/A', 'N/A', 'N/A', total],
       ['ข้อร้องเรียน', 'N/A', 'N/A', 'N/A', total], ['ผลการรับ', 'N/A', 'N/A', 'N/A', total],
     ]
   }
   return [
-    ['สภาพสินค้า', String(count((a) => a.productCondition === 'normal')), String(count((a) => a.productCondition === 'abnormal')), '0', total],
+    ['สภาพน้ำยา', String(count((a) => a.productCondition === 'normal')), String(count((a) => a.productCondition === 'abnormal')), '0', total],
     ['เอกสารประกอบ', String(count((a) => a.documentation === 'complete')), String(count((a) => a.documentation === 'incomplete')), '0', total],
     ['ความถูกต้องของรายการ', String(count((a) => a.itemCorrectness === 'correct')), String(count((a) => a.itemCorrectness === 'problem')), '0', total],
     ['การควบคุมอุณหภูมิ', String(count((a) => a.coldChainApplicable === true && a.coldChainCondition === 'appropriate')), String(count((a) => a.coldChainApplicable === true && a.coldChainCondition === 'inappropriate')), String(count((a) => a.coldChainApplicable === false)), total],
@@ -765,7 +765,7 @@ export async function generateVendorAnnualEvaluationPdf(revision: AnnualPdfRevis
       `${ASSESSMENT_LABELS.itemCorrectness}: ${answer(assessment.itemCorrectness)}`,
       `${ASSESSMENT_LABELS.coldChainCondition}: ${assessment.coldChainApplicable === false ? 'N/A' : answer(assessment.coldChainCondition)}`,
       `${ASSESSMENT_LABELS.hasComplaint}: ${assessment.hasComplaint === true ? 'มี' : assessment.hasComplaint === false ? 'ไม่มี' : 'N/A'}`,
-      `ผล: ${assessment.acceptanceDecision === 'accepted' ? 'รับสินค้า' : assessment.acceptanceDecision === 'accepted_with_justification' ? 'รับแบบมีเงื่อนไข' : 'รอประเมิน'}`,
+      `ผล: ${assessment.acceptanceDecision === 'accepted' ? 'รับน้ำยา' : assessment.acceptanceDecision === 'accepted_with_justification' ? 'รับแบบมีเงื่อนไข' : 'รอประเมิน'}`,
       ...exceptionLabels(assessment),
     ].join(' · ') : 'ไม่มีแบบประเมินใน Snapshot'
     return [
