@@ -25,7 +25,7 @@ export const workspaces: Workspace[] = [
   ] },
   { key: 'inventory', label: 'คลังสินค้า', icon: Boxes, tabs: [
     { href: '/stock', label: 'คงคลัง', icon: ClipboardList },
-    { href: '/products', label: 'สินค้า', icon: Boxes },
+    { href: '/products', label: 'ทะเบียนน้ำยา / Reagents', icon: Boxes },
     // Every role that can open a warehouse can read its locations; creating and editing them is gated inside the pages.
     { href: '/locations', label: 'ตำแหน่งจัดเก็บ', icon: MapPin },
     { href: '/reorder', label: 'ROP / สั่งซื้อ', icon: SlidersHorizontal },
@@ -54,7 +54,7 @@ export const workspaces: Workspace[] = [
   ] },
   { key: 'admin', label: 'จัดการระบบ', icon: UserCog, tabs: [
     { href: '/scan/review', label: 'คิวอนุมัติ Barcode', icon: QrCode, need: 'supervise' },
-    { href: '/import', label: 'นำเข้าสินค้า', icon: FileUp, need: 'adminBoth' },
+    { href: '/import', label: 'นำเข้าทะเบียนน้ำยา', icon: FileUp, need: 'adminBoth' },
     { href: '/admin/users', label: 'ผู้ใช้', icon: UserCog, need: 'adminBoth' },
   ] },
 ];
@@ -112,41 +112,39 @@ export function tabHref(href: string, warehouse: string | null | undefined) {
 }
 
 // ---------------------------------------------------------------------------
-// Desktop sidebar accordion. Pure helpers over the same workspace list, so the sidebar, the mobile tab strip and /more can
-// never disagree about which pages exist, which the user may see, or which one is current.
+// Desktop sidebar categories. Pure helpers over the same workspace list, so the sidebar, the mobile tab strip and /more can
+// never disagree about which pages exist, which the user may see, or which one is current. The desktop sidebar renders
+// every visible tab as a direct link (no accordion): a category groups one or more workspaces under one heading purely for
+// visual presentation, and never changes which tabs exist, their hrefs, icons or role gates.
 // ---------------------------------------------------------------------------
-export type SidebarSection = {
-  workspace: Workspace;
-  /** The workspace the current page belongs to. */
-  active: boolean;
-  /** The workspace's list is fully open (one workspace at a time). */
-  expanded: boolean;
-  /** Links to render: every visible tab when expanded; only the current page when collapsed but active; otherwise none. */
-  tabs: WorkspaceTab[];
-  /** href of the tab that is the current page, if it is among the visible tabs. */
-  activeHref: string | null;
-};
+export type NavCategoryKey = 'home' | 'stock' | 'operations' | 'monitoring' | 'reports' | 'system';
+export type NavCategory = { key: NavCategoryKey; label: string; workspaces: WorkspaceKey[] };
 
-/** The workspace that should be open for a path (null for /scan, /account, /more and other pages outside the workspaces). */
-export function openWorkspaceFor(pathname: string, source: readonly Workspace[] = workspaces): WorkspaceKey | null {
-  return activeWorkspace(pathname, source)?.key ?? null;
-}
+export const navCategories: NavCategory[] = [
+  { key: 'home', label: 'หน้าหลัก', workspaces: ['dashboard'] },
+  { key: 'stock', label: 'STOCK', workspaces: ['inventory'] },
+  { key: 'operations', label: 'OPERATIONS', workspaces: ['operations'] },
+  // Morning Talk and Environment share one heading; each keeps every one of its own tabs as its own direct link.
+  { key: 'monitoring', label: 'MONITORING', workspaces: ['morning-talk', 'environment'] },
+  { key: 'reports', label: 'REPORTS & AUDIT', workspaces: ['reports'] },
+  { key: 'system', label: 'SYSTEM', workspaces: ['admin'] },
+];
 
-/** Clicking a workspace opens it; clicking the open one closes it. Only one is ever open. */
-export function toggleWorkspace(open: WorkspaceKey | null, key: WorkspaceKey): WorkspaceKey | null {
-  return open === key ? null : key;
-}
+/** One workspace's visible tabs inside a category. `workspaceLabel` is only rendered as a sub-heading when a category groups more than one workspace (MONITORING today) - it is what tells apart two tabs that happen to share a label and an icon, such as Morning Talk's and Environment's own "ประวัติ". */
+export type SidebarGroup = { workspaceKey: WorkspaceKey; workspaceLabel: string; items: WorkspaceTab[] };
+export type SidebarCategory = { key: NavCategoryKey; label: string; groups: SidebarGroup[] };
 
-/**
- * What the desktop sidebar shows. The active page is never hidden: collapsing the active workspace leaves just its current
- * page visible, so the user can always see where they are.
- */
-export function sidebarSections(permissions: NavPermissions, pathname: string, open: WorkspaceKey | null, source: readonly Workspace[] = workspaces): SidebarSection[] {
-  const current = activeTab(pathname, source);
-  return visibleWorkspaces(permissions, source).map(workspace => {
-    const active = current?.workspace.key === workspace.key;
-    const expanded = open === workspace.key;
-    const currentTab = active ? workspace.tabs.find(tab => tab.href === current.tab.href) : undefined;
-    return { workspace, active, expanded, tabs: expanded ? workspace.tabs : currentTab ? [currentTab] : [], activeHref: currentTab?.href ?? null };
-  });
+/** What the desktop sidebar shows: one heading per category, with every visible tab of its workspaces as a direct link. A category or workspace group with nothing visible is dropped. */
+export function sidebarCategories(permissions: NavPermissions, source: readonly Workspace[] = workspaces): SidebarCategory[] {
+  const visible = new Map(visibleWorkspaces(permissions, source).map(workspace => [workspace.key, workspace]));
+  return navCategories
+    .map(category => ({
+      key: category.key,
+      label: category.label,
+      groups: category.workspaces
+        .map(key => visible.get(key))
+        .filter((workspace): workspace is Workspace => !!workspace)
+        .map(workspace => ({ workspaceKey: workspace.key, workspaceLabel: workspace.label, items: workspace.tabs })),
+    }))
+    .filter(category => category.groups.length > 0);
 }

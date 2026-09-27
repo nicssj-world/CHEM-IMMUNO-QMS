@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { House } from 'lucide-react';
 import {
-  activeTab, activeWorkspace, navPermissions, openWorkspaceFor, scanItem, sidebarSections, tabHref, toggleWorkspace, visibleWorkspaces, workspaceHref, workspaces,
+  activeTab, activeWorkspace, navCategories, navPermissions, scanItem, sidebarCategories, tabHref, visibleWorkspaces, workspaceHref, workspaces,
   type Workspace,
 } from '../../src/lib/nav';
 import type { AccessContext } from '../../src/lib/auth';
@@ -92,17 +92,8 @@ test('Morning Talk routes resolve to their own tab, and the printable report sta
   assert.equal(at('/reports/morning-talk'), 'reports:/reports/morning-talk');
   assert.equal(at('/reports/monthly'), 'reports:/reports/monthly');
   assert.equal(at('/morning-talks'), null, 'a prefix must end at a path boundary');
-  assert.equal(openWorkspaceFor('/morning-talk/history'), 'morning-talk');
-  assert.equal(openWorkspaceFor('/reports/morning-talk'), 'reports');
-});
-
-test('the accordion opens Morning Talk by itself and shows its three children, closing the previous workspace', () => {
-  const today = section(adminBoth, '/morning-talk/actions', 'morning-talk');
-  assert.equal(today.expanded, true);
-  assert.deepEqual(today.tabs.map(tab => tab.href), ['/morning-talk', '/morning-talk/history', '/morning-talk/actions']);
-  assert.equal(today.activeHref, '/morning-talk/actions');
-  assert.deepEqual(sectionsFor(adminBoth, '/morning-talk').filter(item => item.expanded).map(item => item.workspace.key), ['morning-talk']);
-  assert.equal(section(adminBoth, '/reports/morning-talk', 'reports').activeHref, '/reports/morning-talk');
+  assert.equal(activeWorkspace('/morning-talk/history')?.key, 'morning-talk');
+  assert.equal(activeWorkspace('/reports/morning-talk')?.key, 'reports');
 });
 
 test('the mobile bottom bar is not changed by the new workspace', async () => {
@@ -203,87 +194,63 @@ test('every real page route belongs to exactly one workspace tab, or is one of t
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Desktop sidebar accordion (pure helpers; the browser behaviour is covered by the Playwright suite)
+// Desktop sidebar categories (pure helpers; the browser behaviour is covered by the Playwright suite)
 // ---------------------------------------------------------------------------------------------------------------------
-const sectionsFor = (grants: Grant[], pathname: string, open = openWorkspaceFor(pathname)) => sidebarSections(navPermissions(access(...grants)), pathname, open);
-const section = (grants: Grant[], pathname: string, key: string, open = openWorkspaceFor(pathname)) => sectionsFor(grants, pathname, open).find(item => item.workspace.key === key)!;
+const categoriesFor = (grants: Grant[]) => sidebarCategories(navPermissions(access(...grants)));
+const category = (grants: Grant[], key: string) => categoriesFor(grants).find(item => item.key === key)!;
+const categoryHrefs = (grants: Grant[], key: string) => category(grants, key)?.groups.flatMap(g => g.items.map(i => i.href));
 
-test('the workspace of the current page starts open, shows every visible child, and marks the current one', () => {
-  const inventory = section(adminBoth, '/locations/abc/edit', 'inventory');
-  assert.equal(inventory.active, true);
-  assert.equal(inventory.expanded, true);
-  assert.deepEqual(inventory.tabs.map(tab => tab.href), ['/stock', '/products', '/locations', '/reorder', '/vendors']);
-  assert.equal(inventory.activeHref, '/locations', 'a nested route highlights its own child');
-  for (const other of sectionsFor(adminBoth, '/locations').filter(item => item.workspace.key !== 'inventory')) {
-    assert.equal(other.expanded, false, `${other.workspace.key} stays closed`);
-    assert.equal(other.active, false);
-    assert.deepEqual(other.tabs, [], 'a closed workspace that is not current renders no links');
-    assert.equal(other.activeHref, null);
-  }
+test('six named categories cover all seven workspaces; Morning Talk and Environment share one heading', () => {
+  assert.deepEqual(navCategories.map(c => c.key), ['home', 'stock', 'operations', 'monitoring', 'reports', 'system']);
+  assert.deepEqual(navCategories.find(c => c.key === 'monitoring')!.workspaces, ['morning-talk', 'environment']);
+  const owned = navCategories.flatMap(c => c.workspaces);
+  assert.deepEqual([...owned].sort(), workspaces.map(w => w.key).sort(), 'every workspace belongs to exactly one category');
 });
 
-test('navigating into another workspace opens it and the previous one closes (one open at a time)', () => {
-  const opened = (pathname: string) => sectionsFor(adminBoth, pathname).filter(item => item.expanded).map(item => item.workspace.key);
-  assert.deepEqual(opened('/'), ['dashboard']);
-  assert.deepEqual(opened('/stock'), ['inventory']);
-  assert.deepEqual(opened('/issue'), ['operations']);
-  assert.deepEqual(opened('/audit'), ['reports']);
-  assert.deepEqual(opened('/scan/review'), ['admin']);
-  assert.deepEqual(opened('/vendors/x/evaluations/y'), ['inventory']);
-  assert.deepEqual(opened('/scan'), [], 'Scan is a quick action outside every workspace');
-  assert.deepEqual(opened('/account'), []);
-  assert.equal(openWorkspaceFor('/counts/abc'), 'operations');
-  assert.equal(openWorkspaceFor('/more'), null);
+test('every direct link renders immediately for an Admin of both warehouses, with no expand step', () => {
+  const cats = categoriesFor(adminBoth);
+  assert.deepEqual(Object.fromEntries(cats.map(c => [c.key, c.groups.flatMap(g => g.items.map(i => i.href))])), {
+    home: ['/', '/attention'],
+    stock: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
+    operations: ['/receive', '/issue', '/transfer', '/counts', '/adjust', '/dispose'],
+    monitoring: ['/morning-talk', '/morning-talk/history', '/morning-talk/actions', '/environment', '/environment/check', '/environment/history', '/environment/excursions'],
+    reports: ['/reports/monthly', '/movements', '/audit', '/reports/morning-talk', '/reports/environment'],
+    system: ['/scan/review', '/import', '/admin/users'],
+  });
+  // MONITORING is the only category grouping more than one workspace, so it is the only one that needs a sub-heading per workspace.
+  assert.equal(category(adminBoth, 'monitoring').groups.length, 2);
+  assert.deepEqual(category(adminBoth, 'monitoring').groups.map(g => g.workspaceLabel), ['Morning Talk', 'อุณหภูมิ/ความชื้น']);
+  for (const key of ['home', 'stock', 'operations', 'reports', 'system']) assert.equal(category(adminBoth, key).groups.length, 1, `${key} groups exactly one workspace`);
 });
 
-test('toggling opens a closed workspace, closes the open one, and never leaves two open', () => {
-  assert.equal(toggleWorkspace(null, 'reports'), 'reports');
-  assert.equal(toggleWorkspace('inventory', 'reports'), 'reports');
-  assert.equal(toggleWorkspace('reports', 'reports'), null);
-  const afterOpeningReports = sectionsFor(adminBoth, '/stock', toggleWorkspace('inventory', 'reports'));
-  assert.deepEqual(afterOpeningReports.filter(item => item.expanded).map(item => item.workspace.key), ['reports']);
+test('role-restricted links are hidden, and an empty category is dropped entirely', () => {
+  assert.equal(category(viewerOnly, 'system'), undefined, 'a viewer has no visible System link, so System is not rendered');
+  assert.deepEqual(categoryHrefs(viewerOnly, 'stock'), ['/stock', '/products', '/locations', '/reorder', '/vendors'], 'read-only tabs stay visible to a viewer');
+  assert.deepEqual(categoryHrefs(staffChe, 'operations'), ['/receive', '/issue', '/transfer', '/counts'], 'adjust/dispose need supervise');
+  assert.deepEqual(categoryHrefs(mixed, 'system'), ['/scan/review'], 'a supervisor of one warehouse only sees the supervise-gated link');
 });
 
-test('the current page is never hidden: collapsing the active workspace leaves its current child visible', () => {
-  const collapsed = section(adminBoth, '/products/abc', 'inventory', null);
-  assert.equal(collapsed.expanded, false);
-  assert.equal(collapsed.active, true);
-  assert.deepEqual(collapsed.tabs.map(tab => tab.href), ['/products']);
-  assert.equal(collapsed.activeHref, '/products');
-  // Another workspace opened by hand does not hide the active page either.
-  const other = sectionsFor(adminBoth, '/products/abc', 'reports');
-  assert.deepEqual(other.find(item => item.workspace.key === 'inventory')!.tabs.map(tab => tab.href), ['/products']);
-  assert.equal(other.find(item => item.workspace.key === 'reports')!.tabs.length, 5);
+test('relabelled links keep their route, need and icon: only the visible text changed', () => {
+  const productsTab = workspaces.find(w => w.key === 'inventory')!.tabs.find(t => t.href === '/products')!;
+  assert.equal(productsTab.label, 'ทะเบียนน้ำยา / Reagents');
+  assert.equal(productsTab.need, undefined);
+  const importTab = workspaces.find(w => w.key === 'admin')!.tabs.find(t => t.href === '/import')!;
+  assert.equal(importTab.label, 'นำเข้าทะเบียนน้ำยา');
+  assert.equal(importTab.need, 'adminBoth');
 });
 
-test('accordion children respect the same role gates as before, for every representative user', () => {
-  const children = (grants: Grant[]) => Object.fromEntries(sectionsFor(grants, '/', 'x' as never).map(item => [item.workspace.key, item.workspace.tabs.map(tab => tab.href)]));
-  assert.deepEqual(children(viewerOnly), tabsOf(viewerOnly));
-  assert.deepEqual(children(staffChe), tabsOf(staffChe));
-  assert.deepEqual(children(mixed), tabsOf(mixed));
-  assert.deepEqual(children(adminChe), tabsOf(adminChe));
-  assert.deepEqual(children(adminBoth), tabsOf(adminBoth));
-  assert.deepEqual(section(viewerOnly, '/receive', 'operations').tabs.map(tab => tab.href), ['/receive']);
-  assert.equal(sectionsFor(viewerOnly, '/').some(item => item.workspace.key === 'admin'), false, 'a workspace with no visible child has no section');
-  assert.deepEqual(section(adminChe, '/scan/review', 'admin').tabs.map(tab => tab.href), ['/scan/review']);
-  assert.deepEqual(section(adminBoth, '/import', 'admin').tabs.map(tab => tab.href), ['/scan/review', '/import', '/admin/users']);
-  // A direct link to a page the user has no tab for opens its workspace but highlights nothing, and reveals no hidden child.
-  const direct = section(viewerOnly, '/adjust', 'operations');
-  assert.equal(direct.active, true);
-  assert.deepEqual(direct.tabs.map(tab => tab.href), ['/receive']);
-  assert.equal(direct.activeHref, null);
-});
-
-test('the desktop tab strip is hidden by the same 800px breakpoint that hides the sidebar on phones, and nothing else changed', async () => {
+test('the desktop tab strip is still mobile/tablet-only, and the sidebar has no accordion control', async () => {
   const { readFile } = await import('node:fs/promises');
   const css = (await readFile(path.join(process.cwd(), 'src/app/globals.css'), 'utf8')).replace(/\r\n/g, '\n');
   assert.match(css, /@media \(min-width: 801px\) \{ \.workspace-tabs \{ display: none; \} \}/);
   assert.match(css, /@media \(max-width: 800px\) \{[^}]*\n {2}\.app-grid \{ display: block; \}\n {2}\.sidebar \{ display: none; \}/, 'the sidebar is still hidden on narrow screens');
+  assert.doesNotMatch(css, /\.shell \{/, 'the global centered shell restriction is removed');
   const shell = await readFile(path.join(process.cwd(), 'src/components/app-shell.tsx'), 'utf8');
   assert.match(shell, /<WorkspaceTabs /, 'the tab strip is still rendered for narrow screens');
+  assert.doesNotMatch(shell, /\bshell\b/, 'the app-grid root no longer carries the centered shell class');
   const sidebar = await readFile(path.join(process.cwd(), 'src/components/side-nav.tsx'), 'utf8');
-  assert.match(sidebar, /aria-expanded=\{expanded\}/);
-  assert.match(sidebar, /aria-controls=\{`side-sub-\$\{workspace\.key\}`\}/);
-  assert.match(sidebar, /<button type="button" className="side-parent"/, 'the workspace control is a real button');
+  assert.doesNotMatch(sidebar, /aria-expanded|aria-controls|useState|side-parent|className="side-sub"|side-child/, 'no accordion state or markup remains');
+  assert.match(sidebar, /className="side-heading"/, 'category headings render as plain text');
+  assert.match(sidebar, /className="side-link"/, 'every tab renders as a direct link');
   assert.doesNotMatch(sidebar, /workspaces\.map|const .*= \[\s*\{ href/, 'the sidebar keeps no menu list of its own');
 });

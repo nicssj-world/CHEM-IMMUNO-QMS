@@ -38,7 +38,6 @@ body { margin: 0; color: var(--ink); background: var(--bg); font-family: var(--f
 button, input, select, textarea { font: inherit; }
 button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 3px solid #0b7f7a; outline-offset: 2px; }
-.shell { width: min(100%, 1440px); margin: 0 auto; }
 .surface { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 8px 28px rgba(21,48,68,.04); }
 .page-title { font-size: clamp(1.65rem, 3vw, 2.3rem); line-height: 1.35; letter-spacing: -.01em; font-weight: 700; }
 .eyebrow { font-size: .72rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; color: var(--teal); }
@@ -72,24 +71,19 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .app-grid { display: grid; grid-template-columns: 232px minmax(0,1fr); min-height: 100dvh; }
 .sidebar { background: #0d3857; color: #e8f5f7; padding: 28px 15px; }
 .sidebar-inner { position: sticky; top: 0; max-height: calc(100dvh - 56px); overflow-y: auto; }
-.side-link { display: flex; align-items: center; gap: 11px; min-height: 40px; padding: 8px 12px; border-radius: 10px; color: #d6e8ed; text-decoration: none; font-size: .92rem; transition: background-color .15s, color .15s; }
+/* Desktop sidebar categories: a heading is plain text (never a control); every tab under it is a direct link, no expand step. */
+.side-link { display: flex; align-items: center; gap: 11px; min-height: 44px; padding: 8px 12px; border-radius: 10px; color: #d6e8ed; text-decoration: none; font-size: .92rem; transition: background-color .15s, color .15s; }
 .side-link:hover { background: #1a5472; color: white; }
-.side-link[aria-current="page"] { background: #1a5472; color: white; font-weight: 700; box-shadow: inset 3px 0 0 #5eead4; }
-.side-heading { padding: 0 12px 4px; font-size: .68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #8fb4c3; }
+.side-link[aria-current="page"] { background: #1b6fa3; color: white; font-weight: 700; box-shadow: inset 3px 0 0 #5eead4; }
+.side-heading { margin-top: 20px; padding: 0 12px 4px; font-size: .68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #8fb4c3; }
+.side-heading:first-child { margin-top: 0; }
+/* Distinguishes two workspaces sharing one category heading (e.g. Morning Talk vs Environment under MONITORING) - lighter and smaller than .side-heading, so it stays visibly subordinate to it. */
+.side-subheading { margin-top: 8px; padding: 0 12px 2px; font-size: .66rem; font-weight: 600; color: #6c96a3; }
+.side-subheading:first-child { margin-top: 2px; }
 .side-scan { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 44px; border-radius: 10px; background: #1b6fa3; color: white; text-decoration: none; font-weight: 800; font-size: .92rem; }
 .side-scan:hover, .side-scan[aria-current="page"] { background: #2280b8; }
-.side-scan:focus-visible, .side-link:focus-visible, .side-parent:focus-visible, .side-child:focus-visible { outline: 2px solid #5eead4; outline-offset: 2px; }
+.side-scan:focus-visible, .side-link:focus-visible { outline: 2px solid #5eead4; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .side-link { transition: none; } }
-/* Desktop accordion: a workspace is a button that opens its pages downward inside the sidebar (strong = the workspace of the current page, subordinate = the current page). */
-.side-parent { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; color: #d6e8ed; font: inherit; font-size: .92rem; text-align: left; cursor: pointer; transition: background-color .15s, color .15s; }
-.side-parent:hover { background: #1a5472; color: white; }
-.side-parent[data-active] { background: #1a5472; color: white; font-weight: 700; box-shadow: inset 3px 0 0 #5eead4; }
-.side-sub { margin: 2px 0 6px 21px; padding: 0 0 0 8px; border-left: 1px solid rgba(143,180,195,.35); list-style: none; display: grid; gap: 1px; }
-.side-sub[hidden] { display: none; }
-.side-child { display: flex; align-items: center; min-height: 44px; padding: 6px 12px; border-radius: 8px; color: #b9d2db; font-size: .86rem; text-decoration: none; transition: background-color .15s, color .15s; }
-.side-child:hover { background: rgba(255,255,255,.08); color: white; }
-.side-child[aria-current="page"] { background: rgba(94,234,212,.14); color: #ecfffb; font-weight: 700; }
-@media (prefers-reduced-motion: reduce) { .side-parent, .side-child { transition: none; } }
 .main-area { min-width: 0; padding: 0 28px 38px; }
 /* Route-backed workspace sub-navigation: plain links in a strip that scrolls inside itself, never the page. */
 .workspace-tabs { display: flex; gap: 6px; margin: 0; padding: 12px 0 2px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
