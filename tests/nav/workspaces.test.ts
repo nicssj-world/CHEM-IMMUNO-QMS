@@ -232,7 +232,7 @@ test('role-restricted links are hidden, and an empty category is dropped entirel
 
 test('relabelled links keep their route, need and icon: only the visible text changed', () => {
   const productsTab = workspaces.find(w => w.key === 'inventory')!.tabs.find(t => t.href === '/products')!;
-  assert.equal(productsTab.label, 'ทะเบียนน้ำยา / Reagents');
+  assert.equal(productsTab.label, 'ทะเบียนน้ำยา');
   assert.equal(productsTab.need, undefined);
   const importTab = workspaces.find(w => w.key === 'admin')!.tabs.find(t => t.href === '/import')!;
   assert.equal(importTab.label, 'นำเข้าทะเบียนน้ำยา');

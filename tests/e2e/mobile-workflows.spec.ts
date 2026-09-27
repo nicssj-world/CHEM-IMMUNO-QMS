@@ -304,13 +304,13 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(homeList.getByRole('link', { name: 'ภาพรวม', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(homeList.getByRole('link', { name: 'รายการที่ต้องติดตาม', exact: true })).toBeVisible();
   await expect(sidebar.getByRole('link', { name: 'คงคลัง', exact: true }), 'STOCK links render without opening anything first').toBeVisible();
-  for (const name of ['คงคลัง', 'ทะเบียนน้ำยา / Reagents', 'ตำแหน่งจัดเก็บ', 'ROP / สั่งซื้อ', 'ผู้ขาย']) await expect(sidebar.getByRole('link', { name, exact: true })).toBeVisible();
+  for (const name of ['คงคลัง', 'ทะเบียนน้ำยา', 'ตำแหน่งจัดเก็บ', 'ROP / สั่งซื้อ', 'ผู้ขาย']) await expect(sidebar.getByRole('link', { name, exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: /^เมนูย่อย/ }), 'no horizontal tab strip on desktop').toBeHidden();
   const stripDisplay = await page.evaluate(() => { const strip = document.querySelector('.workspace-tabs'); return strip ? getComputedStyle(strip).display : 'absent'; });
   expect(['none', 'absent']).toContain(stripDisplay);
 
   // Keyboard: a direct link is a real link, reachable by Tab, with a visible focus ring and a full 44px touch target.
-  const productsLink = sidebar.getByRole('link', { name: 'ทะเบียนน้ำยา / Reagents', exact: true });
+  const productsLink = sidebar.getByRole('link', { name: 'ทะเบียนน้ำยา', exact: true });
   await productsLink.focus();
   await expect(productsLink).toBeFocused();
   const outline = await productsLink.evaluate(node => getComputedStyle(node).outlineStyle);
@@ -346,7 +346,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
 
   // Existing deep links keep working and highlight the right link, exactly one at a time.
   for (const [url, child] of [
-    ['/vendors/evaluation-policy', 'ผู้ขาย'], [`/products/${chemProduct}`, 'ทะเบียนน้ำยา / Reagents'], ['/counts?warehouse=CHE', 'ตรวจนับ'],
+    ['/vendors/evaluation-policy', 'ผู้ขาย'], [`/products/${chemProduct}`, 'ทะเบียนน้ำยา'], ['/counts?warehouse=CHE', 'ตรวจนับ'],
     ['/adjust?warehouse=CHE', 'ปรับยอด'], ['/reports/monthly?warehouse=CHE&month=2026-09', 'รายงานรายเดือน'], ['/audit?warehouse=CHE', 'บันทึกการตรวจสอบ'],
     ['/scan/review?warehouse=CHE', 'คิวอนุมัติ Barcode'], ['/admin/users', 'ผู้ใช้'], ['/attention?warehouse=CHE', 'รายการที่ต้องติดตาม'],
     [`/locations/${fridge.data}`, 'ตำแหน่งจัดเก็บ'], ['/movements?warehouse=CHE', 'ประวัติเคลื่อนไหว'],
