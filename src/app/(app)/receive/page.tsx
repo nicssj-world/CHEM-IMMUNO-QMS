@@ -15,7 +15,7 @@ import { ReceiptAssessmentCard } from '@/components/receipt-assessment-card';
 import { loadReceiptEvents } from '@/lib/receipt-events';
 import { ISSUE_COLUMNS, type IssueAttachment, type VendorIssue } from '@/lib/vendor-issues';
 
-type Product = { id: string; warehouse_id: number; product_code: string; display_name: string };
+type Product = { id: string; warehouse_id: number; product_code: string; display_name: string; default_location_id: string | null };
 type Vendor = { id: string; name: string };
 type Location = { id: string; warehouse_id: number; code: string; name: string; parent_code?: string | null };
 type Invoice = { id: string; invoice_number: string; invoice_date: string; status: string; vendor_id: string };
@@ -27,7 +27,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const client = await createClient();
   const warehouseIds = access.warehouses.filter(w => canMutate(w.role)).map(w => Number(w.id));
   const [productsResult, vendorsResult, locationsResult, invoicesResult] = client ? await Promise.all([
-    client.from('ci_products').select('id,warehouse_id,product_code,display_name').eq('active',true).in('warehouse_id',warehouseIds).order('product_code').limit(300),
+    client.from('ci_products').select('id,warehouse_id,product_code,display_name,default_location_id').eq('active',true).in('warehouse_id',warehouseIds).order('product_code').limit(300),
     client.from('ci_vendors').select('id,name').eq('active',true).order('name').limit(100),
     client.from('ci_locations').select('id,warehouse_id,code,name,parent_location_id').eq('active',true).in('warehouse_id',warehouseIds).order('code').limit(200),
     client.from('ci_invoices').select('id,invoice_number,invoice_date,status,vendor_id').order('created_at',{ascending:false}).limit(30),

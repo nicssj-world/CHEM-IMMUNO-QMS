@@ -1513,3 +1513,183 @@ test('environment excursion completion: one Staff save resolves it, legacy ackno
   expect(pageErrors).toEqual([]);
   expect(serverErrors).toEqual([]);
 });
+
+// ---- Post-Phase-3: Product -> Default Location (local disposable data only) -------------------------------------------------
+// The default is only a receiving convenience: it preselects a Location, it is never actual stock truth, a Product may
+// still hold stock anywhere, and a warehouse's own Locations never leak into another warehouse's picker.
+test('product default location: New Product form, Product Detail, and receiving preselection priority', async ({ page }) => {
+  test.setTimeout(240_000);
+  const pageErrors: string[] = [];
+  const serverErrors: string[] = [];
+  const baseUrl = process.env.CI_E2E_BASE_URL || 'http://localhost:3100';
+  const origin = new URL(baseUrl).origin;
+  page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(origin)) serverErrors.push(`${response.status()} ${response.url()}`); });
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const publishable = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+  const service = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const password = process.env.CI_E2E_PASSWORD!;
+  if (!url || !service || !['localhost', '127.0.0.1', '::1'].includes(new URL(url).hostname)) throw new Error('Disposable local Supabase required');
+  const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
+  const client = createClient(url, publishable, { auth: { persistSession: false, autoRefreshToken: false } });
+  expect((await client.auth.signInWithPassword({ email: 'ephis.e2eadmin@chem-immuno.internal', password })).error).toBeNull();
+
+  // Two active CHE Locations (so "several Locations, no default" is genuinely ambiguous). IMM is deliberately left
+  // alone here (never adding a second active IMM Location), so whatever the suite's earlier fixtures already set up
+  // over there stays "exactly one" - which is exactly the scenario this test needs to prove the pre-existing
+  // single-Location auto-select rule still holds after this change.
+  const locA = await client.rpc('ci_create_location_v2', { p: { warehouse_id: 1, code: 'E2E-PDL-A', name: 'Synthetic PDL location A' } });
+  const locB = await client.rpc('ci_create_location_v2', { p: { warehouse_id: 1, code: 'E2E-PDL-B', name: 'Synthetic PDL location B' } });
+  expect(locA.error).toBeNull(); expect(locB.error).toBeNull();
+  const activeImmLocations = await admin.from('ci_locations').select('id').eq('warehouse_id', 2).eq('active', true);
+  expect(activeImmLocations.error).toBeNull();
+  expect(activeImmLocations.data, 'this scenario requires exactly one active IMM Location; adjust if suite fixtures change').toHaveLength(1);
+  const locImm = { data: activeImmLocations.data![0].id as string };
+
+  const productPayload = (warehouse_id: number, ref: string, extra: Record<string, unknown> = {}) =>
+    ({ warehouse_id, product_type: 'reagent', source_name: ref, display_name: ref, current_ref: ref, manufacturer_barcode: `B-${ref}`, ...extra });
+  const noDefaultChe = await client.rpc('ci_create_product', { p_data: productPayload(1, 'E2E-PDL-NONE-CHE') });
+  const bothDefaultChe = await client.rpc('ci_create_product', { p_data: productPayload(1, 'E2E-PDL-BOTH', { default_location_id: locB.data }) });
+  const noDefaultImm = await client.rpc('ci_create_product', { p_data: productPayload(2, 'E2E-PDL-NONE-IMM') });
+  expect(noDefaultChe.error).toBeNull(); expect(bothDefaultChe.error).toBeNull(); expect(noDefaultImm.error).toBeNull();
+  const scanProductGtin = '00099988877701';
+  expect((await admin.from('ci_product_identifiers').insert({ product_id: bothDefaultChe.data, warehouse_id: 1, kind: 'GTIN', value: scanProductGtin, source: 'synthetic_e2e' })).error).toBeNull();
+  const bothDefaultCheCode = (await admin.from('ci_products').select('product_code').eq('id', bothDefaultChe.data).single()).data!.product_code as string;
+
+  await page.goto('/login');
+  await page.getByRole('textbox', { name: 'Ephis ID' }).fill('e2eadmin');
+  await page.getByRole('textbox', { name: 'รหัสผ่าน' }).fill(password);
+  await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
+  await expect(page.getByRole('heading', { name: /ภาพรวมคลัง/ })).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  // --- New Product form: warehouse-scoped picker, resets an incompatible choice on warehouse switch -------------------------
+  await page.goto('/products/new?warehouse=CHE');
+  const defaultLocationSelect = page.getByLabel('ตำแหน่งจัดเก็บหลัก (ค่าเริ่มต้นตอนรับเข้า)');
+  await expect(defaultLocationSelect.getByRole('option', { name: /E2E-PDL-A/ })).toHaveCount(1);
+  await expect(defaultLocationSelect.getByRole('option', { name: /E2E-IMM-FR/ }), 'the other warehouse never appears in the picker').toHaveCount(0);
+  await defaultLocationSelect.selectOption(locA.data as string);
+  await expect(defaultLocationSelect).toHaveValue(locA.data as string);
+  const newProductWarehouseSelect = page.locator('form select[name="warehouse_id"]');
+  await newProductWarehouseSelect.selectOption('2');
+  await expect(defaultLocationSelect, 'switching warehouse clears an incompatible previous choice').toHaveValue('');
+  await expect(defaultLocationSelect.getByRole('option', { name: /E2E-IMM-FR/ })).toHaveCount(1);
+  await expect(defaultLocationSelect.getByRole('option', { name: /E2E-PDL-A/ }), 'CHE Locations disappear once IMM is chosen').toHaveCount(0);
+  await newProductWarehouseSelect.selectOption('1');
+  await expect(defaultLocationSelect, 'switching back also resets the selection, never silently keeps an IMM id').toHaveValue('');
+  await defaultLocationSelect.selectOption(locA.data as string);
+  await page.getByLabel('ชื่อสินค้าตามแหล่งข้อมูล').fill('E2E-PDL-NEW source');
+  await page.getByLabel('ชื่อที่แสดง').fill('E2E-PDL-NEW display');
+  await page.getByLabel('REF ปัจจุบัน').fill('E2E-PDL-NEW');
+  await page.getByLabel('Manufacturer barcode').fill('B-E2E-PDL-NEW');
+  await page.getByRole('button', { name: 'สร้างสินค้า' }).click();
+  await expect(page.getByRole('heading', { name: 'E2E-PDL-NEW display' })).toBeVisible();
+  const withDefaultId = new URL(page.url()).pathname.split('/').at(-1)!;
+  const created = await admin.from('ci_products').select('default_location_id').eq('id', withDefaultId).single();
+  expect(created.data?.default_location_id).toBe(locA.data);
+
+  // --- Product Detail: visible to everyone, editable (change, then clear) only for Admin/Supervisor -------------------------
+  await expect(page.getByText('ตำแหน่งจัดเก็บหลัก', { exact: true })).toBeVisible();
+  await expect(page.getByText('E2E-PDL-A', { exact: false }).first()).toBeVisible();
+  const editSelect = page.getByLabel('ตำแหน่งจัดเก็บหลัก (ค่าเริ่มต้นตอนรับเข้า)');
+  await editSelect.selectOption(locB.data as string);
+  await page.getByRole('button', { name: 'บันทึกข้อมูลสินค้า' }).click();
+  await expect(page.getByText('บันทึกแล้ว')).toBeVisible();
+  expect((await admin.from('ci_products').select('default_location_id').eq('id', withDefaultId).single()).data?.default_location_id).toBe(locB.data);
+  await page.getByLabel('ตำแหน่งจัดเก็บหลัก (ค่าเริ่มต้นตอนรับเข้า)').selectOption('');
+  await page.getByRole('button', { name: 'บันทึกข้อมูลสินค้า' }).click();
+  await expect(page.getByText('ยังไม่กำหนด')).toBeVisible();
+  expect((await admin.from('ci_products').select('default_location_id').eq('id', withDefaultId).single()).data?.default_location_id).toBeNull();
+  // Restore a default for the receiving scenarios below.
+  await page.getByLabel('ตำแหน่งจัดเก็บหลัก (ค่าเริ่มต้นตอนรับเข้า)').selectOption(locA.data as string);
+  await page.getByRole('button', { name: 'บันทึกข้อมูลสินค้า' }).click();
+  await expect(page.getByText('E2E-PDL-A', { exact: false }).first()).toBeVisible();
+
+  // --- Receiving: build one multi-warehouse Invoice covering every priority case at once -----------------------------------
+  const vendor = await client.rpc('ci_create_vendor', { p_data: { vendorCode: 'V-E2E-PDL', name: 'Synthetic PDL vendor' } });
+  expect(vendor.error).toBeNull();
+  const invoice = await client.rpc('ci_create_invoice', { p_data: { vendor_id: vendor.data, invoice_number: 'E2E-PDL-INV-1', invoice_date: '2026-09-24', lines: [
+    { product_id: withDefaultId, quantity: 5 }, { product_id: noDefaultChe.data, quantity: 5 }, { product_id: bothDefaultChe.data, quantity: 5 }, { product_id: noDefaultImm.data, quantity: 5 },
+  ] } });
+  expect(invoice.error).toBeNull();
+  await page.goto(`/receive?invoice=${invoice.data}`);
+  await expect(page.getByRole('heading', { name: 'ตรวจและรับสินค้า' })).toBeVisible();
+  // The invoice mixes both warehouses; which one the workbench defaults to depends on unspecified row order, so every
+  // scenario below selects its own scanning warehouse explicitly rather than assuming a default.
+  await page.getByLabel('คลังที่กำลังสแกน').selectOption('1');
+  const productSelect = page.getByLabel('Product ใน Invoice');
+  const locationSelect = page.getByRole('combobox', { name: 'ตำแหน่ง', exact: true }).first();
+  // Each add is one more server round trip (checkLotExpiryConflict); a slightly longer timeout than the default
+  // absorbs normal dev-server variance without masking a genuine rejection, which would still fail either way.
+  const addPackage = async () => {
+    await page.getByRole('button', { name: 'เพิ่มแพ็กเกจในร่าง' }).click();
+    await expect(page.getByText(/เพิ่มแพ็กเกจในร่างแล้ว/), 'the package was actually accepted, not silently rejected').toBeVisible({ timeout: 15_000 });
+  };
+
+  // A. a valid active default is preselected.
+  await productSelect.selectOption((await productSelect.locator('option', { hasText: 'E2E-PDL-NEW' }).first().getAttribute('value')) as string);
+  await expect(locationSelect).toHaveValue(locA.data as string);
+  // E. the user may still change it away from the default before adding the package.
+  await locationSelect.selectOption(locB.data as string);
+  await page.getByLabel('LOT').fill('E2E-PDL-LOT-1');
+  await page.getByLabel('หมดอายุ').fill('2030-01-01');
+  await addPackage();
+  const savedRow = page.locator('article').filter({ hasText: 'E2E-PDL-NEW' });
+  await expect(savedRow.getByRole('combobox')).toHaveValue(locB.data as string);
+
+  // C. no default, several Locations in this warehouse: blank, the user must choose. (Verified as a preselect value
+  // only - not added to the draft - so this scenario cannot interfere with the one package this test actually
+  // confirms below; every scenario's preselect is independent of whatever the draft form currently holds.)
+  await productSelect.selectOption((await productSelect.locator('option', { hasText: 'E2E-PDL-NONE-CHE' }).first().getAttribute('value')) as string);
+  await expect(locationSelect).toHaveValue('');
+
+  // D/G. a Product with its OWN different default is preselected independently of the earlier Product's choice.
+  await productSelect.selectOption((await productSelect.locator('option', { hasText: 'E2E-PDL-BOTH' }).first().getAttribute('value')) as string);
+  await expect(locationSelect, 'each Product resolves its own default, not the previous package’s manual choice').toHaveValue(locB.data as string);
+
+  // F. a scanned package preselects the Product's own default too.
+  await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill(`(01)${scanProductGtin}(17)300101(10)E2E-PDL-LOT-SCAN`);
+  await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
+  await expect(page.getByText(bothDefaultCheCode).first()).toBeVisible();
+  await expect(locationSelect, 'a scanned package preselects the Product’s default the same way a manual pick does').toHaveValue(locB.data as string);
+
+  // B/H. no default, exactly one Location in THIS warehouse: the pre-existing single-Location auto-select still applies,
+  // and the CHE Locations never leak into an IMM package's picker (cross-warehouse leakage is impossible).
+  await page.getByLabel('คลังที่กำลังสแกน').selectOption('2');
+  await productSelect.selectOption((await productSelect.locator('option', { hasText: 'E2E-PDL-NONE-IMM' }).first().getAttribute('value')) as string);
+  await expect(locationSelect).toHaveValue(locImm.data as string);
+  await expect(locationSelect.getByRole('option', { name: /E2E-PDL-A|E2E-PDL-B/ }), 'no CHE Location is ever offered while scanning IMM').toHaveCount(0);
+
+  // I. the actual confirmed receipt uses the FINAL selected Location (locB for the with-default Product, changed away
+  // from its default), never the Product default blindly - proven directly against the ledger.
+  const withDefaultLine = await admin.from('ci_invoice_lines').select('id').eq('invoice_id', invoice.data).eq('product_id', withDefaultId).single();
+  expect(withDefaultLine.error).toBeNull();
+  const idempotencyKey = crypto.randomUUID();
+  const confirm = await client.rpc('ci_confirm_receipt_assessed', {
+    p_invoice_id: invoice.data, p_idempotency_key: idempotencyKey,
+    p_lines: [{ invoice_line_id: withDefaultLine.data!.id, quantity: '5', lot_number: 'E2E-PDL-LOT-1', expiry_date: '2030-01-01', location_id: locB.data }],
+    // Matches ci_receipt_assessments' columns (see toAssessmentPayload), not the client-side AssessmentInput shape.
+    p_assessment: { correct_product: true, correct_quantity: true, packaging_ok: true, temperature_required: false, temperature_ok: null, shelf_life_ok: null, documentation_complete: true, has_complaint: false, delivery_discrepancy: false, reason_codes: [], other_reason_detail: null, notes: null },
+  });
+  expect(confirm.error).toBeNull();
+  const balances = await admin.from('ci_stock_balances').select('location_id,balance').eq('product_id', withDefaultId);
+  expect(balances.error).toBeNull();
+  expect(balances.data).toEqual([{ location_id: locB.data, balance: 5 }]);
+  const stillDefaultA = await admin.from('ci_products').select('default_location_id').eq('id', withDefaultId).single();
+  expect(stillDefaultA.data?.default_location_id, 'confirming a receipt at a different Location never rewrites the Product default').toBe(locA.data);
+
+  // --- Viewer sees the current default read-only, and it survives cross-warehouse RLS the same as any other Product field ---
+  await page.getByRole('button', { name: 'ออกจากระบบ' }).click();
+  await expect(page).toHaveURL(/\/login/);
+  await page.getByRole('textbox', { name: 'Ephis ID' }).fill('e2eviewer');
+  await page.getByRole('textbox', { name: 'รหัสผ่าน' }).fill(password);
+  await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
+  await expect(page.getByRole('heading', { name: /ภาพรวมคลัง/ })).toBeVisible();
+  await page.goto(`/products/${withDefaultId}`);
+  await expect(page.getByText('ตำแหน่งจัดเก็บหลัก', { exact: true })).toBeVisible();
+  await expect(page.getByText('E2E-PDL-A', { exact: false }).first()).toBeVisible();
+  await expect(page.getByLabel('ตำแหน่งจัดเก็บหลัก (ค่าเริ่มต้นตอนรับเข้า)'), 'a Viewer sees the value but never an editable control').toHaveCount(0);
+
+  expect(pageErrors).toEqual([]);
+  expect(serverErrors).toEqual([]);
+});
