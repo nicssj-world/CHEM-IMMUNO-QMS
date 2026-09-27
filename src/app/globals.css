@@ -71,19 +71,24 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .app-grid { display: grid; grid-template-columns: 232px minmax(0,1fr); min-height: 100dvh; }
 .sidebar { background: #0d3857; color: #e8f5f7; padding: 28px 15px; }
 .sidebar-inner { position: sticky; top: 0; max-height: calc(100dvh - 56px); overflow-y: auto; }
-/* Desktop sidebar categories: a heading is plain text (never a control); every tab under it is a direct link, no expand step. */
+/* Desktop sidebar: Home's heading is plain text (never a control, always expanded); every other category heading is a
+   real button that opens/closes its own links - one open at a time, and never styled like an active page link. */
 .side-link { display: flex; align-items: center; gap: 11px; min-height: 44px; padding: 8px 12px; border-radius: 10px; color: #d6e8ed; text-decoration: none; font-size: .92rem; transition: background-color .15s, color .15s; }
 .side-link:hover { background: #1a5472; color: white; }
 .side-link[aria-current="page"] { background: #1b6fa3; color: white; font-weight: 700; box-shadow: inset 3px 0 0 #5eead4; }
 .side-heading { margin-top: 20px; padding: 0 12px 4px; font-size: .68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #8fb4c3; }
 .side-heading:first-child { margin-top: 0; }
+.side-category { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; margin-top: 12px; padding: 4px 12px; border: 0; border-radius: 8px; background: transparent; font: inherit; font-size: .68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #8fb4c3; text-align: left; cursor: pointer; transition: background-color .15s, color .15s; }
+.side-category:first-child { margin-top: 0; }
+.side-category:hover { background: rgba(255,255,255,.06); color: #cfe6ec; }
+.side-category[aria-expanded="true"] { color: #cfe6ec; }
 /* Distinguishes two workspaces sharing one category heading (e.g. Morning Talk vs Environment under MONITORING) - lighter and smaller than .side-heading, so it stays visibly subordinate to it. */
 .side-subheading { margin-top: 8px; padding: 0 12px 2px; font-size: .66rem; font-weight: 600; color: #6c96a3; }
 .side-subheading:first-child { margin-top: 2px; }
 .side-scan { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 44px; border-radius: 10px; background: #1b6fa3; color: white; text-decoration: none; font-weight: 800; font-size: .92rem; }
 .side-scan:hover, .side-scan[aria-current="page"] { background: #2280b8; }
-.side-scan:focus-visible, .side-link:focus-visible { outline: 2px solid #5eead4; outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .side-link { transition: none; } }
+.side-scan:focus-visible, .side-link:focus-visible, .side-category:focus-visible { outline: 2px solid #5eead4; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .side-link, .side-category { transition: none; } }
 .main-area { min-width: 0; padding: 0 28px 38px; }
 /* Route-backed workspace sub-navigation: plain links in a strip that scrolls inside itself, never the page. */
 .workspace-tabs { display: flex; gap: 6px; margin: 0; padding: 12px 0 2px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }

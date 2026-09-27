@@ -286,55 +286,112 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
     await expect(page.getByRole('heading', { name: 'ไม่พบข้อมูลที่ต้องการ' }), why).toBeVisible();
     await expect(page.getByRole('heading', { name: /E2E-/ }), `${why}: nothing about the location is shown`).toHaveCount(0);
   }
-  // ---- Phase 1 / 1.1: workspace navigation (desktop category sidebar, mobile tab strip) -----------------------------------------
+  // ---- Phase 1 / 1.1: category-level sidebar accordion (desktop), mobile tab strip unchanged -----------------------------------------
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/');
   const sidebar = page.getByRole('navigation', { name: 'เมนูหลัก' });
-  const categoryNames = ['หน้าหลัก', 'STOCK', 'OPERATIONS', 'MONITORING', 'REPORTS & AUDIT', 'SYSTEM'];
+  const collapsibleNames = ['STOCK', 'OPERATIONS', 'MONITORING', 'REPORTS & AUDIT', 'SYSTEM'];
+  const categoryButton = (name: string) => sidebar.getByRole('button', { name, exact: true });
   // /more (mobile) still groups by the seven underlying workspaces, unaffected by the desktop category refactor.
   const workspaceNames = ['ภาพรวม', 'Morning Talk', 'คลังสินค้า', 'ปฏิบัติงาน', 'อุณหภูมิ/ความชื้น', 'รายงาน', 'จัดการระบบ'];
-  await expect(sidebar.getByRole('link', { name: 'สแกน Barcode' }), 'the Scan quick action stays at the top').toBeVisible();
-  // Categories are plain headings, never controls: no accordion buttons anywhere in the sidebar.
-  await expect(sidebar.getByRole('button'), 'no accordion controls remain').toHaveCount(0);
-  for (const name of categoryNames) await expect(sidebar.getByText(name, { exact: true })).toBeVisible();
-  // Every direct link renders immediately, with no expand step required to reveal it. "ภาพรวม" is also Environment's own
-  // overview tab label (both now render together, unlike the old one-open-at-a-time accordion), so Home is scoped by its
-  // own category list to disambiguate.
+  await expect(sidebar.getByRole('link', { name: 'สแกน Barcode' }), 'the Scan quick action stays at the top, outside every category').toBeVisible();
+  // Home is always visible and is never a button; every other category is exactly one accordion control.
+  await expect(sidebar.getByText('หน้าหลัก', { exact: true })).toBeVisible();
   const homeList = sidebar.getByRole('list', { name: 'หน้าหลัก' });
   await expect(homeList.getByRole('link', { name: 'ภาพรวม', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(homeList.getByRole('link', { name: 'รายการที่ต้องติดตาม', exact: true })).toBeVisible();
-  await expect(sidebar.getByRole('link', { name: 'คงคลัง', exact: true }), 'STOCK links render without opening anything first').toBeVisible();
-  for (const name of ['คงคลัง', 'ทะเบียนน้ำยา', 'ตำแหน่งจัดเก็บ', 'ROP / สั่งซื้อ', 'ผู้ขาย']) await expect(sidebar.getByRole('link', { name, exact: true })).toBeVisible();
+  await expect(sidebar.getByRole('button'), 'exactly the five collapsible categories are buttons').toHaveCount(5);
+  // On Home, no collapsible category owns the current page, so all five start collapsed and their links are hidden -
+  // this is what keeps the sidebar from needing its own scrollbar on a normal desktop viewport.
+  for (const name of collapsibleNames) await expect(categoryButton(name), `${name} starts collapsed`).toHaveAttribute('aria-expanded', 'false');
+  await expect(sidebar.getByRole('link', { name: 'คงคลัง', exact: true }), 'STOCK is collapsed, so its links are hidden').toBeHidden();
   await expect(page.getByRole('navigation', { name: /^เมนูย่อย/ }), 'no horizontal tab strip on desktop').toBeHidden();
   const stripDisplay = await page.evaluate(() => { const strip = document.querySelector('.workspace-tabs'); return strip ? getComputedStyle(strip).display : 'absent'; });
   expect(['none', 'absent']).toContain(stripDisplay);
+  const sidebarFitsWithoutScroll = await page.evaluate(() => { const inner = document.querySelector('.sidebar-inner')!; return inner.scrollHeight <= inner.clientHeight + 1; });
+  expect(sidebarFitsWithoutScroll, 'with every category collapsed, the sidebar fits a normal 900px-tall viewport with no scrollbar').toBe(true);
 
-  // Keyboard: a direct link is a real link, reachable by Tab, with a visible focus ring and a full 44px touch target.
-  const productsLink = sidebar.getByRole('link', { name: 'ทะเบียนน้ำยา', exact: true });
-  await productsLink.focus();
-  await expect(productsLink).toBeFocused();
-  const outline = await productsLink.evaluate(node => getComputedStyle(node).outlineStyle);
+  // Section 24 sequence: /products auto-opens STOCK; clicking OPERATIONS closes STOCK and opens OPERATIONS.
+  await page.goto('/products?warehouse=CHE');
+  await expect(categoryButton('STOCK'), '/products auto-opens STOCK').toHaveAttribute('aria-expanded', 'true');
+  await expect(categoryButton('OPERATIONS')).toHaveAttribute('aria-expanded', 'false');
+  await expect(categoryButton('MONITORING')).toHaveAttribute('aria-expanded', 'false');
+  await expect(sidebar.getByRole('link', { name: 'ทะเบียนน้ำยา', exact: true })).toHaveAttribute('aria-current', 'page');
+  await categoryButton('OPERATIONS').click();
+  await expect(categoryButton('OPERATIONS')).toHaveAttribute('aria-expanded', 'true');
+  await expect(categoryButton('STOCK'), 'opening OPERATIONS closes STOCK - only one category open at a time').toHaveAttribute('aria-expanded', 'false');
+  await expect(sidebar.getByRole('link', { name: 'ทะเบียนน้ำยา', exact: true }), 'STOCK links are hidden once it collapses, even though /products is still the current page').toBeHidden();
+  await expect(sidebar.getByRole('link', { name: 'รับเข้า', exact: true })).toBeVisible();
+
+  // Navigate to /receive (still OPERATIONS): it stays open, nothing resets.
+  await page.goto('/receive?warehouse=CHE');
+  await expect(categoryButton('OPERATIONS'), 'staying inside OPERATIONS keeps it open').toHaveAttribute('aria-expanded', 'true');
+  await expect(sidebar.getByRole('link', { name: 'รับเข้า', exact: true })).toHaveAttribute('aria-current', 'page');
+
+  // Then to /environment: MONITORING opens automatically, OPERATIONS closes, and the active page is never hidden.
+  await page.goto('/environment?warehouse=CHE');
+  await expect(categoryButton('MONITORING'), 'navigating to Environment auto-opens MONITORING').toHaveAttribute('aria-expanded', 'true');
+  await expect(categoryButton('OPERATIONS'), 'the previous category closes').toHaveAttribute('aria-expanded', 'false');
+  // MONITORING keeps its own sub-headings, not a nested accordion: Morning Talk's and Environment's tabs render together, both visible at once.
+  await expect(sidebar.getByRole('button', { name: 'Morning Talk' }), 'Morning Talk is a sub-heading, never its own accordion control').toHaveCount(0);
+  const environmentList = sidebar.getByRole('list', { name: 'อุณหภูมิ/ความชื้น' });
+  await expect(environmentList.getByRole('link', { name: 'ภาพรวม', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(environmentList.getByRole('link', { name: 'ตรวจด้วย QR', exact: true })).toBeVisible();
+  await expect(environmentList.getByRole('link', { name: 'นอกช่วง', exact: true })).toBeVisible();
+  const morningTalkList = sidebar.getByRole('list', { name: 'Morning Talk' });
+  await expect(morningTalkList.getByRole('link', { name: 'วันนี้', exact: true })).toBeVisible();
+  await expect(morningTalkList.getByRole('link', { name: 'งานค้าง', exact: true })).toBeVisible();
+
+  // REPORTS & AUDIT and SYSTEM, with an authorized (Admin of both) role.
+  await page.goto('/reports/monthly?warehouse=CHE&month=2026-09');
+  await expect(categoryButton('REPORTS & AUDIT')).toHaveAttribute('aria-expanded', 'true');
+  await expect(categoryButton('MONITORING')).toHaveAttribute('aria-expanded', 'false');
+  await expect(sidebar.getByRole('link', { name: 'รายงานรายเดือน', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(sidebar.getByRole('link', { name: 'บันทึกการตรวจสอบ', exact: true })).toBeVisible();
+  await page.goto('/admin/users');
+  await expect(categoryButton('SYSTEM')).toHaveAttribute('aria-expanded', 'true');
+  await expect(categoryButton('REPORTS & AUDIT')).toHaveAttribute('aria-expanded', 'false');
+  await expect(sidebar.getByRole('link', { name: 'ผู้ใช้', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(sidebar.getByRole('link', { name: 'นำเข้าทะเบียนน้ำยา', exact: true })).toBeVisible();
+
+  // Keyboard: a category control is a real button, reachable by Tab, with a visible focus ring and a 44px touch target;
+  // Enter and Space both operate it exactly like a click.
+  await page.goto('/products?warehouse=CHE');
+  const operationsButton = categoryButton('OPERATIONS');
+  await operationsButton.focus();
+  await expect(operationsButton).toBeFocused();
+  const outline = await operationsButton.evaluate(node => getComputedStyle(node).outlineStyle);
   expect(outline).not.toBe('none');
-  expect(await productsLink.evaluate(node => node.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  expect(await operationsButton.evaluate(node => node.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  await page.keyboard.press('Enter');
+  await expect(operationsButton).toHaveAttribute('aria-expanded', 'true');
+  await expect(categoryButton('STOCK')).toHaveAttribute('aria-expanded', 'false');
+  await page.keyboard.press('Space');
+  await expect(operationsButton).toHaveAttribute('aria-expanded', 'false');
+  await page.keyboard.press('Space');
+  await expect(operationsButton).toHaveAttribute('aria-expanded', 'true');
 
   // A link navigates normally, carries only the warehouse, and becomes the highlighted current page with a full-row background.
+  await page.goto('/products?warehouse=CHE');
   await sidebar.getByRole('link', { name: 'คงคลัง', exact: true }).click();
-  await expect(page).toHaveURL(/\/stock$/);
+  await expect(page, 'the click carries only the warehouse already selected, no stale query').toHaveURL(/\/stock(\?warehouse=CHE)?$/);
   const current = sidebar.getByRole('link', { name: 'คงคลัง', exact: true });
   await expect(current).toHaveAttribute('aria-current', 'page');
   const currentStyle = await current.evaluate(node => getComputedStyle(node).backgroundColor);
   expect(currentStyle, 'the current link has a real background fill, not only a border').not.toBe('rgba(0, 0, 0, 0)');
   expect(currentStyle).not.toBe('transparent');
 
-  // Navigating to another category's page shows it as current, and every other link is unaffected (nothing to open/close).
+  // Navigating to another category's page shows it as current, and Scan is unaffected (it is not inside any category).
   await page.goto('/scan/review?warehouse=CHE');
+  await expect(categoryButton('SYSTEM')).toHaveAttribute('aria-expanded', 'true');
   await expect(sidebar.getByRole('link', { name: 'คิวอนุมัติ Barcode', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(sidebar.getByRole('link', { name: 'สแกน Barcode' }), '/scan/review is not the Scan quick action').not.toHaveAttribute('aria-current', 'page');
-  await expect(sidebar.getByRole('link', { name: 'นำเข้าทะเบียนน้ำยา', exact: true }), 'SYSTEM links stay visible regardless of which page is current').toBeVisible();
+  await expect(sidebar.getByRole('link', { name: 'นำเข้าทะเบียนน้ำยา', exact: true }), 'the rest of SYSTEM stays visible alongside the current page').toBeVisible();
   await expect(sidebar.getByRole('link', { name: 'ผู้ใช้', exact: true })).toBeVisible();
 
-  // Browser back/forward restore the previous page; only the warehouse is carried by links.
+  // Browser back/forward restore the previous page and its category; only the warehouse is carried by links.
   await page.goto('/stock?warehouse=IMM&q=zzz');
+  await expect(categoryButton('STOCK')).toHaveAttribute('aria-expanded', 'true');
   await sidebar.getByRole('link', { name: 'ตำแหน่งจัดเก็บ', exact: true }).click();
   await expect(page).toHaveURL(/\/locations\?warehouse=IMM$/);
   await expect(sidebar.getByRole('link', { name: 'ตำแหน่งจัดเก็บ', exact: true })).toHaveAttribute('aria-current', 'page');
@@ -344,18 +401,25 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.goForward();
   await expect(page).toHaveURL(/\/locations\?warehouse=IMM$/);
 
-  // Existing deep links keep working and highlight the right link, exactly one at a time.
-  for (const [url, child] of [
-    ['/vendors/evaluation-policy', 'ผู้ขาย'], [`/products/${chemProduct}`, 'ทะเบียนน้ำยา'], ['/counts?warehouse=CHE', 'ตรวจนับ'],
-    ['/adjust?warehouse=CHE', 'ปรับยอด'], ['/reports/monthly?warehouse=CHE&month=2026-09', 'รายงานรายเดือน'], ['/audit?warehouse=CHE', 'บันทึกการตรวจสอบ'],
-    ['/scan/review?warehouse=CHE', 'คิวอนุมัติ Barcode'], ['/admin/users', 'ผู้ใช้'], ['/attention?warehouse=CHE', 'รายการที่ต้องติดตาม'],
-    [`/locations/${fridge.data}`, 'ตำแหน่งจัดเก็บ'], ['/movements?warehouse=CHE', 'ประวัติเคลื่อนไหว'],
+  // Existing deep links keep working: the owning category (if any) opens automatically and highlights exactly one link.
+  for (const [url, category, child] of [
+    ['/vendors/evaluation-policy', 'STOCK', 'ผู้ขาย'], [`/products/${chemProduct}`, 'STOCK', 'ทะเบียนน้ำยา'], ['/counts?warehouse=CHE', 'OPERATIONS', 'ตรวจนับ'],
+    ['/adjust?warehouse=CHE', 'OPERATIONS', 'ปรับยอด'], ['/reports/monthly?warehouse=CHE&month=2026-09', 'REPORTS & AUDIT', 'รายงานรายเดือน'], ['/audit?warehouse=CHE', 'REPORTS & AUDIT', 'บันทึกการตรวจสอบ'],
+    ['/scan/review?warehouse=CHE', 'SYSTEM', 'คิวอนุมัติ Barcode'], ['/admin/users', 'SYSTEM', 'ผู้ใช้'], ['/attention?warehouse=CHE', null, 'รายการที่ต้องติดตาม'],
+    [`/locations/${fridge.data}`, 'STOCK', 'ตำแหน่งจัดเก็บ'], ['/movements?warehouse=CHE', 'REPORTS & AUDIT', 'ประวัติเคลื่อนไหว'],
   ] as const) {
     await page.goto(url);
+    if (category) {
+      await expect(categoryButton(category), `${url} opens ${category}`).toHaveAttribute('aria-expanded', 'true');
+      for (const other of collapsibleNames.filter(n => n !== category)) await expect(categoryButton(other), `${url}: ${other} stays closed`).toHaveAttribute('aria-expanded', 'false');
+    } else {
+      for (const name of collapsibleNames) await expect(categoryButton(name), `${url} (Home) opens no collapsible category`).toHaveAttribute('aria-expanded', 'false');
+    }
     await expect(sidebar.getByRole('link', { name: child, exact: true }), `${url} highlights its link`).toHaveAttribute('aria-current', 'page');
     expect(await sidebar.locator('[aria-current="page"]').count(), `${url}: exactly one current page in the sidebar`).toBe(1);
   }
   await page.goto('/scan?warehouse=CHE');
+  for (const name of collapsibleNames) await expect(categoryButton(name), '/scan (outside every category) opens no collapsible category').toHaveAttribute('aria-expanded', 'false');
   await expect(sidebar.getByRole('link', { name: 'สแกน Barcode' })).toHaveAttribute('aria-current', 'page');
   expect(await sidebar.locator('[aria-current="page"]').count(), '/scan highlights only the Scan quick action').toBe(1);
 
@@ -786,7 +850,8 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page.getByRole('link', { name: /^วันนี้ Morning Talk: มี 3 รายการวันนี้/ }), 'the compact dashboard line').toBeVisible();
   await page.goto('/morning-talk/history');
   const talkSidebar = page.getByRole('navigation', { name: 'เมนูหลัก' });
-  await expect(talkSidebar.getByText('MONITORING', { exact: true }), 'Morning Talk and Environment share the MONITORING heading').toBeVisible();
+  const talkCategoryButton = (name: string) => talkSidebar.getByRole('button', { name, exact: true });
+  await expect(talkCategoryButton('MONITORING'), '/morning-talk/history auto-opens MONITORING (Morning Talk and Environment share it)').toHaveAttribute('aria-expanded', 'true');
   // Morning Talk and Environment both label a tab "ประวัติ", and both now render together under MONITORING with their own
   // sub-heading, so it is scoped to Morning Talk's own list (named by its sub-heading) to disambiguate. The reports
   // category also has an unrelated "Morning Talk" link, so the sub-heading itself is asserted through the list it names.
@@ -797,7 +862,8 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(monitoringList.getByRole('link', { name: 'งานค้าง', exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: /^เมนูย่อย/ }), 'no horizontal tab strip on desktop').toBeHidden();
   await page.goto('/reports/morning-talk?month=' + bangkokMonth);
-  await expect(talkSidebar.getByText('REPORTS & AUDIT', { exact: true })).toBeVisible();
+  await expect(talkCategoryButton('REPORTS & AUDIT'), '/reports/morning-talk auto-opens REPORTS & AUDIT').toHaveAttribute('aria-expanded', 'true');
+  await expect(talkCategoryButton('MONITORING'), 'the previous category closes').toHaveAttribute('aria-expanded', 'false');
   await expect(talkSidebar.getByRole('link', { name: 'Morning Talk', exact: true })).toHaveAttribute('aria-current', 'page');
 
   await page.goto('/morning-talk');

@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { House } from 'lucide-react';
 import {
-  activeTab, activeWorkspace, navCategories, navPermissions, scanItem, sidebarCategories, tabHref, visibleWorkspaces, workspaceHref, workspaces,
+  activeTab, activeWorkspace, categoryForPathname, navCategories, navPermissions, scanItem, sidebarCategories, tabHref, toggleCategory, visibleWorkspaces, workspaceHref, workspaces,
   type Workspace,
 } from '../../src/lib/nav';
 import type { AccessContext } from '../../src/lib/auth';
@@ -207,7 +207,7 @@ test('six named categories cover all seven workspaces; Morning Talk and Environm
   assert.deepEqual([...owned].sort(), workspaces.map(w => w.key).sort(), 'every workspace belongs to exactly one category');
 });
 
-test('every direct link renders immediately for an Admin of both warehouses, with no expand step', () => {
+test('every category still carries its full set of visible links (rendering collapses them, the data does not)', () => {
   const cats = categoriesFor(adminBoth);
   assert.deepEqual(Object.fromEntries(cats.map(c => [c.key, c.groups.flatMap(g => g.items.map(i => i.href))])), {
     home: ['/', '/attention'],
@@ -221,6 +221,33 @@ test('every direct link renders immediately for an Admin of both warehouses, wit
   assert.equal(category(adminBoth, 'monitoring').groups.length, 2);
   assert.deepEqual(category(adminBoth, 'monitoring').groups.map(g => g.workspaceLabel), ['Morning Talk', 'อุณหภูมิ/ความชื้น']);
   for (const key of ['home', 'stock', 'operations', 'reports', 'system']) assert.equal(category(adminBoth, key).groups.length, 1, `${key} groups exactly one workspace`);
+});
+
+test('Home is the only non-collapsible category; every other category is collapsible', () => {
+  assert.equal(category(adminBoth, 'home').collapsible, false);
+  for (const key of ['stock', 'operations', 'monitoring', 'reports', 'system']) assert.equal(category(adminBoth, key).collapsible, true, `${key} is collapsible`);
+});
+
+test('categoryForPathname resolves the category that owns the current route, or null outside every category', () => {
+  assert.equal(categoryForPathname('/'), 'home');
+  assert.equal(categoryForPathname('/attention'), 'home');
+  assert.equal(categoryForPathname('/products/abc'), 'stock');
+  assert.equal(categoryForPathname('/locations/abc/edit'), 'stock');
+  assert.equal(categoryForPathname('/receive'), 'operations');
+  assert.equal(categoryForPathname('/counts/abc'), 'operations');
+  assert.equal(categoryForPathname('/morning-talk/history'), 'monitoring');
+  assert.equal(categoryForPathname('/environment/excursions/abc'), 'monitoring');
+  assert.equal(categoryForPathname('/reports/monthly'), 'reports');
+  assert.equal(categoryForPathname('/admin/users'), 'system');
+  assert.equal(categoryForPathname('/scan'), null, 'Scan is outside every category');
+  assert.equal(categoryForPathname('/account'), null);
+  assert.equal(categoryForPathname('/more'), null);
+});
+
+test('toggleCategory opens a closed category, closes the open one, and never leaves two open (single stored value)', () => {
+  assert.equal(toggleCategory(null, 'reports'), 'reports');
+  assert.equal(toggleCategory('stock', 'reports'), 'reports', 'opening a different category replaces the stored open key - there is only ever one');
+  assert.equal(toggleCategory('reports', 'reports'), null, 'clicking the open category closes it');
 });
 
 test('role-restricted links are hidden, and an empty category is dropped entirely', () => {
@@ -239,7 +266,7 @@ test('relabelled links keep their route, need and icon: only the visible text ch
   assert.equal(importTab.need, 'adminBoth');
 });
 
-test('the desktop tab strip is still mobile/tablet-only, and the sidebar has no accordion control', async () => {
+test('the desktop tab strip is still mobile/tablet-only, and the sidebar is a category-level accordion (not workspace- or link-level)', async () => {
   const { readFile } = await import('node:fs/promises');
   const css = (await readFile(path.join(process.cwd(), 'src/app/globals.css'), 'utf8')).replace(/\r\n/g, '\n');
   assert.match(css, /@media \(min-width: 801px\) \{ \.workspace-tabs \{ display: none; \} \}/);
@@ -249,8 +276,14 @@ test('the desktop tab strip is still mobile/tablet-only, and the sidebar has no 
   assert.match(shell, /<WorkspaceTabs /, 'the tab strip is still rendered for narrow screens');
   assert.doesNotMatch(shell, /\bshell\b/, 'the app-grid root no longer carries the centered shell class');
   const sidebar = await readFile(path.join(process.cwd(), 'src/components/side-nav.tsx'), 'utf8');
-  assert.doesNotMatch(sidebar, /aria-expanded|aria-controls|useState|side-parent|className="side-sub"|side-child/, 'no accordion state or markup remains');
-  assert.match(sidebar, /className="side-heading"/, 'category headings render as plain text');
-  assert.match(sidebar, /className="side-link"/, 'every tab renders as a direct link');
+  assert.match(sidebar, /aria-expanded=\{expanded\}/, 'the category control exposes its state');
+  assert.match(sidebar, /aria-controls=\{panelId\}/, 'the category control names its panel');
+  assert.match(sidebar, /<button type="button" className="side-category"/, 'exactly one accordion control shape: the category button');
+  assert.doesNotMatch(sidebar, /side-parent|className="side-sub"|side-child/, 'no leftover workspace-level accordion markup');
+  // Only one accordion level: no second aria-expanded/button nested inside a tab list, and no per-link collapse state.
+  const panelBlock = sidebar.slice(sidebar.indexOf('groups.map'), sidebar.indexOf('if (!collapsible)'));
+  assert.doesNotMatch(panelBlock, /aria-expanded|<button/, 'nothing inside a category (workspace group or tab) is itself collapsible');
+  assert.match(sidebar, /className="side-heading"/, "Home's heading renders as plain text, never a control");
+  assert.match(sidebar, /className="side-link"/, 'every tab still renders as a direct link');
   assert.doesNotMatch(sidebar, /workspaces\.map|const .*= \[\s*\{ href/, 'the sidebar keeps no menu list of its own');
 });

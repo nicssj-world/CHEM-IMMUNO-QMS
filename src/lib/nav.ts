@@ -118,21 +118,22 @@ export function tabHref(href: string, warehouse: string | null | undefined) {
 // visual presentation, and never changes which tabs exist, their hrefs, icons or role gates.
 // ---------------------------------------------------------------------------
 export type NavCategoryKey = 'home' | 'stock' | 'operations' | 'monitoring' | 'reports' | 'system';
-export type NavCategory = { key: NavCategoryKey; label: string; workspaces: WorkspaceKey[] };
+/** `collapsible: false` is Home only - it holds the two primary destinations, so it always stays visible and is never a button. */
+export type NavCategory = { key: NavCategoryKey; label: string; workspaces: WorkspaceKey[]; collapsible: boolean };
 
 export const navCategories: NavCategory[] = [
-  { key: 'home', label: 'หน้าหลัก', workspaces: ['dashboard'] },
-  { key: 'stock', label: 'STOCK', workspaces: ['inventory'] },
-  { key: 'operations', label: 'OPERATIONS', workspaces: ['operations'] },
+  { key: 'home', label: 'หน้าหลัก', workspaces: ['dashboard'], collapsible: false },
+  { key: 'stock', label: 'STOCK', workspaces: ['inventory'], collapsible: true },
+  { key: 'operations', label: 'OPERATIONS', workspaces: ['operations'], collapsible: true },
   // Morning Talk and Environment share one heading; each keeps every one of its own tabs as its own direct link.
-  { key: 'monitoring', label: 'MONITORING', workspaces: ['morning-talk', 'environment'] },
-  { key: 'reports', label: 'REPORTS & AUDIT', workspaces: ['reports'] },
-  { key: 'system', label: 'SYSTEM', workspaces: ['admin'] },
+  { key: 'monitoring', label: 'MONITORING', workspaces: ['morning-talk', 'environment'], collapsible: true },
+  { key: 'reports', label: 'REPORTS & AUDIT', workspaces: ['reports'], collapsible: true },
+  { key: 'system', label: 'SYSTEM', workspaces: ['admin'], collapsible: true },
 ];
 
 /** One workspace's visible tabs inside a category. `workspaceLabel` is only rendered as a sub-heading when a category groups more than one workspace (MONITORING today) - it is what tells apart two tabs that happen to share a label and an icon, such as Morning Talk's and Environment's own "ประวัติ". */
 export type SidebarGroup = { workspaceKey: WorkspaceKey; workspaceLabel: string; items: WorkspaceTab[] };
-export type SidebarCategory = { key: NavCategoryKey; label: string; groups: SidebarGroup[] };
+export type SidebarCategory = { key: NavCategoryKey; label: string; collapsible: boolean; groups: SidebarGroup[] };
 
 /** What the desktop sidebar shows: one heading per category, with every visible tab of its workspaces as a direct link. A category or workspace group with nothing visible is dropped. */
 export function sidebarCategories(permissions: NavPermissions, source: readonly Workspace[] = workspaces): SidebarCategory[] {
@@ -141,10 +142,23 @@ export function sidebarCategories(permissions: NavPermissions, source: readonly 
     .map(category => ({
       key: category.key,
       label: category.label,
+      collapsible: category.collapsible,
       groups: category.workspaces
         .map(key => visible.get(key))
         .filter((workspace): workspace is Workspace => !!workspace)
         .map(workspace => ({ workspaceKey: workspace.key, workspaceLabel: workspace.label, items: workspace.tabs })),
     }))
     .filter(category => category.groups.length > 0);
+}
+
+/** Which category the current page belongs to (null for /scan, /account and other pages outside every category) - this is what the desktop sidebar force-opens, so the active page is never left inside a collapsed category. */
+export function categoryForPathname(pathname: string, source: readonly Workspace[] = workspaces): NavCategoryKey | null {
+  const workspaceKey = activeWorkspace(pathname, source)?.key;
+  if (!workspaceKey) return null;
+  return navCategories.find(category => (category.workspaces as WorkspaceKey[]).includes(workspaceKey))?.key ?? null;
+}
+
+/** Clicking an open collapsible category closes it; clicking a closed one opens it (and implicitly closes whichever other one was open, since only one `open` value is ever stored). */
+export function toggleCategory(open: NavCategoryKey | null, key: NavCategoryKey): NavCategoryKey | null {
+  return open === key ? null : key;
 }
