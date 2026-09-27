@@ -17,11 +17,14 @@ import {
 } from '@/lib/locations';
 import { bangkokDate, ENV_CONFIG_COLUMNS, ENV_READING_COLUMNS, readingValues, READING_LABEL, ROUND_LABEL, type DayRound, type EnvironmentReading, type MonitorConfig } from '@/lib/environment';
 import { latestConfigByLocation, resolveEnvironmentMonitor } from '@/lib/environment-monitor';
+import { normalizeMetricView, resolveTrendRange } from '@/lib/environment-trend';
+import { loadTrendData, trendMetrics } from '@/lib/environment-trend-data';
+import { EnvironmentTrendPanel } from '@/components/environment/trend-panel';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const expiryLabels: Record<ExpiryBucket, string> = { EXPIRED: 'หมดอายุแล้ว', '≤30': 'หมดอายุใน 30 วัน', '31–60': 'หมดอายุใน 31–60 วัน', '61–90': 'หมดอายุใน 61–90 วัน', '>90': '' };
 
-export default async function LocationDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; saved?: string }> }) {
+export default async function LocationDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; saved?: string; metric?: string }> }) {
   const { id } = await params;
   const query = await searchParams;
   const access = await requireAccess();
@@ -65,6 +68,11 @@ export default async function LocationDetailPage({ params, searchParams }: { par
   const latestReading = (environmentReading.data?.[0] ?? null) as EnvironmentReading | null;
   const rounds = ((environmentRounds.data ?? []) as DayRound[]).filter(round => round.location_id === monitorId);
   const openEvent = environmentEvents.data?.[0] ?? null;
+  // Compact trend for the monitored container (never a separate shelf trend): the last 7 Bangkok days, effective readings only.
+  const trendRange = resolveTrendRange({ range: '7d' }, '7d');
+  const trend = monitorId ? await loadTrendData(client, Number(warehouse.id), monitorId, trendRange) : null;
+  const trendAvailable = trend ? trendMetrics(trend.configs, monitorConfig, trendRange) : [];
+  const trendView = normalizeMetricView(query.metric, trendAvailable);
   const here = `?warehouse=${warehouse.code}`;
   const showSubLocation = children.length > 0;
 
@@ -95,7 +103,7 @@ export default async function LocationDetailPage({ params, searchParams }: { par
       </dl>
     </section>
 
-    <section className="surface p-5 sm:p-7 grid gap-3" aria-labelledby="environment-heading"><h2 id="environment-heading" className="font-bold text-lg flex items-center gap-2"><Thermometer size={20} aria-hidden className="text-[var(--teal)]" />{monitor && monitor.id !== id ? `สภาพแวดล้อมของ ${monitor.code} (ตู้/ห้องที่ตำแหน่งนี้อยู่)` : 'สภาพแวดล้อม'}</h2>
+    <section className="surface p-5 sm:p-7 grid gap-3 min-w-0" aria-labelledby="environment-heading"><h2 id="environment-heading" className="font-bold text-lg flex items-center gap-2"><Thermometer size={20} aria-hidden className="text-[var(--teal)]" />{monitor && monitor.id !== id ? `สภาพแวดล้อมของ ${monitor.code} (ตู้/ห้องที่ตำแหน่งนี้อยู่)` : 'สภาพแวดล้อม'}</h2>
       {monitor && monitor.id === id ? <p>ตำแหน่งนี้มีการเฝ้าระวังอุณหภูมิ/ความชื้นเอง</p>
         : monitor ? <p>สภาพแวดล้อมควบคุมโดย <Link className="font-bold" href={`/locations/${monitor.id}${here}`}>{monitor.code}</Link> · {monitor.name}</p>
         : <p className="muted">ไม่ได้ตั้งค่าการเฝ้าระวังอุณหภูมิ/ความชื้น</p>}
@@ -106,7 +114,12 @@ export default async function LocationDetailPage({ params, searchParams }: { par
       {monitor && <><p className="text-sm">เวลาตรวจ: {monitorConfig?.check_times.length ? monitorConfig.check_times.map(time => time.slice(0, 5)).join(', ') : 'ยังไม่ตั้งเวลาตรวจ'} · {monitorConfig?.monitoring_state === 'paused' ? `หยุดเฝ้าระวัง: ${monitorConfig.pause_reason ?? '—'}` : 'กำลังเฝ้าระวัง'}</p>
         <p className="text-sm">ค่าล่าสุด: <strong>{readingValues(latestReading)}</strong>{latestReading && <> · {READING_LABEL[latestReading.overall_status]} · {formatDateTime(latestReading.observed_at)}</>}</p>
         <div className="flex flex-wrap gap-2">{rounds.map((round, index) => <span key={`${round.round_no ?? 'special'}:${index}`} className="badge">{round.due_time?.slice(0, 5) ?? '—'} · {ROUND_LABEL[round.state]}</span>)}</div>
-        <div className="flex flex-wrap gap-2">{warehouse.role !== 'viewer' && monitorConfig?.monitoring_state === 'active' && <Link className="button" href={`/environment/check/${monitor.id}?warehouse=${warehouse.code}`}>บันทึกอุณหภูมิ/ความชื้นของ {monitor.code}</Link>}<Link className="button secondary" href={`/environment/history?warehouse=${warehouse.code}&location=${monitor.id}`}>ดูประวัติ</Link>{openEvent && <Link className="button secondary" href={`/environment/excursions/${openEvent.id}`}>เหตุการณ์นอกช่วง</Link>}{monitor.portal_equipment_url && <PortalLink url={monitor.portal_equipment_url} label={monitor.portal_equipment_label} context="ตรวจสอบเครื่องใน Portal"/>}</div>
+        <div className="flex flex-wrap gap-2">{warehouse.role !== 'viewer' && monitorConfig?.monitoring_state === 'active' && <Link className="button" href={`/environment/check/${monitor.id}?warehouse=${warehouse.code}`}>บันทึกอุณหภูมิ/ความชื้นของ {monitor.code}</Link>}<Link className="button secondary" href={`/environment/history?warehouse=${warehouse.code}&location=${monitor.id}&range=30d&metric=${trendView ?? 'both'}`}>ดูกราฟและประวัติทั้งหมด</Link>{openEvent && <Link className="button secondary" href={`/environment/excursions/${openEvent.id}`}>เหตุการณ์นอกช่วง</Link>}{monitor.portal_equipment_url && <PortalLink url={monitor.portal_equipment_url} label={monitor.portal_equipment_label} context="ตรวจสอบเครื่องใน Portal"/>}</div>
+        {trend && <section className="grid gap-3 border-t border-line pt-4 min-w-0" aria-labelledby="trend-heading">
+          <h3 id="trend-heading" className="font-bold">แนวโน้ม 7 วันล่าสุด{monitor.id !== id ? ` ของ ${monitor.code}` : ''}</h3>
+          <EnvironmentTrendPanel compact location={monitor} range={trendRange} view={trendView} available={trendAvailable} data={trend}
+            metricHref={view => `/locations/${id}?warehouse=${warehouse.code}&metric=${view}`} />
+        </section>}
       </>}
     </section>
 
