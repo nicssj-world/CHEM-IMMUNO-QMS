@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { EnvironmentTrendChart } from '@/components/environment/trend-chart';
 import {
-  bandSegments, buildTrendSeries, formatIsoDate, METRIC_VIEW_LABEL, metricsForView, RANGE_KEYS, RANGE_LABEL,
+  bandSegments, buildTrendSeries, METRIC_VIEW_LABEL, metricsForView, periodLabel as describePeriod, RANGE_KEYS, RANGE_LABEL,
   type MetricView, type TrendMetric, type TrendRange, type TrendRangeKey,
 } from '@/lib/environment-trend';
 import type { TrendData } from '@/lib/environment-trend-data';
@@ -21,12 +21,13 @@ export function MetricSwitch({ view, hrefFor }: { view: MetricView; hrefFor: (vi
   return <SegmentedLinks label="เลือกค่าที่แสดงในกราฟ" items={(['both', 'temperature', 'humidity'] as const).map(key => ({ key, label: METRIC_VIEW_LABEL[key], href: hrefFor(key), current: key === view }))} />;
 }
 
+/** เดือนนี้ · เดือนก่อน · เลือกเดือน · กำหนดเอง. "เลือกเดือน" jumps to the month picker in the form below it. */
 export function RangeSwitch({ range, hrefFor }: { range: TrendRangeKey; hrefFor: (range: TrendRangeKey) => string }) {
-  return <SegmentedLinks label="เลือกช่วงเวลา" items={RANGE_KEYS.map(key => ({ key, label: RANGE_LABEL[key], href: hrefFor(key), current: key === range }))} />;
+  return <SegmentedLinks label="เลือกเดือนหรือช่วงเวลา" items={RANGE_KEYS.map(key => ({ key, label: RANGE_LABEL[key], href: hrefFor(key), current: key === range }))} />;
 }
 
 export function trendPeriodLabel(range: TrendRange) {
-  return range.from === range.to ? formatIsoDate(range.from) : `${formatIsoDate(range.from)} – ${formatIsoDate(range.to)}`;
+  return describePeriod(range);
 }
 
 export function EnvironmentTrendPanel({ location, range, view, available, data, compact = false, metricHref }: {
@@ -39,11 +40,11 @@ export function EnvironmentTrendPanel({ location, range, view, available, data, 
     {view && available.length > 1 && <MetricSwitch view={view} hrefFor={metricHref} />}
     {data.error && <p className="error" role="alert">อ่านข้อมูลกราฟไม่สำเร็จ: {logUserMessage('environmentTrend', data.error)}</p>}
     {data.truncated && <p className="notice" role="status">ช่วงนี้มี {data.total?.toLocaleString()} รายการ · กราฟแสดง {data.readings.length.toLocaleString()} รายการแรกตามเวลาที่ตรวจ · เลือกช่วงให้สั้นลงเพื่อดูครบ</p>}
-    {!data.error && metrics.length > 0 && data.readings.length === 0 && <p className="trend-empty rounded-xl border border-line bg-surface-2 p-4 text-sm muted" role="note">ยังไม่มีข้อมูลสำหรับช่วงเวลาที่เลือก ({periodLabel})</p>}
-    {!data.error && data.readings.length > 0 && <div className="grid gap-6 min-w-0">
+    {!data.error && metrics.length > 0 && data.readings.length === 0 && <p className="trend-empty-period rounded-xl border border-line bg-surface-2 p-4 text-sm muted" role="note">ยังไม่มีข้อมูลสำหรับช่วงเวลาที่เลือก ({periodLabel})</p>}
+    {!data.error && data.readings.length > 0 && <div className="grid gap-4 min-w-0">
       {metrics.map(metric => <EnvironmentTrendChart key={`${location.id}:${metric}:${range.from}:${range.to}`} metric={metric} locationCode={location.code}
         points={buildTrendSeries(data.readings, data.configs, metric)} segments={bandSegments(data.configs, metric, range.start, range.end)}
-        start={range.start} end={range.end} periodLabel={periodLabel} compact={compact} density={data.readings.length} />)}
+        start={range.start} end={range.end} now={range.now} periodLabel={periodLabel} compact={compact} density={data.readings.length} />)}
     </div>}
   </div>;
 }

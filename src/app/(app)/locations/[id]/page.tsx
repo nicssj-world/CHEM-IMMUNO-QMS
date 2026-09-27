@@ -19,7 +19,7 @@ import { bangkokDate, ENV_CONFIG_COLUMNS, ENV_READING_COLUMNS, readingValues, RE
 import { latestConfigByLocation, resolveEnvironmentMonitor } from '@/lib/environment-monitor';
 import { normalizeMetricView, resolveTrendRange } from '@/lib/environment-trend';
 import { loadTrendData, trendMetrics } from '@/lib/environment-trend-data';
-import { EnvironmentTrendPanel } from '@/components/environment/trend-panel';
+import { EnvironmentTrendPanel, trendPeriodLabel } from '@/components/environment/trend-panel';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const expiryLabels: Record<ExpiryBucket, string> = { EXPIRED: 'หมดอายุแล้ว', '≤30': 'หมดอายุใน 30 วัน', '31–60': 'หมดอายุใน 31–60 วัน', '61–90': 'หมดอายุใน 61–90 วัน', '>90': '' };
@@ -68,8 +68,8 @@ export default async function LocationDetailPage({ params, searchParams }: { par
   const latestReading = (environmentReading.data?.[0] ?? null) as EnvironmentReading | null;
   const rounds = ((environmentRounds.data ?? []) as DayRound[]).filter(round => round.location_id === monitorId);
   const openEvent = environmentEvents.data?.[0] ?? null;
-  // Compact trend for the monitored container (never a separate shelf trend): the last 7 Bangkok days, effective readings only.
-  const trendRange = resolveTrendRange({ range: '7d' }, '7d');
+  // Compact trend for the monitored container (never a separate shelf trend): the whole current Bangkok month, effective readings only.
+  const trendRange = resolveTrendRange({ range: 'month' });
   const trend = monitorId ? await loadTrendData(client, Number(warehouse.id), monitorId, trendRange) : null;
   const trendAvailable = trend ? trendMetrics(trend.configs, monitorConfig, trendRange) : [];
   const trendView = normalizeMetricView(query.metric, trendAvailable);
@@ -114,9 +114,10 @@ export default async function LocationDetailPage({ params, searchParams }: { par
       {monitor && <><p className="text-sm">เวลาตรวจ: {monitorConfig?.check_times.length ? monitorConfig.check_times.map(time => time.slice(0, 5)).join(', ') : 'ยังไม่ตั้งเวลาตรวจ'} · {monitorConfig?.monitoring_state === 'paused' ? `หยุดเฝ้าระวัง: ${monitorConfig.pause_reason ?? '—'}` : 'กำลังเฝ้าระวัง'}</p>
         <p className="text-sm">ค่าล่าสุด: <strong>{readingValues(latestReading)}</strong>{latestReading && <> · {READING_LABEL[latestReading.overall_status]} · {formatDateTime(latestReading.observed_at)}</>}</p>
         <div className="flex flex-wrap gap-2">{rounds.map((round, index) => <span key={`${round.round_no ?? 'special'}:${index}`} className="badge">{round.due_time?.slice(0, 5) ?? '—'} · {ROUND_LABEL[round.state]}</span>)}</div>
-        <div className="flex flex-wrap gap-2">{warehouse.role !== 'viewer' && monitorConfig?.monitoring_state === 'active' && <Link className="button" href={`/environment/check/${monitor.id}?warehouse=${warehouse.code}`}>บันทึกอุณหภูมิ/ความชื้นของ {monitor.code}</Link>}<Link className="button secondary" href={`/environment/history?warehouse=${warehouse.code}&location=${monitor.id}&range=30d&metric=${trendView ?? 'both'}`}>ดูกราฟและประวัติทั้งหมด</Link>{openEvent && <Link className="button secondary" href={`/environment/excursions/${openEvent.id}`}>เหตุการณ์นอกช่วง</Link>}{monitor.portal_equipment_url && <PortalLink url={monitor.portal_equipment_url} label={monitor.portal_equipment_label} context="ตรวจสอบเครื่องใน Portal"/>}</div>
+        <div className="flex flex-wrap gap-2">{warehouse.role !== 'viewer' && monitorConfig?.monitoring_state === 'active' && <Link className="button" href={`/environment/check/${monitor.id}?warehouse=${warehouse.code}`}>บันทึกอุณหภูมิ/ความชื้นของ {monitor.code}</Link>}<Link className="button secondary" href={`/environment/history?warehouse=${warehouse.code}&location=${monitor.id}&range=month&month=${trendRange.month}&metric=${trendView ?? 'both'}`}>ดูกราฟและประวัติทั้งหมด</Link>{openEvent && <Link className="button secondary" href={`/environment/excursions/${openEvent.id}`}>เหตุการณ์นอกช่วง</Link>}{monitor.portal_equipment_url && <PortalLink url={monitor.portal_equipment_url} label={monitor.portal_equipment_label} context="ตรวจสอบเครื่องใน Portal"/>}</div>
         {trend && <section className="grid gap-3 border-t border-line pt-4 min-w-0" aria-labelledby="trend-heading">
-          <h3 id="trend-heading" className="font-bold">แนวโน้ม 7 วันล่าสุด{monitor.id !== id ? ` ของ ${monitor.code}` : ''}</h3>
+          <h3 id="trend-heading" className="font-bold">แนวโน้มเดือนนี้ · {trendPeriodLabel(trendRange)}{monitor.id !== id ? ` ของ ${monitor.code}` : ''}</h3>
+          {monitor.id !== id && <p className="muted text-sm">กราฟนี้เป็นของ {monitor.code} ซึ่งเป็นตู้/ห้องที่เฝ้าระวังตำแหน่งนี้ · ตำแหน่งนี้ไม่มีค่าแยกของตัวเอง</p>}
           <EnvironmentTrendPanel compact location={monitor} range={trendRange} view={trendView} available={trendAvailable} data={trend}
             metricHref={view => `/locations/${id}?warehouse=${warehouse.code}&metric=${view}`} />
         </section>}

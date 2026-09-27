@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   availableMetrics, bandChanges, bandSegments, bangkokDayStart, buildTrendSeries, describePoint, formatBangkokDateTime, formatLimits,
-  formatMeasure, formatTick, lineRuns, metricsForView, MAX_CUSTOM_RANGE_DAYS, normalizeMetricView, resolveChartTarget, resolveTrendRange,
-  summarizeSeries, timeTicks, valueDomain, versionsInForce, type TrendConfig, type TrendReading,
+  addMonths, bangkokDayNumber, dayAxis, daysInMonth, formatAxis, formatBangkokShort, formatMonth, isYearMonth, periodLabel, rangeQuery,
+  formatMeasure, lineRuns, metricsForView, MAX_CUSTOM_RANGE_DAYS, normalizeMetricView, resolveChartTarget, resolveTrendRange,
+  summarizeSeries, valueDomain, versionsInForce, type TrendConfig, type TrendReading,
 } from '../../src/lib/environment-trend';
 import { fetchAllPages, trendMetrics } from '../../src/lib/environment-trend-data';
 
@@ -41,39 +42,98 @@ test('metric view: both only when both are monitored, and unavailable requests f
   assert.deepEqual(metricsForView(null), []);
 });
 
-test('Bangkok ranges: presets end today on the Bangkok calendar', () => {
-  const r7 = resolveTrendRange({ range: '7d' }, '30d', NOW);
-  assert.deepEqual([r7.key, r7.from, r7.to, r7.today], ['7d', '2026-09-21', '2026-09-27', '2026-09-27']);
-  assert.equal(r7.start, Date.parse('2026-09-20T17:00:00Z'), 'the period starts at Bangkok midnight');
-  assert.equal(r7.end, NOW, 'the x axis never runs past now');
-  const r30 = resolveTrendRange({}, '30d', NOW);
-  assert.deepEqual([r30.key, r30.from, r30.to], ['30d', '2026-08-29', '2026-09-27']);
-  assert.deepEqual([resolveTrendRange({}, '7d', NOW).key, resolveTrendRange({ range: 'bogus' }, '7d', NOW).key], ['7d', '7d']);
-  const month = resolveTrendRange({ range: 'month' }, '30d', NOW);
-  assert.deepEqual([month.from, month.to], ['2026-09-01', '2026-09-27']);
-  // 23:30 on 30 Sep in UTC is already 1 Oct in Bangkok: "this month" is October, not September.
-  const late = resolveTrendRange({ range: 'month' }, '30d', Date.parse('2026-09-30T17:30:00Z'));
-  assert.deepEqual([late.from, late.to], ['2026-10-01', '2026-10-01']);
+test('the default period is the whole current Bangkok month, not a rolling window', () => {
+  const range = resolveTrendRange({}, NOW);
+  assert.deepEqual([range.key, range.month, range.from, range.to, range.today, range.notice], ['this', '2026-09', '2026-09-01', '2026-09-27', '2026-09-27', null]);
+  assert.equal(range.start, Date.parse('2026-08-31T17:00:00Z'), 'the axis starts at Bangkok midnight on the 1st');
+  assert.equal(range.end, Date.parse('2026-09-30T17:00:00Z'), 'the axis runs to the end of the month even though readings stop today');
+  assert.equal(range.now, NOW);
+  assert.equal(periodLabel(range), 'ก.ย. 2026');
+  // Links from before the monthly view and unknown values open the current month.
+  for (const legacy of ['7d', '30d', 'month', 'bogus']) assert.equal(resolveTrendRange({ range: legacy }, NOW).key, 'this', legacy);
+  // The default moves on with the calendar: 23:30 on 30 Sep UTC is already 1 Oct in Bangkok.
+  const next = resolveTrendRange({}, Date.parse('2026-09-30T17:30:00Z'));
+  assert.deepEqual([next.month, next.from, next.to], ['2026-10', '2026-10-01', '2026-10-01']);
+});
+
+test('previous month and a chosen month show the whole month; a future or invalid month falls back with a notice', () => {
+  const prev = resolveTrendRange({ range: 'month', month: '2026-08' }, NOW);
+  assert.deepEqual([prev.key, prev.from, prev.to], ['prev', '2026-08-01', '2026-08-31']);
+  assert.equal(prev.end - prev.start, 31 * 86_400_000);
+  const picked = resolveTrendRange({ range: 'month', month: '2026-02' }, NOW);
+  assert.deepEqual([picked.key, picked.from, picked.to, daysInMonth('2026-02')], ['pick', '2026-02-01', '2026-02-28', 28]);
+  assert.equal(periodLabel(picked), 'ก.พ. 2026');
+  const january = resolveTrendRange({ month: '2026-01' }, Date.parse('2026-02-10T05:00:00Z'));
+  assert.equal(january.key, 'prev', 'the month before February is January');
+  assert.equal(addMonths('2026-01', -1), '2025-12');
+  assert.equal(resolveTrendRange({ month: '2026-09' }, NOW).key, 'this');
+  for (const bad of ['2026-13', '2026-9', 'x', '2026-10']) {
+    const fallback = resolveTrendRange({ range: 'month', month: bad }, NOW);
+    assert.deepEqual([fallback.key, Boolean(fallback.notice)], ['this', true], bad);
+  }
+  assert.equal(isYearMonth('2026-09'), true);
+  assert.equal(isYearMonth('2026-00'), false);
+});
+
+test('period links: this month follows the calendar, previous/chosen months are explicit, custom keeps its dates', () => {
+  const range = resolveTrendRange({ range: 'month', month: '2026-07' }, NOW);
+  assert.deepEqual(rangeQuery('this', range), [['range', 'month']]);
+  assert.deepEqual(rangeQuery('prev', range), [['range', 'month'], ['month', '2026-08']]);
+  assert.deepEqual(rangeQuery('pick', range), [['range', 'month'], ['month', '2026-07']]);
+  assert.deepEqual(rangeQuery('custom', range), [['range', 'custom'], ['from', '2026-07-01'], ['to', '2026-07-31']]);
 });
 
 test('custom ranges are validated, never reach the future, are bounded, and old from/to links still work', () => {
-  const ok = resolveTrendRange({ range: 'custom', from: '2026-09-10', to: '2026-09-12' }, '30d', NOW);
-  assert.deepEqual([ok.key, ok.from, ok.to, ok.notice], ['custom', '2026-09-10', '2026-09-12', null]);
-  assert.equal(ok.end, bangkokDayStart('2026-09-13'), 'a past custom period ends at the end of its last Bangkok day');
-  const legacy = resolveTrendRange({ from: '2026-09-01', to: '2026-09-05' }, '30d', NOW);
+  const ok = resolveTrendRange({ range: 'custom', from: '2026-09-10', to: '2026-09-12' }, NOW);
+  assert.deepEqual([ok.key, ok.month, ok.from, ok.to, ok.notice], ['custom', null, '2026-09-10', '2026-09-12', null]);
+  assert.equal(ok.start, bangkokDayStart('2026-09-10'));
+  assert.equal(ok.end, bangkokDayStart('2026-09-13'), 'a custom period spans its whole last Bangkok day');
+  assert.equal(periodLabel(ok), '10 ก.ย. 2026 – 12 ก.ย. 2026');
+  const legacy = resolveTrendRange({ from: '2026-09-01', to: '2026-09-05' }, NOW);
   assert.deepEqual([legacy.key, legacy.from, legacy.to], ['custom', '2026-09-01', '2026-09-05']);
   for (const bad of [{ from: '2026-09-12', to: '2026-09-10' }, { from: '2026-02-30', to: '2026-03-02' }, { from: '2026-09-10' }, { from: 'x', to: 'y' }, { from: '2026-10-01', to: '2026-10-05' }]) {
-    const fallback = resolveTrendRange({ range: 'custom', ...bad }, '30d', NOW);
-    assert.equal(fallback.key, '30d', JSON.stringify(bad));
+    const fallback = resolveTrendRange({ range: 'custom', ...bad }, NOW);
+    assert.equal(fallback.key, 'this', JSON.stringify(bad));
     assert.ok(fallback.notice, `a notice explains the fallback for ${JSON.stringify(bad)}`);
   }
-  const future = resolveTrendRange({ range: 'custom', from: '2026-09-20', to: '2026-12-31' }, '30d', NOW);
+  const future = resolveTrendRange({ range: 'custom', from: '2026-09-20', to: '2026-12-31' }, NOW);
   assert.deepEqual([future.from, future.to], ['2026-09-20', '2026-09-27']);
   assert.match(future.notice ?? '', /เลยวันนี้/);
-  const long = resolveTrendRange({ range: 'custom', from: '2020-01-01', to: '2026-09-27' }, '30d', NOW);
+  const long = resolveTrendRange({ range: 'custom', from: '2020-01-01', to: '2026-09-27' }, NOW);
   assert.equal(long.to, '2026-09-27');
   assert.equal((Date.parse(`${long.to}T00:00:00Z`) - Date.parse(`${long.from}T00:00:00Z`)) / 86_400_000 + 1, MAX_CUSTOM_RANGE_DAYS);
   assert.match(long.notice ?? '', /ไม่เกิน 366 วัน/);
+});
+
+test('the x axis is the full month: one slot per day, days without readings keep their place', () => {
+  const september = resolveTrendRange({}, NOW);
+  const slots = dayAxis(september.start, september.end, 31);
+  assert.equal(slots.length, 30, 'all 30 days of September, not just the 27 so far or the days with readings');
+  assert.deepEqual(slots.slice(0, 3).map(slot => slot.label), ['1', '2', '3']);
+  assert.equal(slots[29].start, bangkokDayStart('2026-09-30'));
+  const narrow = dayAxis(september.start, september.end, 7);
+  const labels = narrow.filter(slot => slot.label).map(slot => slot.label);
+  assert.ok(labels.length <= 8 && labels[0] === '1', labels.join(','));
+  assert.equal(narrow.length, 30, 'fewer labels never means fewer days');
+  const february = resolveTrendRange({ month: '2026-02' }, NOW);
+  assert.equal(dayAxis(february.start, february.end, 31).length, 28);
+  const across = dayAxis(bangkokDayStart('2026-08-30'), bangkokDayStart('2026-09-03'), 10);
+  assert.deepEqual(across.map(slot => slot.label), ['30', '31', '1 ก.ย.', '2']);
+});
+
+test('the line breaks at a day with no reading; several readings on one day stay separate, in observed order', () => {
+  const configs = [cfg('v1', '2026-09-01T00:00:00Z', [2, 8])];
+  const points = buildTrendSeries([
+    reading({ observed_at: '2026-09-03T08:00:00Z', temperature_c: 6 }),
+    reading({ observed_at: '2026-09-03T02:00:00Z', temperature_c: 4 }), // same Bangkok day, earlier
+    reading({ observed_at: '2026-09-04T02:00:00Z', temperature_c: 5 }), // next day: still connected
+    reading({ observed_at: '2026-09-07T02:00:00Z', temperature_c: 7 }), // 5th and 6th have no reading: a new run
+    reading({ observed_at: '2026-09-07T09:00:00Z', temperature_c: 7.2 }),
+  ], configs, 'temperature');
+  assert.deepEqual(points.map(point => point.value), [4, 6, 5, 7, 7.2], 'no averaging, ordered by observed time');
+  assert.deepEqual(lineRuns(points).map(run => run.map(point => point.value)), [[4, 6, 5], [7, 7.2]]);
+  assert.equal(bangkokDayNumber(Date.parse('2026-09-03T16:59:00Z')), bangkokDayNumber(Date.parse('2026-09-03T02:00:00Z')));
+  assert.equal(bangkokDayNumber(Date.parse('2026-09-03T17:00:00Z')) - bangkokDayNumber(Date.parse('2026-09-03T02:00:00Z')), 1, 'Bangkok midnight');
 });
 
 test('trend points are ordered by observed time, not by the time they were typed in', () => {
@@ -173,9 +233,9 @@ test('temperature and humidity bands come from their own limits; unrelated versi
 
 test('offered metrics include a parameter monitored earlier in the period, not only today’s configuration', () => {
   const configs = [cfg('v1', '2026-08-01T00:00:00Z', [15, 25], [30, 60]), cfg('v2', '2026-09-20T00:00:00Z', [15, 25], null)];
-  const range30 = resolveTrendRange({ range: '30d' }, '30d', NOW);
+  const range30 = resolveTrendRange({}, NOW);
   assert.deepEqual(trendMetrics(configs, configs[1], range30), ['temperature', 'humidity']);
-  const range7 = resolveTrendRange({ range: 'custom', from: '2026-09-21', to: '2026-09-27' }, '30d', NOW);
+  const range7 = resolveTrendRange({ range: 'custom', from: '2026-09-21', to: '2026-09-27' }, NOW);
   assert.deepEqual(trendMetrics(configs, configs[1], range7), ['temperature']);
 });
 
@@ -236,12 +296,9 @@ test('scales, ticks and text are deterministic Bangkok values', () => {
   assert.equal(formatMeasure(-20), '-20.00');
   assert.equal(formatMeasure(4.1), '4.10');
   const start = bangkokDayStart('2026-09-21');
-  const ticks = timeTicks(start, bangkokDayStart('2026-09-28'), 8);
-  assert.equal(ticks[0].t, start, 'day ticks sit on Bangkok midnight');
-  assert.equal(formatTick(ticks[0].t, ticks[0].step), '21 ก.ย.');
-  assert.ok(ticks.length <= 8);
-  const hourly = timeTicks(start, start + 12 * 3_600_000, 6);
-  assert.equal(formatTick(hourly[1].t, hourly[1].step), '03:00');
+  assert.equal(formatBangkokShort(Date.parse('2026-09-26T17:05:00Z')), '27 ก.ย. 00:05');
+  assert.equal(formatMonth('2026-12'), 'ธ.ค. 2026');
+  assert.deepEqual([formatAxis(8), formatAxis(2.5), formatAxis(-20), formatAxis(4.123)], ['8', '2.5', '-20', '4.12']);
   const configs = [cfg('v1', '2026-09-01T00:00:00Z', [2, 8])];
   const points = buildTrendSeries([reading({ observed_at: '2026-09-20T01:00:00Z', temperature_c: 5 })], configs, 'temperature');
   const [low, high] = valueDomain(points, bandSegments(configs, 'temperature', start, start + 86_400_000))!;

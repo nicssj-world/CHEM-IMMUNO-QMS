@@ -13,14 +13,17 @@ import { hasOwnMonitoring, latestConfigByLocation, resolveEnvironmentMonitor, ty
 
 export type TrendMetric = 'temperature' | 'humidity';
 export type MetricView = 'both' | TrendMetric;
-export type TrendRangeKey = '7d' | '30d' | 'month' | 'custom';
+/** this = the current Bangkok month (the default), prev = the full previous month, pick = any chosen month, custom = from–to. */
+export type TrendRangeKey = 'this' | 'prev' | 'pick' | 'custom';
 
 export const TREND_METRICS: readonly TrendMetric[] = ['temperature', 'humidity'];
 export const METRIC_VIEW_LABEL: Record<MetricView, string> = { both: 'ทั้งคู่', temperature: 'อุณหภูมิ', humidity: 'ความชื้น' };
 export const METRIC_TITLE: Record<TrendMetric, string> = { temperature: 'อุณหภูมิ', humidity: 'ความชื้นสัมพัทธ์' };
+/** Card titles in the style of the lab's existing monthly charts. */
+export const METRIC_CARD_TITLE: Record<TrendMetric, string> = { temperature: 'Temperature', humidity: 'Relative humidity' };
 export const METRIC_UNIT: Record<TrendMetric, string> = { temperature: '°C', humidity: '%RH' };
-export const RANGE_LABEL: Record<TrendRangeKey, string> = { '7d': '7 วัน', '30d': '30 วัน', month: 'เดือนนี้', custom: 'กำหนดเอง' };
-export const RANGE_KEYS: readonly TrendRangeKey[] = ['7d', '30d', 'month', 'custom'];
+export const RANGE_LABEL: Record<TrendRangeKey, string> = { this: 'เดือนนี้', prev: 'เดือนก่อน', pick: 'เลือกเดือน', custom: 'กำหนดเอง' };
+export const RANGE_KEYS: readonly TrendRangeKey[] = ['this', 'prev', 'pick', 'custom'];
 /** A custom range longer than this is shortened (and the page says so) to keep one chart request bounded. */
 export const MAX_CUSTOM_RANGE_DAYS = 366;
 
@@ -102,47 +105,97 @@ export function bangkokToday(now: number): string {
   return new Date(now + BANGKOK_OFFSET).toISOString().slice(0, 10);
 }
 
+const YEAR_MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
+export function isYearMonth(value: string | null | undefined): value is string {
+  return Boolean(value && YEAR_MONTH.test(value));
+}
+/** `2026-09` shifted by whole months: `2026-01`, -1 → `2025-12`. */
+export function addMonths(month: string, months: number): string {
+  const [year, index] = month.split('-').map(Number);
+  const total = year * 12 + (index - 1) + months;
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`;
+}
+export function daysInMonth(month: string): number {
+  return inclusiveDays(`${month}-01`, addDays(`${addMonths(month, 1)}-01`, -1));
+}
+
 export type TrendRange = {
-  key: TrendRangeKey; from: string; to: string;
-  /** Today on the Bangkok calendar, the latest date a custom period may end on. */
+  key: TrendRangeKey;
+  /** The chosen month (YYYY-MM) in a month view; null for a custom period. */
+  month: string | null;
+  /** Bangkok dates whose readings are shown (a current month ends today; there is nothing after now to read). */
+  from: string; to: string;
+  /** Today on the Bangkok calendar, the latest date a period may end on. */
   today: string;
-  /** Chart x domain: start of `from` (Bangkok) to the end of `to`, but never past now. */
+  /**
+   * Chart x domain. A month view always spans the WHOLE month, day 1 to the last day, even while the month is still running,
+   * so days without readings keep their place on the axis. A custom period spans its whole first and last days.
+   */
   start: number; end: number;
+  /** When the page was rendered; days after it are the part of the month that has not happened yet. */
+  now: number;
   notice: string | null;
 };
-export type TrendRangeQuery = { range?: string | null; from?: string | null; to?: string | null };
+export type TrendRangeQuery = { range?: string | null; month?: string | null; from?: string | null; to?: string | null };
 
 /**
- * Resolve the chart period on the Asia/Bangkok calendar. Presets end today; a custom period is validated, never runs into the
- * future and is at most MAX_CUSTOM_RANGE_DAYS long. Anything unusable falls back to the page default with a visible notice.
- * An older link that carries only from/to (the history filter before charts) is read as a custom period.
+ * Resolve the chart period on the Asia/Bangkok calendar. The default is the current month, so the chart moves on by itself
+ * when the month changes; older months stay one click away and nothing is deleted. `range=month&month=YYYY-MM` chooses a month
+ * (never one in the future). A custom period is validated, never runs into the future and is at most MAX_CUSTOM_RANGE_DAYS
+ * long. Anything unusable falls back to the current month with a visible notice. Links from before the monthly view (`7d`,
+ * `30d`) open the current month; a link that carries only from/to is read as a custom period.
  */
-export function resolveTrendRange(query: TrendRangeQuery, fallback: Exclude<TrendRangeKey, 'custom'> = '30d', now: number = Date.now()): TrendRange {
+export function resolveTrendRange(query: TrendRangeQuery, now: number = Date.now()): TrendRange {
   const today = bangkokToday(now);
-  const requested = query.range ?? (query.from || query.to ? 'custom' : fallback);
-  const key: TrendRangeKey = (RANGE_KEYS as readonly string[]).includes(requested) ? requested as TrendRangeKey : fallback;
-  const preset = (k: Exclude<TrendRangeKey, 'custom'>, notice: string | null = null): TrendRange => {
-    const from = k === '7d' ? addDays(today, -6) : k === '30d' ? addDays(today, -29) : `${today.slice(0, 7)}-01`;
-    return withDomain({ key: k, from, to: today, notice }, now);
+  const current = today.slice(0, 7);
+  const monthView = (month: string, notice: string | null = null): TrendRange => {
+    const last = addDays(`${addMonths(month, 1)}-01`, -1);
+    const key: TrendRangeKey = month === current ? 'this' : month === addMonths(current, -1) ? 'prev' : 'pick';
+    return {
+      key, month, from: `${month}-01`, to: last < today ? last : today, today, notice, now,
+      start: bangkokDayStart(`${month}-01`), end: bangkokDayStart(`${addMonths(month, 1)}-01`),
+    };
   };
-  if (key !== 'custom') return preset(key);
-  if (!isIsoDate(query.from) || !isIsoDate(query.to)) return preset(fallback, 'ช่วงวันที่ที่กำหนดไม่ครบหรือไม่ถูกต้อง · แสดงช่วงเริ่มต้นแทน');
+  const custom = query.range === 'custom' || (!query.range && !query.month && Boolean(query.from || query.to));
+  if (!custom) {
+    if (!query.month) return monthView(current);
+    if (!isYearMonth(query.month)) return monthView(current, 'เดือนที่ระบุไม่ถูกต้อง · แสดงเดือนนี้แทน');
+    if (query.month > current) return monthView(current, 'เดือนที่เลือกยังไม่ถึง · แสดงเดือนนี้แทน');
+    return monthView(query.month);
+  }
+  if (!isIsoDate(query.from) || !isIsoDate(query.to)) return monthView(current, 'ช่วงวันที่ที่กำหนดไม่ครบหรือไม่ถูกต้อง · แสดงเดือนนี้แทน');
   let from = query.from;
   let to = query.to;
   const notices: string[] = [];
-  if (from > to) return preset(fallback, 'วันที่เริ่มต้องไม่หลังวันที่สิ้นสุด · แสดงช่วงเริ่มต้นแทน');
-  if (from > today) return preset(fallback, 'ช่วงวันที่ที่เลือกยังไม่ถึง · แสดงช่วงเริ่มต้นแทน');
+  if (from > to) return monthView(current, 'วันที่เริ่มต้องไม่หลังวันที่สิ้นสุด · แสดงเดือนนี้แทน');
+  if (from > today) return monthView(current, 'ช่วงวันที่ที่เลือกยังไม่ถึง · แสดงเดือนนี้แทน');
   if (to > today) { to = today; notices.push('วันที่สิ้นสุดเลยวันนี้ · แสดงถึงวันนี้'); }
   if (inclusiveDays(from, to) > MAX_CUSTOM_RANGE_DAYS) {
     from = addDays(to, -(MAX_CUSTOM_RANGE_DAYS - 1));
     notices.push(`ช่วงที่กำหนดเองยาวได้ไม่เกิน ${MAX_CUSTOM_RANGE_DAYS} วัน · แสดงตั้งแต่ ${from}`);
   }
-  return withDomain({ key: 'custom', from, to, notice: notices.join(' · ') || null }, now);
+  return {
+    key: 'custom', month: null, from, to, today, now, notice: notices.join(' · ') || null,
+    start: bangkokDayStart(from), end: bangkokDayStart(addDays(to, 1)),
+  };
 }
-function withDomain(range: Omit<TrendRange, 'start' | 'end' | 'today'>, now: number): TrendRange {
-  const start = bangkokDayStart(range.from);
-  const end = Math.max(start + HOUR, Math.min(bangkokDayStart(addDays(range.to, 1)), now));
-  return { ...range, today: bangkokToday(now), start, end };
+
+/**
+ * URL parameters for a period choice. `this` carries no month, so a saved "this month" link keeps following the calendar;
+ * `prev` and `pick` carry an explicit month; `custom` carries the current from/to so the dates can be edited.
+ */
+export function rangeQuery(key: TrendRangeKey, range: Pick<TrendRange, 'today' | 'month' | 'from' | 'to'>): [string, string][] {
+  const current = range.today.slice(0, 7);
+  if (key === 'this') return [['range', 'month']];
+  if (key === 'prev') return [['range', 'month'], ['month', addMonths(current, -1)]];
+  if (key === 'pick') return [['range', 'month'], ['month', range.month ?? current]];
+  return [['range', 'custom'], ['from', range.from], ['to', range.to]];
+}
+
+/** `ก.ย. 2026` for a month view, `1 ก.ย. 2026 – 5 ก.ย. 2026` for a custom period. Gregorian years, as everywhere in the app. */
+export function periodLabel(range: Pick<TrendRange, 'month' | 'from' | 'to'>): string {
+  if (range.month) return formatMonth(range.month);
+  return range.from === range.to ? formatIsoDate(range.from) : `${formatIsoDate(range.from)} – ${formatIsoDate(range.to)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,13 +247,26 @@ export function buildTrendSeries(readings: readonly TrendReading[], configs: rea
     });
 }
 
-/** Consecutive runs of plotted values. A missing value ends a run, so the line never bridges a gap. */
+/** Days since the epoch on the Bangkok calendar. */
+export function bangkokDayNumber(t: number): number {
+  return Math.floor((t + BANGKOK_OFFSET) / DAY);
+}
+
+/**
+ * Consecutive runs of plotted values. A run ends at a reading without a value for this metric, and at a whole Bangkok calendar
+ * day without any reading, so the line never suggests a value was seen when nothing was recorded. Several readings on one day
+ * stay separate points in observed order; nothing is averaged.
+ */
 export function lineRuns(points: readonly TrendPoint[]): TrendPoint[][] {
   const runs: TrendPoint[][] = [];
   let current: TrendPoint[] = [];
+  let previousDay: number | null = null;
   for (const point of points) {
-    if (point.value === null) { if (current.length) runs.push(current); current = []; continue; }
-    current.push(point);
+    const day = bangkokDayNumber(point.t);
+    const skippedDay = previousDay !== null && day - previousDay > 1;
+    previousDay = day;
+    if (point.value === null || skippedDay) { if (current.length) runs.push(current); current = []; }
+    if (point.value !== null) current.push(point);
   }
   if (current.length) runs.push(current);
   return runs;
@@ -261,7 +327,8 @@ export function valueDomain(points: readonly TrendPoint[], segments: readonly Ba
   if (values.length === 0) return null;
   const low = Math.min(...values);
   const high = Math.max(...values);
-  const pad = high === low ? Math.max(1, Math.abs(high) * 0.1) : (high - low) * 0.12;
+  // Generous headroom so the tinted zones above the maximum and below the minimum stay visible, as on the paper charts.
+  const pad = high === low ? Math.max(1, Math.abs(high) * 0.1) : (high - low) * 0.2;
   return [low - pad, high + pad];
 }
 
@@ -276,15 +343,27 @@ export function niceTicks(low: number, high: number, target = 5): number[] {
   return ticks;
 }
 
-const TIME_STEPS = [HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 3 * DAY, 7 * DAY, 14 * DAY, 30 * DAY, 61 * DAY];
-/** Time ticks aligned to Bangkok midnight (or Bangkok hours for short periods), at most `maxTicks` of them. */
-export function timeTicks(start: number, end: number, maxTicks: number): { t: number; step: number }[] {
-  const span = end - start;
-  const step = TIME_STEPS.find(candidate => span / candidate <= Math.max(1, maxTicks)) ?? TIME_STEPS.at(-1)!;
-  const ticks: { t: number; step: number }[] = [];
-  const first = Math.ceil((start + BANGKOK_OFFSET) / step) * step - BANGKOK_OFFSET;
-  for (let t = first; t <= end; t += step) ticks.push({ t, step });
-  return ticks;
+export type AxisDay = { start: number; end: number; day: number; label: string | null };
+/**
+ * The x axis as calendar days: one slot per Bangkok day from `start` to `end`, including days with no reading. At most
+ * `maxLabels` day numbers are labelled (always day 1 of a month and the first day shown); every slot keeps its gridline.
+ */
+export function dayAxis(start: number, end: number, maxLabels: number): AxisDay[] {
+  const slots: AxisDay[] = [];
+  for (let t = start; t < end; t += DAY) slots.push({ start: t, end: Math.min(t + DAY, end), day: bangkokParts(t).day, label: null });
+  const step = [1, 2, 3, 5, 7, 10, 15].find(candidate => Math.ceil(slots.length / candidate) <= Math.max(2, maxLabels)) ?? 15;
+  slots.forEach((slot, index) => {
+    const monthStart = slot.day === 1;
+    // Label by day of month (1, 6, 11 … for a step of 5) so the same days are labelled in every month.
+    if (index === 0 || monthStart || (slot.day - 1) % step === 0) {
+      const tooClose = slots.slice(Math.max(0, index - Math.ceil(step / 2) + 1), index).some(previous => previous.label !== null);
+      if (!tooClose || monthStart || index === 0) {
+        const p = bangkokParts(slot.start);
+        slot.label = monthStart && index > 0 ? `${p.day} ${THAI_MONTHS[p.month]}` : String(p.day);
+      }
+    }
+  });
+  return slots;
 }
 
 // ---------------------------------------------------------------------------
@@ -301,11 +380,19 @@ export function formatBangkokDateTime(t: number): string {
   const p = bangkokParts(t);
   return `${p.day} ${THAI_MONTHS[p.month]} ${p.year} ${pad2(p.hour)}:${pad2(p.minute)}`;
 }
-/** Axis label: `27 ก.ย.` for day steps, `14:00` for hour steps (with the date at midnight). */
-export function formatTick(t: number, step: number): string {
+/** `27 ก.ย. 14:05` — the card header, where the month is already shown. */
+export function formatBangkokShort(t: number): string {
   const p = bangkokParts(t);
-  if (step < DAY && (p.hour !== 0 || p.minute !== 0)) return `${pad2(p.hour)}:${pad2(p.minute)}`;
-  return `${p.day} ${THAI_MONTHS[p.month]}`;
+  return `${p.day} ${THAI_MONTHS[p.month]} ${pad2(p.hour)}:${pad2(p.minute)}`;
+}
+/** `2026-09` → `ก.ย. 2026` */
+export function formatMonth(month: string): string {
+  const [year, index] = month.split('-').map(Number);
+  return `${THAI_MONTHS[index - 1]} ${year}`;
+}
+/** Axis and limit labels: at most two decimals, trailing zeros dropped (`8`, `2.5`, `-20`). */
+export function formatAxis(value: number): string {
+  return String(Math.round(value * 100) / 100);
 }
 /** `2026-09-27` → `27 ก.ย. 2026` */
 export function formatIsoDate(date: string): string {

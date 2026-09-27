@@ -7,13 +7,13 @@ import { EnvironmentCorrectionForm } from '@/components/environment/correction-f
 import { EnvironmentTrendPanel, RangeSwitch, trendPeriodLabel } from '@/components/environment/trend-panel';
 import { bangkokDate, ENV_READING_COLUMNS, readingValues, READING_LABEL, type EnvironmentReading } from '@/lib/environment';
 import { latestConfigByLocation } from '@/lib/environment-monitor';
-import { normalizeMetricView, resolveChartTarget, resolveTrendRange, type MetricView, type TrendRangeKey } from '@/lib/environment-trend';
+import { normalizeMetricView, rangeQuery, resolveChartTarget, resolveTrendRange, type MetricView, type TrendRangeKey } from '@/lib/environment-trend';
 import { loadTrendData, loadWarehouseConfigs, trendMetrics } from '@/lib/environment-trend-data';
 import { LOCATION_COLUMNS, type LocationRow } from '@/lib/locations';
 import { formatDateTime } from '@/lib/format';
 import { logUserMessage } from '@/lib/messages';
 
-type Query = { warehouse?: string; location?: string; from?: string; to?: string; status?: string; range?: string; metric?: string };
+type Query = { warehouse?: string; location?: string; month?: string; from?: string; to?: string; status?: string; range?: string; metric?: string };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STATUSES = ['in_range', 'out_of_range', 'incomplete', 'void'];
 
@@ -23,8 +23,8 @@ export default async function EnvironmentHistoryPage({ searchParams }: { searchP
   const warehouse = selectedWarehouse(access, query.warehouse);
   const client = await createClient();
   if (!client) return <main><h1 className="page-title">ประวัติการตรวจ</h1><p className="error">ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล</p></main>;
-  // One Bangkok period drives both the chart and the evidence list below it.
-  const range = resolveTrendRange(query, '30d');
+  // One Bangkok period drives both the chart and the evidence list below it; by default the whole current month.
+  const range = resolveTrendRange(query);
   const status = query.status && STATUSES.includes(query.status) ? query.status : undefined;
 
   // Locations and every configuration version of this warehouse only; RLS keeps other warehouses out regardless.
@@ -69,13 +69,12 @@ export default async function EnvironmentHistoryPage({ searchParams }: { searchP
     const params = new URLSearchParams({ warehouse: warehouse.code });
     const location = changes.location === undefined ? linkLocation : changes.location;
     if (location) params.set('location', location);
-    const key = changes.range ?? range.key;
-    params.set('range', key);
-    if (key === 'custom') { params.set('from', range.from); params.set('to', range.to); }
+    for (const [name, value] of rangeQuery(changes.range ?? range.key, range)) params.set(name, value);
     const metric = changes.metric ?? view;
     if (metric) params.set('metric', metric);
     if (status) params.set('status', status);
-    return `/environment/history?${params}`;
+    // "เลือกเดือน" opens the same month with the picker in view.
+    return `/environment/history?${params}${changes.range === 'pick' ? '#trend-month' : ''}`;
   };
   const selectable = target && !monitored.some(item => item.id === target.id) ? [...monitored, target] : monitored;
   const periodLabel = trendPeriodLabel(range);
@@ -91,12 +90,13 @@ export default async function EnvironmentHistoryPage({ searchParams }: { searchP
       <div className="flex flex-wrap items-baseline justify-between gap-2"><h2 id="trend-heading" className="font-bold text-lg">กราฟแนวโน้ม{target ? ` · ${target.code}` : ''}</h2><span className="muted text-sm">{periodLabel}</span></div>
       <RangeSwitch range={range.key} hrefFor={key => href({ range: key })} />
       <form className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end" method="get">
-        <input type="hidden" name="warehouse" value={warehouse.code}/><input type="hidden" name="range" value={range.key}/>
+        <input type="hidden" name="warehouse" value={warehouse.code}/><input type="hidden" name="range" value={range.key === 'custom' ? 'custom' : 'month'}/>
         {view && <input type="hidden" name="metric" value={view}/>}
         {selectable.length > 0 && <label className="field">ตำแหน่งที่เฝ้าระวัง<select className="input" name="location" defaultValue={target?.id ?? ''}>
           {!target && <option value="">เลือกตำแหน่ง</option>}
           {selectable.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}{item.active ? '' : ' (ปิดใช้งาน)'}</option>)}
         </select></label>}
+        {range.key !== 'custom' && <label className="field">เลือกเดือน<input className="input" id="trend-month" name="month" type="month" required defaultValue={range.month ?? range.today.slice(0, 7)} max={range.today.slice(0, 7)}/></label>}
         {range.key === 'custom' && <>
           <label className="field">ตั้งแต่<input className="input" name="from" type="date" required defaultValue={range.from} max={range.today}/></label>
           <label className="field">ถึง<input className="input" name="to" type="date" required defaultValue={range.to} max={range.today}/></label>

@@ -1080,12 +1080,13 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   expect(serverErrors).toEqual([]);
 });
 
-// ---- Post-Phase-3: Environment trend charts (local disposable data only) -----------------------------------------------------
+// ---- Post-Phase-3: Environment monthly charts (local disposable data only) ---------------------------------------------------
 // Runs after the test above in the same worker, reusing its synthetic accounts. Historical configuration versions and readings are
 // written with the local service role because the recording RPC only accepts observations from the last 72 hours; statuses are the
-// ones the RPC would have stored for each version, so the chart is exercised on realistic history.
-test('environment trend charts: metrics, periods, versioned ranges, corrections, voids and inherited shelves', async ({ page }) => {
-  test.setTimeout(240_000);
+// ones the RPC would have stored for each version. Fixtures sit on Bangkok month boundaries (the previous month is always complete),
+// so the test does not depend on today's date.
+test('environment monthly charts: month views, metrics, versioned ranges, corrections, voids and inherited shelves', async ({ page }, testInfo) => {
+  test.setTimeout(300_000);
   const pageErrors: string[] = [];
   const serverErrors: string[] = [];
   const baseUrl = process.env.CI_E2E_BASE_URL || 'http://localhost:3100';
@@ -1102,10 +1103,18 @@ test('environment trend charts: metrics, periods, versioned ranges, corrections,
   expect((await client.auth.signInWithPassword({ email: 'ephis.e2eadmin@chem-immuno.internal', password })).error).toBeNull();
   const adminId = (await admin.from('ci_user_profiles').select('user_id').eq('ephis_id', 'e2eadmin').single()).data!.user_id as string;
 
-  const DAY = 86_400_000;
-  const now = Date.now();
-  const at = (daysAgo: number, hours = 0) => new Date(now - daysAgo * DAY + hours * 3_600_000).toISOString();
+  // Bangkok calendar helpers.
+  const TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const shiftMonth = (month: string, by: number) => { const [y, m] = month.split('-').map(Number); const total = y * 12 + m - 1 + by; return `${Math.floor(total / 12)}-${String(total % 12 + 1).padStart(2, '0')}`; };
+  const monthLabel = (month: string) => `${TH[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`;
+  const monthDays = (month: string) => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 0)).getUTCDate();
   const bkk = (iso: string) => new Date(Date.parse(iso) + 7 * 3_600_000).toISOString().slice(0, 10);
+  const thisMonth = bkk(new Date().toISOString()).slice(0, 7);
+  const prevMonth = shiftMonth(thisMonth, -1);
+  const olderMonth = shiftMonth(thisMonth, -2);
+  const at = (month: string, day: number, hour = 9) => new Date(`${month}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:00:00+07:00`).toISOString();
+  const justNow = new Date(Date.now() - 60_000).toISOString();
+
   const create = async (p: Record<string, unknown>) => {
     const created = await client.rpc('ci_create_location_v2', { p: { warehouse_id: 1, ...p } });
     expect(created.error).toBeNull();
@@ -1115,15 +1124,17 @@ test('environment trend charts: metrics, periods, versioned ranges, corrections,
   const shelf = await create({ code: 'E2E-TR-T-S1', name: 'Synthetic trend shelf', location_type: 'shelf', parent_location_id: tempOnly });
   const rhOnly = await create({ code: 'E2E-TR-H', name: 'Synthetic humidity room', location_type: 'room', env: { temperature_monitored: false, temp_min_c: null, temp_max_c: null, humidity_monitored: true, rh_min_pct: 30, rh_max_pct: 60 } });
   const both = await create({ code: 'E2E-TR-B', name: 'Synthetic both room', location_type: 'room', env: { temperature_monitored: true, temp_min_c: 15, temp_max_c: 25, humidity_monitored: true, rh_min_pct: 30, rh_max_pct: 70 } });
-  const current = async (id: string) => (await admin.from('ci_location_env_configs').select('id').eq('location_id', id).single()).data!.id as string;
-  const [rhConfig, bothConfig] = [await current(rhOnly), await current(both)];
-  // E2E-TR-T history: 2–8 °C from 20 days ago, 2–6 °C from 10 days ago (today's version created above is also 2–6).
+  // Earlier versions (the versions created above are in force from now on): E2E-TR-T was 2–8 °C until the 15th of last month,
+  // then 2–6 °C; the other two had the same ranges as today since before last month.
   const versions = await admin.from('ci_location_env_configs').insert([
-    { warehouse_id: 1, location_id: tempOnly, effective_from: at(20), temperature_monitored: true, temp_min_c: 2, temp_max_c: 8, humidity_monitored: false, created_by: adminId },
-    { warehouse_id: 1, location_id: tempOnly, effective_from: at(10), temperature_monitored: true, temp_min_c: 2, temp_max_c: 6, humidity_monitored: false, created_by: adminId },
-  ]).select('id,effective_from');
+    { warehouse_id: 1, location_id: tempOnly, effective_from: at(olderMonth, 20, 0), temperature_monitored: true, temp_min_c: 2, temp_max_c: 8, humidity_monitored: false, created_by: adminId },
+    { warehouse_id: 1, location_id: tempOnly, effective_from: at(prevMonth, 15, 0), temperature_monitored: true, temp_min_c: 2, temp_max_c: 6, humidity_monitored: false, created_by: adminId },
+    { warehouse_id: 1, location_id: rhOnly, effective_from: at(olderMonth, 1, 0), temperature_monitored: false, humidity_monitored: true, rh_min_pct: 30, rh_max_pct: 60, created_by: adminId },
+    { warehouse_id: 1, location_id: both, effective_from: at(olderMonth, 1, 0), temperature_monitored: true, temp_min_c: 15, temp_max_c: 25, humidity_monitored: true, rh_min_pct: 30, rh_max_pct: 70, created_by: adminId },
+  ]).select('id,location_id,effective_from');
   expect(versions.error).toBeNull();
-  const [v28, v26] = versions.data!.sort((a, b) => Date.parse(a.effective_from) - Date.parse(b.effective_from)).map(row => row.id as string);
+  const version = (location: string, from: string) => versions.data!.find(row => row.location_id === location && Date.parse(row.effective_from) === Date.parse(from))!.id as string;
+  const [v28, v26, rhConfig, bothConfig] = [version(tempOnly, at(olderMonth, 20, 0)), version(tempOnly, at(prevMonth, 15, 0)), version(rhOnly, at(olderMonth, 1, 0)), version(both, at(olderMonth, 1, 0))];
   type Row = { id?: string; location_id: string; config_id: string; observed_at: string; recorded_at?: string; entry_kind?: string; corrects_reading_id?: string;
     temperature_c?: number | null; humidity_rh?: number | null; temperature_status: string; humidity_status: string; overall_status: string; entry_mode?: string; reason?: string };
   const insert = async (rows: Row[]) => {
@@ -1140,22 +1151,28 @@ test('environment trend charts: metrics, periods, versioned ranges, corrections,
   const t = (temperature_c: number, status: string) => ({ temperature_c, temperature_status: status, humidity_status: 'not_monitored', overall_status: status });
   const [origId, voidedId] = [crypto.randomUUID(), crypto.randomUUID()];
   await insert([
-    { location_id: tempOnly, config_id: v28, observed_at: at(15), ...t(7.5, 'in_range') }, // in range under 2–8, would be out under today's 2–6
-    { location_id: tempOnly, config_id: v28, observed_at: at(12), ...t(5, 'in_range') },
-    { location_id: tempOnly, config_id: v26, observed_at: at(5), ...t(7, 'out_of_range') },
-    { location_id: tempOnly, config_id: v26, observed_at: at(3), recorded_at: at(2), entry_mode: 'late', reason: 'E2E late chart entry', ...t(4, 'in_range') },
-    { id: origId, location_id: tempOnly, config_id: v26, observed_at: at(2), ...t(3.3, 'in_range') },
-    { id: voidedId, location_id: tempOnly, config_id: v26, observed_at: at(1), ...t(11.11, 'out_of_range') },
-    { location_id: rhOnly, config_id: rhConfig, observed_at: at(2), humidity_rh: 45, temperature_status: 'not_monitored', humidity_status: 'in_range', overall_status: 'in_range' },
-    { location_id: rhOnly, config_id: rhConfig, observed_at: at(1), humidity_rh: 65, temperature_status: 'not_monitored', humidity_status: 'out_of_range', overall_status: 'out_of_range' },
-    { location_id: both, config_id: bothConfig, observed_at: at(8), temperature_c: 21, humidity_rh: null, temperature_status: 'in_range', humidity_status: 'missing', overall_status: 'incomplete', reason: 'E2E hygrometer missing' },
-    { location_id: both, config_id: bothConfig, observed_at: at(3), temperature_c: 20, humidity_rh: 50, temperature_status: 'in_range', humidity_status: 'in_range', overall_status: 'in_range' },
-    { location_id: both, config_id: bothConfig, observed_at: at(2), temperature_c: 22, humidity_rh: null, temperature_status: 'in_range', humidity_status: 'missing', overall_status: 'incomplete', reason: 'E2E hygrometer missing' },
-    { location_id: both, config_id: bothConfig, observed_at: at(1), temperature_c: 23, humidity_rh: 55, temperature_status: 'in_range', humidity_status: 'in_range', overall_status: 'in_range' },
+    // Last month, E2E-TR-T: two readings on the 3rd, one on the 4th, nothing on the 5th–7th, then the 8th, 18th, 20th, 22nd, 25th.
+    { location_id: tempOnly, config_id: v28, observed_at: at(prevMonth, 3, 9), ...t(7.5, 'in_range') }, // in range under 2–8, would be out under 2–6
+    { location_id: tempOnly, config_id: v28, observed_at: at(prevMonth, 3, 15), ...t(5, 'in_range') },
+    { location_id: tempOnly, config_id: v28, observed_at: at(prevMonth, 4, 9), ...t(5.5, 'in_range') },
+    { location_id: tempOnly, config_id: v28, observed_at: at(prevMonth, 8, 9), ...t(6, 'in_range') },
+    { location_id: tempOnly, config_id: v26, observed_at: at(prevMonth, 18, 9), ...t(7, 'out_of_range') },
+    { location_id: tempOnly, config_id: v26, observed_at: at(prevMonth, 20, 9), recorded_at: at(prevMonth, 21, 10), entry_mode: 'late', reason: 'E2E late chart entry', ...t(4, 'in_range') },
+    { id: origId, location_id: tempOnly, config_id: v26, observed_at: at(prevMonth, 22, 9), ...t(3.3, 'in_range') },
+    { id: voidedId, location_id: tempOnly, config_id: v26, observed_at: at(prevMonth, 25, 9), ...t(11.11, 'out_of_range') },
+    { location_id: tempOnly, config_id: v26, observed_at: justNow, ...t(4.5, 'in_range') },
+    { location_id: rhOnly, config_id: rhConfig, observed_at: at(prevMonth, 5, 9), humidity_rh: 45, temperature_status: 'not_monitored', humidity_status: 'in_range', overall_status: 'in_range' },
+    { location_id: rhOnly, config_id: rhConfig, observed_at: at(prevMonth, 6, 9), humidity_rh: 65, temperature_status: 'not_monitored', humidity_status: 'out_of_range', overall_status: 'out_of_range' },
+    { location_id: rhOnly, config_id: rhConfig, observed_at: justNow, humidity_rh: 50, temperature_status: 'not_monitored', humidity_status: 'in_range', overall_status: 'in_range' },
+    { location_id: both, config_id: bothConfig, observed_at: at(prevMonth, 4, 9), temperature_c: 21, humidity_rh: null, temperature_status: 'in_range', humidity_status: 'missing', overall_status: 'incomplete', reason: 'E2E hygrometer missing' },
+    { location_id: both, config_id: bothConfig, observed_at: at(prevMonth, 10, 9), temperature_c: 20, humidity_rh: 50, temperature_status: 'in_range', humidity_status: 'in_range', overall_status: 'in_range' },
+    { location_id: both, config_id: bothConfig, observed_at: at(prevMonth, 11, 9), temperature_c: 22, humidity_rh: null, temperature_status: 'in_range', humidity_status: 'missing', overall_status: 'incomplete', reason: 'E2E hygrometer missing' },
+    { location_id: both, config_id: bothConfig, observed_at: at(prevMonth, 12, 9), temperature_c: 23, humidity_rh: 55, temperature_status: 'in_range', humidity_status: 'in_range', overall_status: 'in_range' },
+    { location_id: both, config_id: bothConfig, observed_at: justNow, temperature_c: 22, humidity_rh: 48, temperature_status: 'in_range', humidity_status: 'in_range', overall_status: 'in_range' },
   ]);
   await insert([
-    { location_id: tempOnly, config_id: v26, observed_at: at(2), recorded_at: at(2, 1), entry_kind: 'correction', corrects_reading_id: origId, reason: 'E2E chart correction', ...t(3.4, 'in_range') },
-    { location_id: tempOnly, config_id: v26, observed_at: at(1), recorded_at: at(1, 1), entry_kind: 'void', corrects_reading_id: voidedId, reason: 'E2E void chart', temperature_c: null, temperature_status: 'out_of_range', humidity_status: 'not_monitored', overall_status: 'void' },
+    { location_id: tempOnly, config_id: v26, observed_at: at(prevMonth, 22, 9), recorded_at: at(prevMonth, 22, 10), entry_kind: 'correction', corrects_reading_id: origId, reason: 'E2E chart correction', ...t(3.4, 'in_range') },
+    { location_id: tempOnly, config_id: v26, observed_at: at(prevMonth, 25, 9), recorded_at: at(prevMonth, 25, 10), entry_kind: 'void', corrects_reading_id: voidedId, reason: 'E2E void chart', temperature_c: null, temperature_status: 'out_of_range', humidity_status: 'not_monitored', overall_status: 'void' },
   ]);
 
   await page.goto('/login');
@@ -1165,32 +1182,53 @@ test('environment trend charts: metrics, periods, versioned ranges, corrections,
   await expect(page.getByRole('heading', { name: /ภาพรวมคลัง/ })).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 900 });
   const metricNav = page.getByRole('navigation', { name: 'เลือกค่าที่แสดงในกราฟ' });
-  const chart = (metric: string) => page.locator(`figure.trend-chart[data-metric="${metric}"]`);
+  const periodNav = page.getByRole('navigation', { name: 'เลือกเดือนหรือช่วงเวลา' });
+  const chart = (metric: string) => page.locator(`figure.trend-chart[data-metric="${metric}"]:not(.trend-empty)`);
+  const params = () => new URL(page.url()).searchParams;
 
-  // A. Temperature only, 30 days by default: one °C chart, no metric switch, effective points only.
+  // Default: the whole CURRENT month, not a rolling window. Temperature only: one °C card, no metric switch.
   await page.goto(`/environment/history?warehouse=CHE&location=${tempOnly}`);
   await expect(page.getByRole('heading', { name: 'กราฟแนวโน้ม · E2E-TR-T' })).toBeVisible();
-  await expect(page.getByRole('link', { name: '30 วัน' })).toHaveAttribute('aria-current', 'true');
+  await expect(periodNav.getByRole('link', { name: 'เดือนนี้' })).toHaveAttribute('aria-current', 'true');
+  await expect(page.getByLabel('เลือกเดือน', { exact: true })).toHaveValue(thisMonth);
   await expect(metricNav, 'no pointless metric switch for a temperature-only location').toHaveCount(0);
   await expect(chart('temperature')).toHaveCount(1);
   await expect(chart('humidity')).toHaveCount(0);
-  const tempSvg = page.getByRole('img', { name: /อุณหภูมิของ E2E-TR-T/ });
-  await expect(tempSvg).toBeVisible();
-  await expect(chart('temperature').locator('svg > title')).toHaveText(/อุณหภูมิ \(°C\)/);
-  const points = chart('temperature').locator('.trend-point');
-  await expect(points, 'the voided and the superseded readings are not plotted').toHaveCount(5);
-  await expect(chart('temperature').locator('.trend-point[data-corrected="true"]')).toHaveCount(1);
-  await expect(chart('temperature').locator('.trend-point[data-late="true"]')).toHaveCount(1);
-  await expect(chart('temperature').locator('.trend-point[data-status="out_of_range"]')).toHaveCount(1);
-  // E. Versioned range: 2–8 until the change, 2–6 afterwards — never today's 2–6 painted over the past.
-  const bands = chart('temperature').locator('.trend-band');
-  await expect(bands).toHaveCount(2);
+  const tempCard = chart('temperature');
+  await expect(tempCard.locator('figcaption')).toContainText('Temperature (°C)');
+  await expect(tempCard.locator('figcaption')).toContainText(monthLabel(thisMonth));
+  await expect(tempCard.locator('figcaption')).toContainText('ล่าสุด 4.50 °C');
+  await expect(tempCard.locator('svg[role="img"]'), 'the axis is the whole month').toHaveAttribute('data-axis-days', String(monthDays(thisMonth)));
+  await expect(tempCard.locator('.trend-point')).toHaveCount(1);
+  await expect(tempCard.locator('.trend-future'), 'the rest of the current month is shown, marked as not yet happened').toHaveCount(1);
+  await expect(page.getByRole('img', { name: /อุณหภูมิของ E2E-TR-T/ })).toBeVisible();
+
+  // Previous month: the full month, with the versioned range, gaps, correction, void and late entry.
+  await periodNav.getByRole('link', { name: 'เดือนก่อน' }).click();
+  await expect(page).toHaveURL(new RegExp(`warehouse=CHE&location=${tempOnly}&range=month&month=${prevMonth}&metric=temperature`));
+  await expect(periodNav.getByRole('link', { name: 'เดือนก่อน' })).toHaveAttribute('aria-current', 'true');
+  await expect(tempCard.locator('figcaption')).toContainText(monthLabel(prevMonth));
+  await expect(tempCard.locator('svg[role="img"]')).toHaveAttribute('data-axis-days', String(monthDays(prevMonth)));
+  await expect(tempCard.locator('.trend-future'), 'a finished month has no future part').toHaveCount(0);
+  const points = tempCard.locator('.trend-point');
+  await expect(points, 'the voided and the superseded readings are not plotted; two readings on one day are two points').toHaveCount(7);
+  await expect(tempCard.locator('.trend-point[data-corrected="true"]')).toHaveCount(1);
+  await expect(tempCard.locator('.trend-point[data-late="true"]')).toHaveCount(1);
+  await expect(tempCard.locator('.trend-point[data-status="out_of_range"]')).toHaveCount(1);
+  await expect(tempCard.locator('polyline'), 'days without a reading break the line (3rd–4th | 8th | 18th | 20th | 22nd)').toHaveCount(5);
+  const bands = tempCard.locator('.trend-band');
+  await expect(bands, '2–8 until the 15th, 2–6 afterwards — never today’s 2–6 painted over the whole month').toHaveCount(2);
   await expect(bands.nth(0)).toHaveAttribute('data-band-max', '8');
   await expect(bands.nth(1)).toHaveAttribute('data-band-max', '6');
-  await expect(chart('temperature').locator('.trend-band-change')).toHaveCount(1);
-  await chart('temperature').locator('summary').click();
-  const table = chart('temperature').locator('table');
-  await expect(table.locator('tbody tr')).toHaveCount(5);
+  await expect(tempCard.locator('.trend-band-change')).toHaveCount(1);
+  await expect(tempCard.locator('.trend-zone-high'), 'the zone above max is tinted').toHaveCount(2);
+  await expect(tempCard.locator('.trend-zone-low'), 'the zone below min is tinted').toHaveCount(2);
+  await expect(tempCard.locator('.trend-limit-labels')).toContainText('max 6');
+  await expect(tempCard.locator('.trend-limit-labels')).toContainText('min 2');
+  await expect(tempCard.locator('.trend-summary')).toContainText('7 จุด · นอกช่วง 1 จุด');
+  await tempCard.locator('summary').click();
+  const table = tempCard.locator('table');
+  await expect(table.locator('tbody tr')).toHaveCount(7);
   await expect(table.locator('tr').filter({ hasText: '7.50' })).toContainText('2.00 – 8.00 °C');
   await expect(table.locator('tr').filter({ hasText: '7.50' })).toContainText('อยู่ในช่วง');
   await expect(table.locator('tr').filter({ hasText: '7.00' })).toContainText('2.00 – 6.00 °C');
@@ -1198,77 +1236,85 @@ test('environment trend charts: metrics, periods, versioned ranges, corrections,
   await expect(table.locator('tr').filter({ hasText: '4.00' })).toContainText('ย้อนหลัง');
   await expect(table, 'the voided value is not a trend point').not.toContainText('11.11');
   await expect(table, 'the corrected original is not plotted twice').not.toContainText('3.30');
-  // F. The evidence list still holds the full chain: original, correction, void and their reasons.
+  // The evidence list follows the month and still holds the full chain: original, correction, void and their reasons.
+  await expect(page.getByRole('heading', { name: new RegExp(`รายการหลักฐาน · E2E-TR-T · ${monthLabel(prevMonth)}`) })).toBeVisible();
   await expect(page.locator('article').filter({ hasText: '3.3 °C' })).toContainText('มีการแก้ไขต่อ');
   await expect(page.locator('article').filter({ hasText: '3.4 °C' })).toContainText('แก้ไขจาก');
   await expect(page.locator('article').filter({ hasText: '11.11 °C' })).toContainText('มีการแก้ไขต่อ');
   await expect(page.locator('article').filter({ hasText: 'E2E void chart' })).toContainText('ยกเลิกข้อมูล');
-  // Tapping or clicking a point shows its details as text (not hover only); the stepper walks points from the keyboard.
-  const detail = chart('temperature').locator('p[aria-live]');
+  await expect(page.locator('article').filter({ hasText: '4.5 °C' }), 'this month is not in last month’s evidence').toHaveCount(0);
+  // Point details as text (not hover only): the stepper walks points; a click or tap picks the nearest one.
+  const detail = tempCard.locator('p[aria-live]');
   await expect(detail).toContainText('จุดล่าสุด:');
-  await chart('temperature').getByRole('button', { name: '‹ จุดก่อนหน้า' }).click();
+  await tempCard.getByRole('button', { name: '‹ จุดก่อนหน้า' }).click();
   await expect(detail).toContainText('บันทึกย้อนหลัง');
   await expect(detail).toContainText('4.00 °C');
+  const tempSvg = tempCard.locator('svg[role="img"]');
   const box = (await tempSvg.boundingBox())!;
-  await tempSvg.click({ position: { x: box.width - 90, y: box.height / 2 } });
-  await expect(detail).toContainText('ค่าที่แก้ไขแล้ว');
+  await tempSvg.click({ position: { x: 60, y: box.height / 2 } });
+  await expect(detail).toContainText('7.50 °C');
 
-  // Period controls keep warehouse, location and metric in the URL.
-  await page.getByRole('link', { name: '7 วัน' }).click();
-  await expect(page).toHaveURL(new RegExp(`warehouse=CHE&location=${tempOnly}&range=7d&metric=temperature`));
-  await expect(points).toHaveCount(3);
-  await expect(bands).toHaveCount(1);
-  await page.getByRole('link', { name: 'เดือนนี้' }).click();
-  await expect(page).toHaveURL(/range=month/);
-  await expect(page.getByRole('link', { name: 'เดือนนี้' })).toHaveAttribute('aria-current', 'true');
-  await page.getByRole('link', { name: 'กำหนดเอง' }).click();
-  await expect(page).toHaveURL(/range=custom&from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}/);
-  await page.getByLabel('ตั้งแต่').fill(bkk(at(16)));
-  await page.getByLabel('ถึง').fill(bkk(at(11)));
+  // เลือกเดือน: the month picker; a month with no readings shows an empty state, not an empty chart.
+  await periodNav.getByRole('link', { name: 'เลือกเดือน' }).click();
+  await expect(page).toHaveURL(new RegExp(`month=${prevMonth}.*#trend-month$`));
+  await page.getByLabel('เลือกเดือน', { exact: true }).fill(olderMonth);
   await page.getByRole('button', { name: 'แสดง', exact: true }).click();
-  await expect(page).toHaveURL(/range=custom/);
-  const submitted = new URL(page.url()).searchParams;
-  expect([submitted.get('warehouse'), submitted.get('location'), submitted.get('range'), submitted.get('from'), submitted.get('to'), submitted.get('metric')])
-    .toEqual(['CHE', tempOnly, 'custom', bkk(at(16)), bkk(at(11)), 'temperature']);
-  await expect(points).toHaveCount(2);
-  await expect(bands).toHaveCount(1);
-  await expect(bands.first()).toHaveAttribute('data-band-max', '8');
-  await page.goto(`/environment/history?warehouse=CHE&location=${tempOnly}&range=custom&from=2026-01-01&to=2026-01-05`);
+  await expect.poll(() => [params().get('range'), params().get('month'), params().get('location')]).toEqual(['month', olderMonth, tempOnly]);
+  await expect(periodNav.getByRole('link', { name: 'เลือกเดือน' })).toHaveAttribute('aria-current', 'true');
   await expect(page.getByRole('note').filter({ hasText: 'ยังไม่มีข้อมูลสำหรับช่วงเวลาที่เลือก' })).toBeVisible();
   await expect(page.locator('figure.trend-chart svg'), 'no empty chart is drawn').toHaveCount(0);
+  // A month in the URL opens that month.
+  await page.goto(`/environment/history?warehouse=CHE&location=${tempOnly}&range=month&month=${prevMonth}`);
+  await expect(periodNav.getByRole('link', { name: 'เดือนก่อน' })).toHaveAttribute('aria-current', 'true');
+  await expect(points).toHaveCount(7);
+  // กำหนดเอง: a special review period still works.
+  await periodNav.getByRole('link', { name: 'กำหนดเอง' }).click();
+  await expect.poll(() => [params().get('range'), params().get('from'), params().get('to')]).toEqual(['custom', `${prevMonth}-01`, `${prevMonth}-${monthDays(prevMonth)}`]);
+  await page.getByLabel('ตั้งแต่').fill(`${prevMonth}-01`);
+  await page.getByLabel('ถึง').fill(`${prevMonth}-08`);
+  await page.getByRole('button', { name: 'แสดง', exact: true }).click();
+  await expect.poll(() => [params().get('location'), params().get('range'), params().get('from'), params().get('to'), params().get('metric')]).toEqual([tempOnly, 'custom', `${prevMonth}-01`, `${prevMonth}-08`, 'temperature']);
+  await expect(points).toHaveCount(4);
+  await expect(bands).toHaveCount(1);
+  await expect(bands.first()).toHaveAttribute('data-band-max', '8');
+  await expect(tempCard.locator('svg[role="img"]')).toHaveAttribute('data-axis-days', '8');
   await page.goto(`/environment/history?warehouse=CHE&location=${tempOnly}&metric=humidity`);
   await expect(chart('temperature'), 'an unavailable metric falls back to the monitored one').toHaveCount(1);
 
-  // B. Humidity only.
+  // Humidity only.
   await page.goto(`/environment/history?warehouse=CHE&location=${rhOnly}`);
   await expect(metricNav).toHaveCount(0);
   await expect(chart('humidity')).toHaveCount(1);
   await expect(chart('temperature')).toHaveCount(0);
-  await expect(chart('humidity').locator('figcaption')).toContainText('%RH');
+  await expect(chart('humidity').locator('figcaption')).toContainText('Relative humidity (%RH)');
+  await expect(chart('humidity').locator('.trend-point')).toHaveCount(1);
 
-  // C. Both: selector shown, both by default as two separate charts, then one at a time; RH gaps are not bridged.
-  await page.goto(`/environment/history?warehouse=CHE&location=${both}`);
+  // Both: selector shown, both by default as two separate stacked cards on the same month; then one at a time.
+  await page.goto(`/environment/history?warehouse=CHE&location=${both}&range=month&month=${prevMonth}`);
   await expect(metricNav).toBeVisible();
   await expect(metricNav.getByRole('link', { name: 'ทั้งคู่' })).toHaveAttribute('aria-current', 'true');
   await expect(chart('temperature')).toHaveCount(1);
   await expect(chart('humidity')).toHaveCount(1);
-  await expect(chart('temperature').locator('polyline')).toHaveCount(1);
-  await expect(chart('humidity').locator('polyline'), 'the missing humidity reading splits the line').toHaveCount(2);
+  await expect(chart('temperature').locator('polyline'), 'the 4th stands alone; the 10th–12th are connected').toHaveCount(2);
+  await expect(chart('humidity').locator('polyline'), 'missing humidity on the 11th splits the line').toHaveCount(2);
+  await expect(chart('humidity').locator('svg[role="img"]')).toHaveAttribute('data-axis-days', String(monthDays(prevMonth)));
   const [tempBox, rhBox] = [await chart('temperature').boundingBox(), await chart('humidity').boundingBox()];
-  expect(rhBox!.y, 'the two charts are stacked').toBeGreaterThan(tempBox!.y + tempBox!.height - 1);
+  expect(rhBox!.y, 'the two cards are stacked').toBeGreaterThan(tempBox!.y + tempBox!.height - 1);
+  expect(Math.abs(rhBox!.width - tempBox!.width), 'the two cards share one width (one time scale)').toBeLessThanOrEqual(1);
+  await page.screenshot({ path: testInfo.outputPath('environment-both-1280.png'), fullPage: true });
   await metricNav.getByRole('link', { name: 'อุณหภูมิ' }).focus();
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(new RegExp(`location=${both}&range=30d&metric=temperature`));
+  await expect(page).toHaveURL(new RegExp(`location=${both}&range=month&month=${prevMonth}&metric=temperature`));
   await expect(chart('temperature')).toHaveCount(1);
   await expect(chart('humidity')).toHaveCount(0);
   await metricNav.getByRole('link', { name: 'ความชื้น' }).click();
   await expect(page).toHaveURL(/metric=humidity/);
   await expect(chart('humidity')).toHaveCount(1);
   await expect(chart('temperature')).toHaveCount(0);
-  await page.goto(`/environment/history?warehouse=CHE&location=${both}&range=custom&from=${bkk(at(8))}&to=${bkk(at(8))}`);
+  await page.goto(`/environment/history?warehouse=CHE&location=${both}&range=custom&from=${prevMonth}-04&to=${prevMonth}-04`);
   await expect(chart('temperature').locator('.trend-point')).toHaveCount(1);
-  await expect(page.locator('.trend-empty[data-metric="humidity"]'), 'a humidity-specific empty state, not a broken chart').toContainText('ยังไม่มีค่าความชื้นสัมพัทธ์สำหรับช่วงเวลาที่เลือก');
-  await expect(chart('humidity')).toHaveCount(0);
+  await expect(page.locator('figure.trend-empty[data-metric="humidity"]'), 'a humidity-specific empty state, not a broken chart').toContainText('ยังไม่มีค่าความชื้นสัมพัทธ์สำหรับช่วงเวลาที่เลือก');
+  await expect(page.locator('figure.trend-empty[data-metric="humidity"] svg')).toHaveCount(0);
   // The location picker offers monitored containers only and works from the keyboard.
   await page.goto(`/environment/history?warehouse=CHE&location=${both}`);
   const picker = page.getByLabel('ตำแหน่งที่เฝ้าระวัง');
@@ -1277,32 +1323,36 @@ test('environment trend charts: metrics, periods, versioned ranges, corrections,
   await picker.focus();
   await picker.selectOption(rhOnly);
   await page.getByRole('button', { name: 'แสดง', exact: true }).press('Enter');
-  await expect(page).toHaveURL(new RegExp(`location=${rhOnly}`));
+  await expect.poll(() => params().get('location')).toBe(rhOnly);
   await expect(chart('humidity')).toHaveCount(1);
 
-  // D. An inherited shelf resolves to its monitored parent; nothing is invented for the shelf.
+  // An inherited shelf resolves to its monitored parent; nothing is invented for the shelf.
   await page.goto(`/environment/history?warehouse=CHE&location=${shelf}`);
   await expect(page.getByText('E2E-TR-T-S1 อยู่ใน E2E-TR-T · กราฟแสดงข้อมูลของ E2E-TR-T')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'กราฟแนวโน้ม · E2E-TR-T' })).toBeVisible();
   await expect(page.locator('.trend-panel')).toHaveAttribute('data-location', 'E2E-TR-T');
-  await expect(points).toHaveCount(5);
-  await page.getByRole('link', { name: '7 วัน' }).click();
-  await expect(page, 'links carry the canonical monitored location').toHaveURL(new RegExp(`location=${tempOnly}&range=7d`));
+  await expect(chart('temperature').locator('.trend-point')).toHaveCount(1);
+  await periodNav.getByRole('link', { name: 'เดือนก่อน' }).click();
+  await expect(page, 'links carry the canonical monitored location').toHaveURL(new RegExp(`location=${tempOnly}&range=month&month=${prevMonth}`));
 
-  // Location Detail: compact 7-day trend for the monitor, with a link to the full view.
+  // Location Detail: compact card for this month, for the monitor, with a link to the full view.
   await page.goto(`/locations/${tempOnly}?warehouse=CHE`);
-  await expect(page.getByRole('heading', { name: 'แนวโน้ม 7 วันล่าสุด' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: `แนวโน้มเดือนนี้ · ${monthLabel(thisMonth)}` })).toBeVisible();
   await expect(chart('temperature')).toHaveCount(1);
-  await expect(chart('temperature').locator('.trend-point')).toHaveCount(3);
+  await expect(chart('temperature').locator('.trend-point')).toHaveCount(1);
+  await expect(chart('temperature').locator('svg[role="img"]')).toHaveAttribute('data-axis-days', String(monthDays(thisMonth)));
+  await expect(chart('temperature').locator('.trend-summary')).toContainText('1 จุด');
   await expect(chart('temperature').locator('details'), 'no evidence table on the detail page').toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'ดูกราฟและประวัติทั้งหมด' })).toHaveAttribute('href', `/environment/history?warehouse=CHE&location=${tempOnly}&range=30d&metric=temperature`);
+  await expect(page.getByRole('link', { name: 'ดูกราฟและประวัติทั้งหมด' })).toHaveAttribute('href', `/environment/history?warehouse=CHE&location=${tempOnly}&range=month&month=${thisMonth}&metric=temperature`);
   await page.goto(`/locations/${shelf}?warehouse=CHE`);
   await expect(page.getByRole('heading', { name: 'สภาพแวดล้อมของ E2E-TR-T (ตู้/ห้องที่ตำแหน่งนี้อยู่)' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'แนวโน้ม 7 วันล่าสุด ของ E2E-TR-T' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: `แนวโน้มเดือนนี้ · ${monthLabel(thisMonth)} ของ E2E-TR-T` })).toBeVisible();
+  await expect(page.getByText('กราฟนี้เป็นของ E2E-TR-T ซึ่งเป็นตู้/ห้องที่เฝ้าระวังตำแหน่งนี้')).toBeVisible();
   await expect(page.locator('.trend-panel')).toHaveAttribute('data-location', 'E2E-TR-T');
-  await expect(page.getByRole('link', { name: 'ดูกราฟและประวัติทั้งหมด' })).toHaveAttribute('href', new RegExp(`location=${tempOnly}&range=30d`));
+  await expect(page.getByRole('link', { name: 'ดูกราฟและประวัติทั้งหมด' })).toHaveAttribute('href', new RegExp(`location=${tempOnly}&range=month&month=${thisMonth}`));
   await page.goto(`/locations/${both}?warehouse=CHE`);
   await expect(metricNav).toBeVisible();
+  await expect(metricNav.getByRole('link', { name: 'ทั้งคู่' })).toHaveAttribute('aria-current', 'true');
   await expect(chart('temperature')).toHaveCount(1);
   await expect(chart('humidity')).toHaveCount(1);
   await metricNav.getByRole('link', { name: 'ความชื้น' }).click();
@@ -1314,12 +1364,13 @@ test('environment trend charts: metrics, periods, versioned ranges, corrections,
   // Responsive and accessibility: no page-level sideways scroll; touch targets; axe clean on phones.
   for (const width of [375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const route of [`/environment/history?warehouse=CHE&location=${both}`, `/environment/history?warehouse=CHE&location=${tempOnly}&range=custom&from=${bkk(at(29))}&to=${bkk(at(0))}`, `/locations/${both}?warehouse=CHE`, `/locations/${shelf}?warehouse=CHE`]) {
+    for (const route of [`/environment/history?warehouse=CHE&location=${both}&range=month&month=${prevMonth}`, `/environment/history?warehouse=CHE&location=${tempOnly}&range=month&month=${prevMonth}`,
+      `/environment/history?warehouse=CHE&location=${tempOnly}`, `/locations/${both}?warehouse=CHE`, `/locations/${shelf}?warehouse=CHE`]) {
       await page.goto(route);
       await expect(page.locator('figure.trend-chart').first()).toBeVisible();
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow, `${route} at ${width}px`).toBeLessThanOrEqual(2);
-      const smallTargets = await page.locator('.button, .input, nav[aria-label="เลือกค่าที่แสดงในกราฟ"] a, nav[aria-label="เลือกช่วงเวลา"] a').evaluateAll(elements => elements
+      const smallTargets = await page.locator('.button, .input, nav[aria-label="เลือกค่าที่แสดงในกราฟ"] a, nav[aria-label="เลือกเดือนหรือช่วงเวลา"] a').evaluateAll(elements => elements
         .map(element => Math.round((element as HTMLElement).getBoundingClientRect().height)).filter(height => height > 0 && height < 44));
       expect(smallTargets, `${route} has undersized touch targets`).toEqual([]);
       if (width === 375) {
@@ -1332,6 +1383,7 @@ test('environment trend charts: metrics, periods, versioned ranges, corrections,
         expect(violations, `${route} accessibility violations`).toEqual([]);
       }
     }
+    if (width === 375) await page.screenshot({ path: testInfo.outputPath('environment-location-375.png'), fullPage: true });
   }
   expect(pageErrors).toEqual([]);
   expect(serverErrors).toEqual([]);
