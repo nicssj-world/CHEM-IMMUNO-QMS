@@ -230,6 +230,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
     '/admin/users', '/scan/review?warehouse=CHE', '/audit?warehouse=CHE',
     '/locations?warehouse=CHE', '/locations/new?warehouse=CHE', `/locations/${fridge.data}`, `/locations/${fridgeShelf.data}`, `/locations/${fridge.data}/edit`, '/locations/qr?warehouse=CHE',
     '/morning-talk', '/morning-talk/history', '/morning-talk/actions', '/morning-talk/new', `/morning-talk/${cheTalk.data}`, `/morning-talk/${cheTalk.data}/edit`, `/reports/morning-talk?month=${bangkokMonth}`,
+    '/environment?warehouse=CHE', '/environment/check?warehouse=CHE', `/environment/check/${fridge.data}`, '/environment/history?warehouse=CHE', '/environment/excursions?warehouse=CHE', `/reports/environment?warehouse=CHE&month=${bangkokMonth}`,
   ];
   for (const width of [375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
@@ -289,12 +290,11 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/');
   const sidebar = page.getByRole('navigation', { name: 'เมนูหลัก' });
-  const workspaceNames = ['ภาพรวม', 'Morning Talk', 'คลังสินค้า', 'ปฏิบัติงาน', 'รายงาน', 'จัดการระบบ'];
+  const workspaceNames = ['ภาพรวม', 'Morning Talk', 'คลังสินค้า', 'ปฏิบัติงาน', 'อุณหภูมิ/ความชื้น', 'รายงาน', 'จัดการระบบ'];
   const parent = (name: string) => sidebar.getByRole('button', { name, exact: true });
   await expect(sidebar.getByRole('link', { name: 'สแกน Barcode' }), 'the Scan quick action stays at the top').toBeVisible();
-  await expect(sidebar.getByRole('button'), 'six workspace accordion controls').toHaveCount(6);
+  await expect(sidebar.getByRole('button'), 'seven workspace accordion controls').toHaveCount(7);
   for (const name of workspaceNames) await expect(parent(name)).toBeVisible();
-  await expect(page.getByText(/อุณหภูมิ ?\/ ?ความชื้น/), 'no placeholder links for the later Temperature/Humidity phase').toHaveCount(0);
   // The current workspace is open by itself; the others are closed and render no links.
   await expect(parent('ภาพรวม')).toHaveAttribute('aria-expanded', 'true');
   for (const name of workspaceNames.slice(1)) await expect(parent(name)).toHaveAttribute('aria-expanded', 'false');
@@ -409,7 +409,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.goto('/more');
   for (const heading of workspaceNames) await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'คลังสินค้า', exact: true }).getByRole('link', { name: 'ตำแหน่งจัดเก็บ' })).toBeVisible();
-  await expect(page.getByText(/อุณหภูมิ ?\/ ?ความชื้น/)).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /อุณหภูมิ\/ความชื้น/ }).first()).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 900 });
 
   // ---- Phase 1: Location Master through the UI ---------------------------------------------------------------------------
@@ -444,7 +444,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.getByRole('button', { name: 'เพิ่มตำแหน่ง', exact: true }).click();
   await expect(page.getByRole('heading', { name: /E2E-UI-FZ/ })).toBeVisible();
   await expect(page.getByText('≤ -20 °C')).toBeVisible();
-  const portalAnchor = page.getByRole('link', { name: /เปิดเครื่องมือใน Portal/ });
+  const portalAnchor = page.getByRole('link', { name: /เปิดเครื่องมือใน Portal/ }).first();
   await expect(portalAnchor).toHaveAttribute('target', '_blank');
   await expect(portalAnchor).toHaveAttribute('rel', 'noopener noreferrer');
   await expect(portalAnchor).toHaveAttribute('href', portalUrl);
@@ -469,7 +469,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page.getByText(/สภาพแวดล้อมควบคุมโดย/)).toBeVisible();
   await expect(page.getByRole('link', { name: 'E2E-UI-FZ', exact: true }).first()).toBeVisible();
   await expect(page.getByText('≤ -20 °C')).toBeVisible();
-  await expect(page.getByRole('link', { name: /เปิดเครื่องมือใน Portal/ }), "the parent's Portal link is offered on the shelf").toHaveAttribute('href', portalUrl);
+  await expect(page.getByRole('link', { name: /เปิดเครื่องมือใน Portal.*ของ E2E-UI-FZ/ }), "the parent's Portal link is offered on the shelf").toHaveAttribute('href', portalUrl);
   const uiShelfId = new URL(page.url()).pathname.split('/').at(-1)!;
   expect((await admin.from('ci_location_env_configs').select('id').eq('location_id', uiShelfId)).data).toEqual([]);
   expect((await admin.from('ci_locations').select('parent_location_id').eq('id', uiShelfId).single()).data?.parent_location_id).toBe(uiFreezerId);
@@ -535,9 +535,68 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   const shelfToken = tokenOf(fridgeShelf.data as string);
   const immToken = tokenOf(immFridge.data as string);
   await page.goto(`/q/${fridgeToken}`);
-  await expect(page).toHaveURL(new RegExp(`/locations/${fridge.data}\\?warehouse=CHE$`));
+  await expect(page).toHaveURL(new RegExp(`/environment/check/${fridge.data}\\?warehouse=CHE&source=qr$`));
   await expect(page.getByRole('heading', { name: /E2E-FR/ })).toBeVisible();
-  await expect(page.getByText('2 – 8 °C')).toBeVisible();
+  await expect(page.getByText('2 – 8 °C').first()).toBeVisible();
+  // ---- Phase 3: native QR, in-app QR, reading, excursion and inherited shelf ------------------------------------------
+  await page.getByLabel('อุณหภูมิ (°C)').fill('4.1');
+  await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'อยู่ในช่วง' })).toBeVisible();
+  await page.getByRole('link', { name: 'สแกนตำแหน่งถัดไป' }).click();
+  await expect(page).toHaveURL(/\/environment\/check\?warehouse=CHE$/);
+  await page.getByRole('textbox', { name: /พิมพ์หรือวาง QR/ }).fill(`/q/${shelfToken}`);
+  await page.getByRole('button', { name: 'ตรวจ QR' }).click();
+  await expect(page).toHaveURL(new RegExp(`/environment/check/${fridge.data}\\?source=qr&from=${fridgeShelf.data}$`));
+  await expect(page.getByText(/E2E-FR-S1 อยู่ใน E2E-FR — บันทึกให้ E2E-FR/)).toBeVisible();
+  await page.goto(`/environment/check/${fridgeShelf.data}`);
+  await expect(page).toHaveURL(new RegExp(`/environment/check/${fridge.data}\\?from=${fridgeShelf.data}&warehouse=CHE&source=manual$`));
+  await page.goto(`/q/${shelfToken}`);
+  await expect(page).toHaveURL(new RegExp(`/locations/${fridgeShelf.data}\\?warehouse=CHE$`));
+  await expect(page.getByRole('link', { name: /บันทึกอุณหภูมิ\/ความชื้นของ E2E-FR/ })).toBeVisible();
+  await page.goto(`/environment/check/${fridge.data}?warehouse=CHE`);
+  await page.getByLabel('อุณหภูมิ (°C)').fill('9.0');
+  await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+  await expect(page.getByText(/ค่าอยู่นอกช่วง/)).toBeVisible();
+  await page.getByRole('button', { name: 'ยืนยันบันทึก' }).click();
+  await expect(page.getByRole('heading', { name: 'นอกช่วง' })).toBeVisible();
+  await page.getByRole('link', { name: 'ดูเหตุการณ์นอกช่วง' }).click();
+  await expect(page.getByRole('heading', { name: /E2E-FR · เหตุการณ์นอกช่วง/ })).toBeVisible();
+  await page.getByLabel('การดำเนินการเบื้องต้น').fill('ตรวจตู้และย้ายน้ำยา E2E');
+  await page.getByRole('button', { name: 'รับทราบ', exact: true }).click();
+  await expect(page.getByText('รับทราบแล้ว', { exact: true }).first()).toBeVisible();
+  await page.getByLabel('สรุปการแก้ไข').fill('ติดตามอุณหภูมิและบันทึกเหตุการณ์ E2E');
+  await page.getByRole('button', { name: 'ปิดเหตุการณ์' }).click();
+  await expect(page.getByText(/ปิดแล้ว/).first()).toBeVisible();
+  await page.goto(`/environment/history?warehouse=CHE&location=${fridge.data}`);
+  await expect(page.getByText(/4\.1 °C/).first()).toBeVisible();
+  await expect(page.getByText('9 °C', { exact: true }).first()).toBeVisible();
+  const originalEnvironmentCard = page.locator('article').filter({ hasText: '4.1 °C' }).first();
+  await originalEnvironmentCard.locator('summary').click();
+  await originalEnvironmentCard.getByLabel('อุณหภูมิ °C').fill('4.2');
+  await originalEnvironmentCard.getByLabel('เหตุผล').fill('แก้ไขการอ่านค่า E2E');
+  await originalEnvironmentCard.getByRole('button', { name: 'ยืนยันแก้ไข' }).click();
+  const correctedEnvironmentCard = page.locator('article').filter({ hasText: '4.2 °C' }).first();
+  await expect(correctedEnvironmentCard.getByText(/แก้ไขจาก/)).toBeVisible();
+  await correctedEnvironmentCard.locator('summary').click();
+  await correctedEnvironmentCard.getByLabel('ยกเลิกข้อมูล').check();
+  await correctedEnvironmentCard.getByLabel('เหตุผล').fill('ยกเลิกการอ่านค่า E2E');
+  await correctedEnvironmentCard.getByRole('button', { name: 'ยืนยันยกเลิกข้อมูล' }).click();
+  await expect(page.locator('article').filter({ hasText: 'ยกเลิกการอ่านค่า E2E' })).toBeVisible();
+  await page.goto(`/reports/environment?warehouse=CHE&month=${bangkokMonth}&location=${fridge.data}`);
+  await expect(page.getByRole('heading', { name: /รายงานอุณหภูมิ\/ความชื้นประจำเดือน/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /E2E-FR · Synthetic fridge/ })).toBeVisible();
+  const pausedFridge = await client.rpc('ci_create_location_v2', { p: { warehouse_id: 1, code: 'E2E-PAUSED-FR', name: 'Synthetic paused fridge', location_type: 'refrigerator', env: rangeEnv } });
+  expect(pausedFridge.error).toBeNull();
+  const pausedConfig = await client.rpc('ci_set_location_env_config', { p_location_id: pausedFridge.data, p: { monitoring_state: 'paused', pause_reason: 'ตรวจเครื่อง E2E' } });
+  expect(pausedConfig.error).toBeNull();
+  const pausedToken = (await admin.from('ci_locations').select('qr_token').eq('id', pausedFridge.data as string).single()).data!.qr_token as string;
+  await page.goto(`/q/${pausedToken}`);
+  await expect(page).toHaveURL(new RegExp(`/locations/${pausedFridge.data}\\?warehouse=CHE$`));
+  await expect(page.getByRole('link', { name: /บันทึกอุณหภูมิ\/ความชื้น/ })).toHaveCount(0);
+  await page.goto('/environment/check?warehouse=CHE');
+  await page.getByRole('textbox', { name: /พิมพ์หรือวาง QR/ }).fill(`/q/${pausedToken}`);
+  await page.getByRole('button', { name: 'ตรวจ QR' }).click();
+  await expect(page.getByRole('link', { name: 'ดูรายละเอียดตำแหน่ง' })).toHaveAttribute('href', `/locations/${pausedFridge.data}`);
   const generic = /ไม่พบตำแหน่งนี้ หรือคุณไม่มีสิทธิ์เข้าถึง/;
   for (const bad of ['zzz', fridgeToken.toUpperCase(), fridgeToken.slice(1), '0'.repeat(32)]) {
     await page.goto(`/q/${bad}`);
@@ -868,7 +927,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page.getByRole('heading', { name: 'จัดการตำแหน่ง' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'แก้ไข', exact: true })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'พิมพ์ QR' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: /เปิดเครื่องมือใน Portal/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /เปิดเครื่องมือใน Portal/ }).first()).toBeVisible();
   await page.goto('/locations?warehouse=CHE');
   await expect(page.getByRole('link', { name: /เพิ่มแบบละเอียด/ })).toHaveCount(0);
   await expect(page.getByText('เพิ่มและแก้ไขตำแหน่งได้เฉพาะหัวหน้างานหรือผู้ดูแลระบบของคลังนี้')).toBeVisible();
@@ -880,7 +939,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.goto(`/locations/${fridge.data}/edit?warehouse=CHE`);
   await expect(page.getByText('แก้ไขตำแหน่งได้เฉพาะหัวหน้างานหรือผู้ดูแลระบบของคลังนี้')).toBeVisible();
   await page.goto(`/q/${fridgeToken}`);
-  await expect(page).toHaveURL(new RegExp(`/locations/${fridge.data}\\?warehouse=CHE$`));
+  await expect(page).toHaveURL(new RegExp(`/environment/check/${fridge.data}\\?warehouse=CHE&source=qr$`));
   await page.goto(`/q/${immToken}`);
   await expect(page.getByText(generic), 'a QR from a warehouse this account cannot open looks like any unknown QR').toBeVisible();
   await expectNotFound(`/locations/${immFridge.data}`, "another warehouse's location is indistinguishable from a missing one");
@@ -941,9 +1000,8 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.goto('/locations?warehouse=IMM');
   await expect(page.getByRole('link', { name: /เพิ่มแบบละเอียด/ })).toBeVisible();
   await page.goto(`/q/${immToken}`);
-  await expect(page).toHaveURL(new RegExp(`/locations/${immFridge.data}\\?warehouse=IMM$`));
-  await expect(page.getByRole('heading', { name: 'จัดการตำแหน่ง' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'พิมพ์ QR' })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/environment/check/${immFridge.data}\\?warehouse=IMM&source=qr$`));
+  await expect(page.getByRole('heading', { name: /E2E-IMM-FR/ })).toBeVisible();
   await page.goto(`/q/${fridgeToken}`);
   await expect(page.getByText(generic)).toBeVisible();
   await expectNotFound(`/locations/${fridge.data}`, 'another warehouse or a missing id renders the same not-found page');
@@ -971,7 +1029,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.getByRole('textbox', { name: 'Ephis ID' }).fill('e2esupervisor');
   await page.getByRole('textbox', { name: 'รหัสผ่าน' }).fill(password);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
-  await expect(page).toHaveURL(new RegExp(`/locations/${immFridge.data}\\?warehouse=IMM$`));
+  await expect(page).toHaveURL(new RegExp(`/environment/check/${immFridge.data}\\?warehouse=IMM&source=qr$`));
   await page.getByRole('button', { name: 'ออกจากระบบ' }).click();
   await expect(page).toHaveURL(/\/login/);
   await signInAs('e2eviewer');
@@ -987,7 +1045,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page.getByRole('heading', { name: 'จัดการตำแหน่ง' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'แก้ไข', exact: true })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'พิมพ์ QR' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: /เปิดเครื่องมือใน Portal/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /เปิดเครื่องมือใน Portal/ }).first()).toBeVisible();
   await page.goto('/locations?warehouse=CHE');
   await expect(page.getByRole('link', { name: /เพิ่มแบบละเอียด/ })).toHaveCount(0);
   await expect(page.getByText('เพิ่มและแก้ไขตำแหน่งได้เฉพาะหัวหน้างานหรือผู้ดูแลระบบของคลังนี้')).toBeVisible();

@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation';
 import { requireAccess, canSupervise } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { LocationForm, type LocationFormFields } from '@/components/location-form';
-import { ENV_CONFIG_COLUMNS, LOCATION_COLUMNS, isMonitorableType, parentOptions, type EnvConfigRow, type LocationRow } from '@/lib/locations';
+import { LOCATION_COLUMNS, isMonitorableType, parentOptions, type LocationRow } from '@/lib/locations';
+import { ENV_CONFIG_COLUMNS, type MonitorConfig } from '@/lib/environment';
 import { hasOwnMonitoring, latestConfigByLocation } from '@/lib/environment-monitor';
 import { formatDateTime } from '@/lib/format';
 
@@ -31,7 +32,7 @@ export default async function EditLocationPage({ params }: { params: Promise<{ i
     client.from('ci_stock_count_lines').select('id').eq('location_id', id).limit(1),
   ]);
   const locations = (siblingResult.data ?? []) as LocationRow[];
-  const config = latestConfigByLocation((configResult.data ?? []) as EnvConfigRow[]).get(id) as EnvConfigRow | undefined;
+  const config = latestConfigByLocation((configResult.data ?? []) as MonitorConfig[]).get(id) as MonitorConfig | undefined;
   const codeLocked = [movement, receipt, count].some(result => (result.data?.length ?? 0) > 0);
   const hasChildren = locations.some(item => item.parent_location_id === id);
   const parents = parentOptions(locations, { warehouseId: Number(warehouse.id), selfId: id }).map(parent => ({ id: parent.id, label: `${parent.code} · ${parent.name}` }));
@@ -47,6 +48,7 @@ export default async function EditLocationPage({ params }: { params: Promise<{ i
     own_monitoring: !isMonitorableType(location.location_type) && hasOwnMonitoring(config),
     temperature_monitored: config?.temperature_monitored ?? false, temp_min_c: text(config?.temp_min_c), temp_max_c: text(config?.temp_max_c),
     humidity_monitored: config?.humidity_monitored ?? false, rh_min_pct: text(config?.rh_min_pct), rh_max_pct: text(config?.rh_max_pct),
+    check_times: (config?.check_times ?? []).map(time => time.slice(0, 5)), monitoring_state: config?.monitoring_state ?? 'active', pause_reason: config?.pause_reason ?? '',
   };
   return <main className="grid gap-6 max-w-[900px]"><div><p className="eyebrow mb-2">Storage locations</p><h1 className="page-title">แก้ไขตำแหน่ง {location.code}</h1><p className="muted mt-2 text-sm">{warehouse.name} · แก้ไขล่าสุด {formatDateTime(location.updated_at)}</p></div>
     <LocationForm mode="edit" warehouse={{ id: Number(warehouse.id), code: warehouse.code, name: warehouse.name }} initial={initial} parents={parents} cancelHref={`/locations/${id}?warehouse=${warehouse.code}`} locationId={id} expectedUpdatedAt={location.updated_at} codeLocked={codeLocked} hasChildren={hasChildren} />

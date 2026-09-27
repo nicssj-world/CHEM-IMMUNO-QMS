@@ -11,6 +11,7 @@ import { unitLabel } from '@/lib/units';
 import { isOverdue, scopeLabel, sortOpenActions, unacknowledgedFor } from '@/lib/morning-talk';
 import { loadActionsWithTalk, loadManageableScopes, loadNames, loadUnacknowledged } from '@/lib/morning-talk-data';
 import { UrgencyBadge } from '@/components/morning-talk/urgency-badge';
+import { type DayRound, ROUND_LABEL } from '@/lib/environment';
 
 type Reorder = { product_id: string; usable_stock: number; rop: number | null; missing_reason: string | null };
 type Product = { id: string; product_code: string; display_name: string; base_stock_unit: string };
@@ -57,7 +58,12 @@ export default async function AttentionPage({ searchParams }: { searchParams: Pr
     loadManageableScopes(client),
     ...buckets.map(bucketCount),
   ]);
-  const failed = [productResult, reorderResult, balanceResult, locationResult, mappingResult, assessmentResult, vendorIssueResult, unackResult, overdueResult, overdueMineResult, ...bucketResults].find(r => r.error)?.error;
+  const [envTodayResult, envYesterdayResult, envExcursionResult] = await Promise.all([
+    client.rpc('ci_environment_day_status', { p_warehouse_id: warehouse.id, p_date: today }),
+    client.rpc('ci_environment_day_status', { p_warehouse_id: warehouse.id, p_date: addDays(today, -1) }),
+    client.from('ci_environment_excursions').select('id,location_id,status,opened_at').eq('warehouse_id', warehouse.id).neq('status', 'resolved').order('opened_at', { ascending: false }).limit(LIST_LIMIT),
+  ]);
+  const failed = [productResult, reorderResult, balanceResult, locationResult, mappingResult, assessmentResult, vendorIssueResult, unackResult, overdueResult, overdueMineResult, envTodayResult, envYesterdayResult, envExcursionResult, ...bucketResults].find(r => r.error)?.error;
   if (failed) return <main className="grid gap-4"><h1 className="page-title">รายการที่ต้องติดตาม</h1><p className="error" role="alert">อ่านข้อมูลไม่สำเร็จ: {logUserMessage('attention', failed)}</p></main>;
   const products = new Map(((productResult.data ?? []) as Product[]).map(p => [p.id, p]));
   const locations = new Map(((locationResult.data ?? []) as Location[]).map(l => [l.id, l]));
@@ -71,6 +77,10 @@ export default async function AttentionPage({ searchParams }: { searchParams: Pr
   // Deduplicated by construction (one row per action): mine, plus anything in a scope I manage; only talks that apply to this warehouse.
   const mtOverdue = sortOpenActions([...new Map([...(overdueMineResult.data ?? []), ...(overdueResult.data ?? [])].map(row => [row.id, row])).values()].filter(row => row.talk && (row.talk.scope === 'ALL' || row.talk.scope === warehouse.code) && (row.owner_id === access.userId || manageableScopes.includes(row.talk.scope)) && isOverdue(row, today)), today);
   const mtNames = mtOverdue.length ? await loadNames(client, mtOverdue.map(row => row.owner_id)) : new Map<string, string>();
+  const envToday = (envTodayResult.data ?? []) as DayRound[];
+  const envMissed = [...envToday.filter(row => row.state === 'missed'), ...((envYesterdayResult.data ?? []) as DayRound[]).filter(row => row.state === 'missed')];
+  const envDue = envToday.filter(row => row.state === 'due');
+  const envExcursions = envExcursionResult.data ?? [];
   const bucketTotals = Object.fromEntries(buckets.map((b, i) => [b, bucketResults[i].count ?? 0]));
   const counts = [
     { type: 'stockout', label: 'หมดสต็อก', count: reorders.filter(r => r.status === 'stockout').length, tone: 'alert' },
@@ -81,6 +91,9 @@ export default async function AttentionPage({ searchParams }: { searchParams: Pr
     { type: 'vendor', label: 'ปัญหาผู้ขายที่เปิดอยู่', count: vendorIssueResult.count ?? 0, tone: 'warn' },
     { type: 'mt_unack', label: 'Morning Talk รอรับทราบ', count: mtUnack.length, tone: 'warn' },
     { type: 'mt_overdue', label: 'งาน Morning Talk เกินกำหนด', count: mtOverdue.length, tone: 'alert' },
+    { type: 'env_missed', label: 'ขาดรอบอุณหภูมิ/ความชื้น', count: envMissed.length, tone: 'alert' },
+    { type: 'env_due', label: 'ถึงเวลาตรวจสภาพแวดล้อม', count: envDue.length, tone: 'warn' },
+    { type: 'env_excursion', label: 'เหตุการณ์นอกช่วง', count: envExcursions.length, tone: 'alert' },
   ];
   const stockRows = reorders.filter(r => r.status === 'stockout' || r.status === 'below').filter(r => !filter || (filter === 'stockout' && r.status === 'stockout') || (filter === 'below' && r.status === 'below'));
   const noRop = reorders.filter(r => r.status === 'no-rop').length;
@@ -96,5 +109,8 @@ export default async function AttentionPage({ searchParams }: { searchParams: Pr
     {(!filter || filter === 'vendor') && <section className="surface p-5 grid gap-2"><h2 className="font-bold">ปัญหาผู้ขายที่เปิดอยู่</h2>{vendorIssues.map(row => <Link className="border border-[var(--line)] rounded-lg p-3 text-sm no-underline" key={row.id} href={`/vendors/${row.vendor_id}?warehouse=${code}#vendor-issues`}><strong>{ISSUE_TYPE_LABELS[row.issue_type as string] ?? row.issue_type}</strong> · {row.description} · {formatDate(row.created_at)}</Link>)}{vendorIssues.length === 0 && <Empty>ไม่มีปัญหาผู้ขายที่เปิดอยู่</Empty>}<Shown shown={vendorIssues.length} total={vendorIssueResult.count ?? 0}/><Link className="button secondary" href={`/vendors?warehouse=${code}`}>ผู้ขาย</Link></section>}
     {(!filter || filter === 'mt_unack') && <section className="surface p-5 grid gap-2"><h2 className="font-bold">Morning Talk ที่รอให้คุณรับทราบ (7 วันล่าสุด)</h2>{mtUnack.map(row => <Link key={row.id} href={`/morning-talk/${row.id}`} className="border border-[var(--line)] rounded-lg p-3 text-sm no-underline text-[var(--ink)]"><strong>{row.title}</strong> · {scopeLabel(row.scope)} · {formatDate(row.talk_date)}</Link>)}{mtUnack.length === 0 && <Empty>ไม่มี Morning Talk ที่รอรับทราบ</Empty>}<Link className="button secondary" href={`/morning-talk?warehouse=${code}`}>เปิด Morning Talk วันนี้</Link></section>}
     {(!filter || filter === 'mt_overdue') && <section className="surface p-5 grid gap-2"><h2 className="font-bold">งานที่มอบหมายจาก Morning Talk ที่เกินกำหนด</h2>{mtOverdue.map(row => <Link key={row.id} href={`/morning-talk/${row.talk_id}`} className="border border-[var(--line)] rounded-lg p-3 text-sm no-underline text-[var(--ink)] grid gap-1"><span className="flex flex-wrap items-center gap-2"><strong>{row.title}</strong><UrgencyBadge action={row} today={today} /></span><span className="muted">ผู้รับผิดชอบ {mtNames.get(row.owner_id) ?? 'ไม่ทราบชื่อ'} · กำหนด {formatDate(row.due_date)} · จาก {row.talk?.title}</span></Link>)}{mtOverdue.length === 0 && <Empty>ไม่มีงานเกินกำหนด</Empty>}{((overdueResult.data ?? []).length >= 200 || (overdueMineResult.data ?? []).length >= 200) && <p className="muted text-sm">อ่านได้สูงสุด 200 รายการที่เกินกำหนดที่สุด · เปิดหน้างานค้างเพื่อดูทั้งหมด</p>}<Link className="button secondary" href={`/morning-talk/actions?overdue=1`}>งานค้างทั้งหมด</Link></section>}
+    {(!filter || filter === 'env_missed') && <section className="surface p-5 grid gap-2"><h2 className="font-bold">รอบตรวจที่ขาด วันนี้และเมื่อวาน</h2>{envMissed.map((row, index) => <Link key={`${row.location_id}:${row.round_no}:${index}`} href={`/environment/check/${row.location_id}?warehouse=${code}`} className="border border-line rounded-lg p-3 no-underline text-[var(--ink)]"><strong>{locations.get(row.location_id)?.code ?? '—'}</strong> · {row.due_time?.slice(0,5)} · {ROUND_LABEL[row.state]}</Link>)}{envMissed.length === 0 && <Empty>ไม่มีรอบที่ขาดการตรวจ</Empty>}</section>}
+    {(!filter || filter === 'env_due') && <section className="surface p-5 grid gap-2"><h2 className="font-bold">ถึงเวลาตรวจสภาพแวดล้อม</h2>{envDue.map(row => <Link key={`${row.location_id}:${row.round_no}`} href={`/environment/check/${row.location_id}?warehouse=${code}`} className="border border-line rounded-lg p-3 no-underline text-[var(--ink)]"><strong>{locations.get(row.location_id)?.code ?? '—'}</strong> · {row.due_time?.slice(0,5)}</Link>)}{envDue.length === 0 && <Empty>ยังไม่มีรอบที่ถึงเวลาตรวจ</Empty>}</section>}
+    {(!filter || filter === 'env_excursion') && <section className="surface p-5 grid gap-2"><h2 className="font-bold">เหตุการณ์นอกช่วงที่ยังไม่ปิด</h2>{envExcursions.map(row => <Link key={row.id} href={`/environment/excursions/${row.id}`} className="border border-line rounded-lg p-3 no-underline text-[var(--ink)]"><strong>{locations.get(row.location_id)?.code ?? '—'}</strong> · {row.status === 'open' ? 'เปิดอยู่' : 'รับทราบแล้ว'} · {formatDateTime(row.opened_at)}</Link>)}{envExcursions.length === 0 && <Empty>ไม่มีเหตุการณ์นอกช่วงที่เปิดอยู่</Empty>}</section>}
   </main>;
 }

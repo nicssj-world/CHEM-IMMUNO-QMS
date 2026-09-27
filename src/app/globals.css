@@ -169,6 +169,8 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .location-label-meta { font-size: 6.5pt; line-height: 1.15; overflow-wrap: anywhere; }
 .location-label-foot { margin-top: auto; font-size: 5.5pt; line-height: 1.1; color: #333; }
 @page { size: A4 landscape; margin: 12mm; }
+@page environment-report { size: A4 portrait; margin: 12mm; }
+.environment-report { page: environment-report; }
 @page location-labels { size: A4 portrait; margin: 8mm; }
 @media print {
   .print-only { display: block; }

@@ -8,6 +8,7 @@ import { formatDate, formatDateTime } from '@/lib/format';
 import { label, movementKindLabels } from '@/lib/labels';
 import { logUserMessage } from '@/lib/messages';
 import { loadTodaySummary } from '@/lib/morning-talk-data';
+import { loadEnvironmentOverview } from '@/lib/environment-data';
 
 type Reorder = { product_id: string; usable_stock: number; rop: number | null; suggested_order: number | null };
 type Movement = { id: string; kind: string; created_at: string; purpose: string | null };
@@ -22,6 +23,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const today = bangkokToday();
   // A compact optional line: if Morning Talk cannot be read the dashboard still renders without it.
   const talkToday = await loadTodaySummary(client, access.userId, warehouse.code, today);
+  const environment = await loadEnvironmentOverview(client, Number(warehouse.id), today);
   const weekAgo = `${addDays(today, -6)}T00:00:00+07:00`; // today plus the six days before it, in Bangkok
   // Counts come from head-only queries so they stay exact however many LOTs or products the warehouse holds.
   const positive = () => client.from('ci_stock_balances').select('lot_id', { count: 'exact', head: true }).eq('warehouse_id', warehouse.id).gt('balance', 0);
@@ -53,6 +55,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const recent = (movements.data ?? []) as Movement[];
   const suggested = reorderRows.filter(r => Number(r.suggested_order) > 0).length;
   const code = warehouse.code;
+  const envChecked = environment.monitored.filter(location => environment.readings.some(reading => reading.location_id === location.id && reading.check_date === today && reading.overall_status !== 'incomplete')).length;
   const cards: { label: string; count: number | string; href: string; tone: Tone; hint?: string }[] = [
     { label: 'สินค้าที่ใช้งาน', count: products.count ?? '—', href: '/products', tone: 'neutral' },
     { label: 'หมดสต็อก', count: stockout, href: '/attention?type=stockout', tone: 'alert', hint: 'เฉพาะสินค้าที่ตั้ง ROP แล้ว' },
@@ -64,10 +67,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     { label: 'LOT ทั้งหมด', count: lots.count ?? '—', href: '/stock', tone: 'neutral' },
     { label: 'รับเข้า 7 วัน', count: received7.count ?? 0, href: '/movements', tone: 'neutral', hint: 'จำนวนครั้ง' },
     { label: 'เบิกใช้ 7 วัน', count: issued7.count ?? 0, href: '/movements', tone: 'neutral', hint: 'จำนวนครั้ง' },
+    { label: 'นอกช่วงที่ยังไม่ปิด', count: environment.error ? '—' : environment.excursions.length, href: '/environment/excursions', tone: 'alert' },
   ];
   const empty = (stockedRows.count ?? 0) === 0;
   return <main className="grid gap-6"><div><p className="eyebrow mb-2">Warehouse dashboard</p><h1 className="page-title">ภาพรวมคลัง {warehouse.name}</h1><p className="muted mt-2 text-sm">ข้อมูลสดของคลังที่เลือก · {formatDate(today)}</p></div><WarehouseSwitch warehouses={access.warehouses} selected={warehouse}/>
     {talkToday && <Link href={`/morning-talk?warehouse=${warehouse.code}`} className="surface px-5 py-3 min-h-12 flex flex-wrap items-center justify-between gap-2 no-underline text-[var(--ink)]"><span className="font-bold">วันนี้</span><span className="text-sm">{talkToday.talks === 0 ? 'Morning Talk: ยังไม่มีวันนี้' : talkToday.mine === 0 ? `Morning Talk: มี ${talkToday.talks} รายการวันนี้` : `Morning Talk: รับทราบแล้ว ${talkToday.acknowledged}/${talkToday.mine} · ยังไม่รับทราบ ${talkToday.mine - talkToday.acknowledged}`}</span></Link>}
+    {environment.error ? <p className="error">อ่านสรุปสภาพแวดล้อมไม่สำเร็จ: {logUserMessage('dashboardEnvironment', environment.error)}</p> : <Link href={`/environment?warehouse=${code}`} className="surface px-5 py-3 min-h-12 flex flex-wrap items-center justify-between gap-2 no-underline text-[var(--ink)]"><span className="font-bold">วันนี้</span><span className="text-sm">อุณหภูมิ/ความชื้น: ตรวจแล้ว {envChecked}/{environment.monitored.length} · นอกช่วง {environment.excursions.length}</span></Link>}
     {empty && <section className="notice grid gap-3"><p><strong>คลังนี้ยังไม่มีสต็อกคงเหลือ</strong> · เริ่มจากรับสินค้าเข้าตาม Invoice แล้วตั้งค่า ROP ให้สินค้าที่ใช้ประจำ</p><div className="flex flex-wrap gap-2"><Link className="button" href={`/receive?warehouse=${code}`}>รับสินค้าเข้า</Link><Link className="button secondary" href={`/reorder?warehouse=${code}`}>ตั้งค่า ROP</Link></div></section>}
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">{cards.map(card => <Link key={card.label} href={`${card.href}${card.href.includes('?') ? '&' : '?'}warehouse=${code}`} className="kpi surface p-4 no-underline text-[var(--ink)]" data-tone={Number(card.count) > 0 ? card.tone : 'neutral'}><p className="muted text-sm">{card.label}</p><strong className="text-2xl mt-2 block tabular-nums">{card.count}</strong>{card.hint && <p className="muted text-xs mt-1">{card.hint}</p>}</Link>)}</div>
     <div className="grid lg:grid-cols-2 gap-4"><section className="surface p-5 grid gap-3"><h2 className="font-bold text-lg">งานที่ต้องติดตาม</h2><p>หมดสต็อก {stockout} · ต่ำกว่า ROP {below} · LOT หมดอายุแล้ว {expired.count ?? 0}</p><p>Barcode รออนุมัติ {mapping.count ?? 0} · ปัญหาผู้ขายที่เปิดอยู่ {issues.count ?? 0}</p><Link className="button secondary" href={`/attention?warehouse=${code}`}>เปิดรายการที่ต้องติดตาม</Link></section><section className="surface p-5 grid gap-3"><h2 className="font-bold text-lg">การใช้และสั่งซื้อ</h2><p>สินค้าแนะนำสั่ง {suggested} รายการ</p><p>ปีงบประมาณ {fiscalYear(today)}: รับเข้า {vendorRows.reduce((n, r) => n + Number(r.receipt_count), 0)} ครั้ง · พบความคลาดเคลื่อน {vendorRows.reduce((n, r) => n + Number(r.discrepancy_count), 0)} ครั้ง</p><div className="flex flex-wrap gap-2"><Link className="button secondary" href={`/reorder?warehouse=${code}`}>ROP / Suggested Order</Link><Link className="button secondary" href={`/reports/monthly?warehouse=${code}`}>รายงานรายเดือน</Link></div></section></div>

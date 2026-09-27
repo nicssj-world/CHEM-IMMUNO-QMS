@@ -104,7 +104,8 @@ test('the scanner actions call the guard before parsing and refuse Location QR b
   assert.ok(propose.indexOf('CI_LOCATION_QR_NOT_A_BARCODE') < propose.indexOf('ci_propose_identifier_mapping'), 'the refusal comes before the mapping RPC');
   const camera = await readFile(path.join(process.cwd(), 'src/components/barcode-scanner.tsx'), 'utf8');
   assert.match(camera, /DATA_MATRIX/); assert.match(camera, /CODE_128/);
-  assert.doesNotMatch(camera, /QR_CODE/, 'the product scanner camera still decodes only Data Matrix and Code 128 in Phase 1');
+  assert.match(camera, /formats \? formats\.map\(format => BarcodeFormat\[format\]\) : \[BarcodeFormat\.DATA_MATRIX, BarcodeFormat\.CODE_128\]/,
+    'product scanning keeps the original default formats while Environment opts into QR');
 });
 
 test('QR generation returns a scannable SVG for a label URL', async () => {

@@ -14,9 +14,19 @@ export default async function LocationQrLanding({ params }: { params: Promise<{ 
   const access = await requireAccess();
   if (isLocationQrToken(token)) {
     const client = await createClient();
-    const { data } = client ? await client.from('ci_locations').select('id,warehouse_id').eq('qr_token', token).maybeSingle() : { data: null };
+    const { data } = client ? await client.from('ci_locations').select('id,warehouse_id,active').eq('qr_token', token).maybeSingle() : { data: null };
     const warehouse = data && access.warehouses.find(item => Number(item.id) === data.warehouse_id);
-    if (data && warehouse) redirect(`/locations/${data.id}?warehouse=${warehouse.code}`);
+    if (data && warehouse) {
+      if (data.active && warehouse.role !== 'viewer' && client) {
+        const [monitor, config] = await Promise.all([
+          client.rpc('ci_environment_monitor_location_id', { p_location_id: data.id }),
+          client.from('ci_location_env_configs').select('monitoring_state').eq('location_id', data.id).order('effective_from', { ascending: false }).limit(1),
+        ]);
+        if (monitor.data === data.id && config.data?.[0]?.monitoring_state === 'active')
+          redirect(`/environment/check/${data.id}?warehouse=${warehouse.code}&source=qr`);
+      }
+      redirect(`/locations/${data.id}?warehouse=${warehouse.code}`);
+    }
   }
   return <main className="grid gap-4 max-w-[560px]"><h1 className="page-title">ไม่พบตำแหน่งนี้</h1>
     <p className="notice" role="status">ไม่พบตำแหน่งนี้ หรือคุณไม่มีสิทธิ์เข้าถึง · QR อาจถูกยกเลิกแล้ว · ขอให้หัวหน้างานพิมพ์ป้ายใหม่ หรือค้นหาตำแหน่งจากรายการ</p>

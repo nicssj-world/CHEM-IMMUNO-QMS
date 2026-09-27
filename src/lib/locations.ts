@@ -137,7 +137,7 @@ const locationShape = z.object({
   portal_equipment_url: nullableText(500),
   portal_equipment_label: nullableText(120),
 });
-export type LocationFormValue = z.output<typeof locationShape> & { env: EnvConfigInput };
+export type LocationFormValue = z.output<typeof locationShape> & { env: EnvConfigInput & { check_times?: string[]; monitoring_state?: 'active' | 'paused'; pause_reason?: string | null } };
 
 function flattenIssues(issues: readonly { path: PropertyKey[]; message: string }[]) {
   const errors: Record<string, string> = {};
@@ -167,7 +167,7 @@ export function parseLocationForm(form: FormData, portalHosts?: readonly string[
 
   const type = base.success ? base.data.location_type : 'other';
   const monitoringAllowed = isMonitorableType(type) || formFlag(form, 'own_monitoring');
-  let env: EnvConfigInput = NO_ENV_CONFIG;
+  let env: LocationFormValue['env'] = NO_ENV_CONFIG;
   if (monitoringAllowed) {
     const numbers = { temp_min_c: formNumber(form, 'temp_min_c'), temp_max_c: formNumber(form, 'temp_max_c'), rh_min_pct: formNumber(form, 'rh_min_pct'), rh_max_pct: formNumber(form, 'rh_max_pct') };
     for (const [key, value] of Object.entries(numbers)) if (value === undefined) errors[key] ??= 'ตัวเลขไม่ถูกต้อง';
@@ -177,6 +177,19 @@ export function parseLocationForm(form: FormData, portalHosts?: readonly string[
     };
     const checked = validateEnvConfig(candidate);
     if (checked.ok) env = checked.value; else for (const [key, message] of Object.entries(checked.errors)) errors[key] ??= message;
+    if (form.has('check_times')) {
+      try {
+        const times: unknown = JSON.parse(formText(form, 'check_times'));
+        if (!Array.isArray(times) || times.length > 4 || times.some(time => typeof time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) ||
+          times.some((time, i) => i > 0 && time <= times[i - 1])) errors.check_times = 'เวลาตรวจต้องเรียงจากน้อยไปมาก ไม่ซ้ำ และไม่เกิน 4 รอบ';
+        else env = { ...env, check_times: times };
+      } catch { errors.check_times = 'เวลาตรวจไม่ถูกต้อง'; }
+      const state = formText(form, 'monitoring_state');
+      const reason = formText(form, 'pause_reason').trim();
+      if (state !== 'active' && state !== 'paused') errors.monitoring_state = 'สถานะการเฝ้าระวังไม่ถูกต้อง';
+      else if (state === 'paused' && !reason) errors.pause_reason = 'กรุณาระบุเหตุผลที่หยุดเฝ้าระวัง';
+      else env = { ...env, monitoring_state: state, pause_reason: state === 'paused' ? reason : null };
+    }
   }
 
   let portalUrl: string | null = base.success ? base.data.portal_equipment_url : null;

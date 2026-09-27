@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ArrowUpFromLine, Boxes, CalendarDays, ClipboardCheck, ClipboardList, FileUp, History, House, ListChecks, MapPin, Megaphone, NotebookTabs, PackagePlus, QrCode, ScanLine, ScrollText, ShieldCheck, SlidersHorizontal, Trash2, UserCog, Users, Wrench, type LucideIcon } from 'lucide-react';
+import { ArrowLeftRight, ArrowUpFromLine, Boxes, CalendarDays, ClipboardCheck, ClipboardList, FileUp, History, House, ListChecks, MapPin, Megaphone, NotebookTabs, PackagePlus, QrCode, ScanLine, ScrollText, ShieldCheck, SlidersHorizontal, Thermometer, Trash2, UserCog, Users, Wrench, type LucideIcon } from 'lucide-react';
 import type { AccessContext } from '@/lib/auth';
 
 // Navigation groups routes into workspaces. It changes where a link is shown, never who may use the page: every page, server
@@ -12,8 +12,7 @@ export type WorkspaceKey = 'dashboard' | 'morning-talk' | 'inventory' | 'operati
 export type Workspace = { key: WorkspaceKey; label: string; icon: LucideIcon; tabs: WorkspaceTab[] };
 export type NavPermissions = Record<NavNeed, boolean>;
 
-// Only workspaces that exist today are listed. Temperature/Humidity joins this array when it ships, with no other change to the
-// sidebar, tabs or the mobile "More" page (all of them read this one list).
+// Sidebar, mobile tabs and More all read this one list.
 export const workspaces: Workspace[] = [
   { key: 'dashboard', label: 'ภาพรวม', icon: House, tabs: [
     { href: '/', label: 'ภาพรวม', icon: House },
@@ -40,11 +39,18 @@ export const workspaces: Workspace[] = [
     { href: '/adjust', label: 'ปรับยอด', icon: ListChecks, need: 'supervise' },
     { href: '/dispose', label: 'กำจัดหมดอายุ', icon: Trash2, need: 'supervise' },
   ] },
+  { key: 'environment', label: 'อุณหภูมิ/ความชื้น', icon: Thermometer, tabs: [
+    { href: '/environment', label: 'ภาพรวม', icon: Thermometer },
+    { href: '/environment/check', label: 'ตรวจด้วย QR', icon: QrCode, need: 'work' },
+    { href: '/environment/history', label: 'ประวัติ', icon: History },
+    { href: '/environment/excursions', label: 'นอกช่วง', icon: ShieldCheck },
+  ] },
   { key: 'reports', label: 'รายงาน', icon: NotebookTabs, tabs: [
     { href: '/reports/monthly', label: 'รายงานรายเดือน', icon: NotebookTabs },
     { href: '/movements', label: 'ประวัติเคลื่อนไหว', icon: History },
     { href: '/audit', label: 'บันทึกการตรวจสอบ', icon: ScrollText, need: 'supervise' },
     { href: '/reports/morning-talk', label: 'Morning Talk', icon: Megaphone },
+    { href: '/reports/environment', label: 'อุณหภูมิ/ความชื้น', icon: Thermometer },
   ] },
   { key: 'admin', label: 'จัดการระบบ', icon: UserCog, tabs: [
     { href: '/scan/review', label: 'คิวอนุมัติ Barcode', icon: QrCode, need: 'supervise' },

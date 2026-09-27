@@ -11,10 +11,12 @@ export type LocationFormFields = {
   code: string; name: string; location_type: string; parent_location_id: string; room: string; description: string; storage_condition: string;
   portal_equipment_url: string; portal_equipment_label: string; own_monitoring: boolean;
   temperature_monitored: boolean; temp_min_c: string; temp_max_c: string; humidity_monitored: boolean; rh_min_pct: string; rh_max_pct: string;
+  check_times: string[]; monitoring_state: 'active' | 'paused'; pause_reason: string;
 };
 export const EMPTY_LOCATION_FORM: LocationFormFields = {
   code: '', name: '', location_type: 'refrigerator', parent_location_id: '', room: '', description: '', storage_condition: '', portal_equipment_url: '', portal_equipment_label: '',
   own_monitoring: false, temperature_monitored: false, temp_min_c: '', temp_max_c: '', humidity_monitored: false, rh_min_pct: '', rh_max_pct: '',
+  check_times: [], monitoring_state: 'active', pause_reason: '',
 };
 
 type Props = {
@@ -48,7 +50,11 @@ export function LocationForm({ mode, warehouse, initial, parents, cancelHref, lo
     setErrors({});
     const data = new FormData();
     data.set('warehouse_id', String(warehouse.id));
-    for (const [field, entry] of Object.entries(value)) if (typeof entry === 'string') data.set(field, entry); else if (entry) data.set(field, 'on');
+    for (const [field, entry] of Object.entries(value)) {
+      if (field === 'check_times') continue;
+      if (typeof entry === 'string') data.set(field, entry); else if (entry) data.set(field, 'on');
+    }
+    if (mode === 'edit' && showMonitoring && (value.temperature_monitored || value.humidity_monitored)) data.set('check_times', JSON.stringify(value.check_times));
     startTransition(async () => {
       const result = mode === 'create' ? await createLocationRecord(data) : await updateLocationRecord(locationId!, data, expectedUpdatedAt!);
       if (!result.ok) { setError(result.message); setErrors(result.errors ?? {}); return; }
@@ -118,6 +124,14 @@ export function LocationForm({ mode, warehouse, initial, parents, cancelHref, lo
         {value.temperature_monitored && range('อุณหภูมิ', 'temp_min_c', 'temp_max_c', '°C')}
         <label className="flex items-center gap-3 min-h-11 font-semibold"><input type="checkbox" className="h-5 w-5" checked={value.humidity_monitored} onChange={event => set('humidity_monitored', event.target.checked)} />เฝ้าระวังความชื้นสัมพัทธ์ (%RH)</label>
         {value.humidity_monitored && range('ความชื้น', 'rh_min_pct', 'rh_max_pct', '%RH')}
+        {mode === 'edit' && (value.temperature_monitored || value.humidity_monitored) && <div className="grid gap-4 border-t border-line pt-5">
+          <div><h3 className="font-bold">เวลาตรวจประจำวัน</h3><p className="muted text-sm">ใช้เวลาไทยทุกวัน · เว้นว่างหมายถึงยังไม่กำหนดรอบ ไม่ถือว่าขาดการตรวจ</p></div>
+          <div className="flex flex-wrap gap-2"><button type="button" className="button secondary" onClick={() => set('check_times', ['08:30'])}>08:30</button><button type="button" className="button secondary" onClick={() => set('check_times', ['08:30', '15:30'])}>08:30 + 15:30</button><button type="button" className="button secondary" onClick={() => set('check_times', [])}>ล้างเวลา</button></div>
+          {value.check_times.map((time, index) => <div key={index} className="flex items-end gap-2"><label className="field flex-1">รอบ {index + 1}<input type="time" className="input" value={time} onChange={event => set('check_times', value.check_times.map((item, i) => i === index ? event.target.value : item))}/></label><button type="button" className="button secondary" onClick={() => set('check_times', value.check_times.filter((_, i) => i !== index))}>ลบรอบ</button></div>)}
+          {value.check_times.length < 4 && <button type="button" className="button secondary justify-self-start" onClick={() => set('check_times', [...value.check_times, ''])}>เพิ่มรอบ</button>}{fieldError('check_times')}
+          <label className="flex items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={value.monitoring_state === 'paused'} onChange={event => set('monitoring_state', event.target.checked ? 'paused' : 'active')}/>หยุดเฝ้าระวังชั่วคราว</label>
+          {value.monitoring_state === 'paused' && <label className="field">เหตุผลที่หยุด<input className="input" value={value.pause_reason} onChange={event => set('pause_reason', event.target.value)} required maxLength={1000}/>{fieldError('pause_reason')}</label>}
+        </div>}
       </> : <p className="muted text-sm">ตำแหน่งนี้ไม่ตั้งค่าเฝ้าระวังเอง</p>}
     </section>
 

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { UserRound } from 'lucide-react';
+import { QrCode, UserRound } from 'lucide-react';
 import { requireAccess } from '@/lib/auth';
 import { navPermissions, visibleWorkspaces } from '@/lib/nav';
 
@@ -7,6 +7,7 @@ import { navPermissions, visibleWorkspaces } from '@/lib/nav';
 export default async function MorePage() {
   const access = await requireAccess();
   return <main className="grid gap-6"><div><p className="eyebrow mb-2">More</p><h1 className="page-title">เมนูทั้งหมด</h1></div>
+    {navPermissions(access).work && <Link href="/environment/check" className="surface flex items-center gap-3 p-5 min-h-16 no-underline text-[var(--ink)] font-bold border-2 border-[var(--teal)]"><QrCode aria-hidden className="text-[var(--teal)]"/>ตรวจอุณหภูมิ/ความชื้น (สแกน QR)</Link>}
     {visibleWorkspaces(navPermissions(access)).map(workspace => <section key={workspace.key} className="grid gap-2" aria-labelledby={`more-${workspace.key}`}>
       <h2 id={`more-${workspace.key}`} className="text-xs font-bold tracking-wide muted">{workspace.label}</h2>
       <nav aria-label={workspace.label} className="grid sm:grid-cols-2 gap-2">{workspace.tabs.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className="surface flex items-center gap-3 p-4 min-h-12 no-underline text-[var(--ink)] font-semibold"><Icon size={19} aria-hidden className="text-[var(--teal)]" />{label}</Link>)}</nav>

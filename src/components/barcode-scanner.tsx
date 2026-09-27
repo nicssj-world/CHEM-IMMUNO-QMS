@@ -23,7 +23,9 @@ function FeedbackCard({ feedback, className = '' }: { feedback: ScanFeedback; cl
  * The continuous prop keeps the camera open across scans; a code held in view counts once, and counts again only after it left the frame.
  * With `dock`, the camera strip, the latest result and `summary` stay pinned to the top while the list below scrolls.
  */
-export function BarcodeScanner({ onScan, continuous = false, dock = false, feedback, summary }: { onScan: (raw: string, symbology: string) => Promise<void> | void; continuous?: boolean; dock?: boolean; feedback?: ScanFeedback | null; summary?: React.ReactNode }) {
+export function BarcodeScanner({ onScan, continuous = false, dock = false, feedback, summary, formats, autoStart = false }: { onScan: (raw: string, symbology: string) => Promise<void> | void; continuous?: boolean; dock?: boolean; feedback?: ScanFeedback | null; summary?: React.ReactNode; formats?: Array<'QR_CODE' | 'DATA_MATRIX' | 'CODE_128'>; autoStart?: boolean }) {
+  const isQr = formats?.length === 1 && formats[0] === 'QR_CODE';
+  const codeLabel = isQr ? 'QR' : 'Barcode';
   const video = useRef<HTMLVideoElement>(null);
   const controls = useRef<IScannerControls | null>(null);
   const last = useRef<{ raw: string; at: number } | null>(null);
@@ -31,7 +33,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
   const [active, setActive] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [manual, setManual] = useState('');
-  const [status, setStatus] = useState('กล้องยังไม่เปิด · พิมพ์หรือวาง Barcode ได้');
+  const [status, setStatus] = useState(`กล้องยังไม่เปิด · พิมพ์หรือวาง ${codeLabel} ได้`);
 
   useEffect(() => () => controls.current?.stop(), []);
   useEffect(() => { if (feedback) playScanTone(feedback.tone === 'ok'); }, [feedback]);
@@ -58,7 +60,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
     if (previous?.raw === raw && now - previous.at < 2500) { setStatus('สแกนซ้ำเร็วเกินไป · ตรวจรายการก่อนสแกนอีกครั้ง'); return; }
     last.current = { raw, at: now };
     stop();
-    setStatus('อ่าน Barcode แล้ว · ตรวจ Product, LOT และวันหมดอายุก่อนบันทึก');
+    setStatus(isQr ? 'อ่าน QR แล้ว · กำลังเปิดตำแหน่ง' : 'อ่าน Barcode แล้ว · ตรวจ Product, LOT และวันหมดอายุก่อนบันทึก');
     await onScan(raw, symbology);
   }
 
@@ -70,28 +72,36 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
     try {
       const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([import('@zxing/browser'), import('@zxing/library')]);
       const hints = new Map<import('@zxing/library').DecodeHintType, boolean | import('@zxing/library').BarcodeFormat[]>();
-      hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.DATA_MATRIX, BarcodeFormat.CODE_128]);
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, formats ? formats.map(format => BarcodeFormat[format]) : [BarcodeFormat.DATA_MATRIX, BarcodeFormat.CODE_128]);
       hints.set(DecodeHintType.TRY_HARDER, true);
       const reader = new BrowserMultiFormatReader(hints);
       controls.current = await reader.decodeFromConstraints({ audio: false, video: { facingMode: { ideal: 'environment' } } }, video.current!, (result) => {
         if (result) void accept(result.getText(), BarcodeFormat[result.getBarcodeFormat()] ?? 'camera', true);
       });
-      setStatus(continuous ? 'เล็ง Barcode ทีละชิ้น · กล้องเปิดค้างไว้ต่อเนื่อง' : 'เล็ง Barcode ให้อยู่ในกรอบ');
+      setStatus(continuous ? `เล็ง ${codeLabel} ทีละชิ้น · กล้องเปิดค้างไว้ต่อเนื่อง` : `เล็ง ${codeLabel} ให้อยู่ในกรอบ`);
     } catch {
       setActive(false);
       setStatus('เปิดกล้องไม่สำเร็จ · ตรวจสิทธิ์กล้องหรือใช้ช่องพิมพ์');
     }
   }
 
+  useEffect(() => {
+    if (!autoStart) return;
+    const timer = window.setTimeout(() => void start(), 0);
+    return () => window.clearTimeout(timer);
+    // Scanner starts once per page instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
+
   const iconButton = 'grid place-items-center size-11 rounded-full bg-black/55 text-white backdrop-blur-sm';
   // Sticky is bounded by its parent box; `contents` lets the dock stay pinned across the list that follows the scanner.
-  return <section className={dock ? 'contents' : 'grid gap-3'} aria-label="สแกน Barcode">
+  return <section className={dock ? 'contents' : 'grid gap-3'} aria-label={`สแกน ${codeLabel}`}>
     <div className={`grid gap-2 ${dock && active ? 'scan-dock' : ''}`}>
-      {!active && <div className="flex flex-wrap gap-2"><button type="button" className="button min-h-12" onClick={() => void start()}>{continuous ? 'เปิดกล้องสแกนต่อเนื่อง' : 'สแกนอีกครั้ง / เปิดกล้อง'}</button></div>}
+      {!active && <div className="flex flex-wrap gap-2"><button type="button" className="button min-h-12" onClick={() => void start()}>{continuous ? 'เปิดกล้องสแกนต่อเนื่อง' : isQr ? 'สแกน QR / เปิดกล้อง' : 'สแกนอีกครั้ง / เปิดกล้อง'}</button></div>}
       <div className={`relative w-full max-w-lg overflow-hidden rounded-xl bg-slate-900 ${active ? '' : 'hidden'}`}>
-        <video ref={video} muted playsInline className={`block w-full object-cover ${expanded ? 'h-[min(60dvh,520px)]' : 'h-[clamp(150px,26dvh,220px)]'}`} aria-label="ภาพจากกล้องเพื่อสแกน Barcode"/>
+        <video ref={video} muted playsInline className={`block w-full object-cover ${expanded ? 'h-[min(60dvh,520px)]' : 'h-[clamp(150px,26dvh,220px)]'}`} aria-label={`ภาพจากกล้องเพื่อสแกน ${codeLabel}`}/>
         <div aria-hidden className="pointer-events-none absolute inset-0 m-auto aspect-square h-[62%] rounded-xl border-2 border-white/85 shadow-[0_0_0_9999px_rgba(0,0,0,.28)]" />
-        {feedback ? <FeedbackCard key={feedback.id} feedback={feedback} className="scan-toast absolute inset-x-2 top-2" /> : <p aria-hidden className="absolute left-3 top-2 rounded-full bg-black/55 px-2.5 py-1 text-xs text-white">เล็ง Barcode ในกรอบ</p>}
+        {feedback ? <FeedbackCard key={feedback.id} feedback={feedback} className="scan-toast absolute inset-x-2 top-2" /> : <p aria-hidden className="absolute left-3 top-2 rounded-full bg-black/55 px-2.5 py-1 text-xs text-white">เล็ง {codeLabel} ในกรอบ</p>}
         <div className="absolute bottom-2 right-2 flex gap-2">
           <button type="button" className={iconButton} onClick={() => setExpanded(value => !value)} aria-label={expanded ? 'ย่อกล้อง' : 'ขยายกล้อง'} aria-pressed={expanded}>{expanded ? <Minimize2 size={18} aria-hidden /> : <Maximize2 size={18} aria-hidden />}</button>
           <button type="button" className={iconButton} onClick={stop} aria-label="หยุดกล้อง"><X size={20} aria-hidden /></button>
@@ -102,6 +112,6 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
     </div>
     <p className="sr-only" aria-live="polite">{feedback ? `${feedback.title}${feedback.detail ? ` · ${feedback.detail}` : ''}` : ''}</p>
     <p className="muted text-sm" role="status">{status}</p>
-    <form className="flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); void accept(manual, 'manual'); setManual(''); manualInput.current?.focus(); }}><label className="field flex-1 min-w-48">พิมพ์หรือวาง Barcode<input ref={manualInput} className="input" value={manual} onChange={event => setManual(event.target.value)} autoCapitalize="off" autoComplete="off"/></label><button className="button secondary self-end" type="submit">ตรวจ Barcode</button></form>
+    <form className="flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); void accept(manual, 'manual'); setManual(''); manualInput.current?.focus(); }}><label className="field flex-1 min-w-48">พิมพ์หรือวาง {codeLabel}<input ref={manualInput} className="input" value={manual} onChange={event => setManual(event.target.value)} autoCapitalize="off" autoComplete="off"/></label><button className="button secondary self-end" type="submit">ตรวจ {codeLabel}</button></form>
   </section>;
 }

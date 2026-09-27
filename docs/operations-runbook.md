@@ -63,7 +63,13 @@ The approved plan is `docs/CHEM-IMMUNO-CBH-NEXT-WORKSTREAM-PLAN.md` (three phase
 |---|---|
 | 1. Navigation + Location Foundation | **DEPLOYED TO PRODUCTION** (2026-09-26). Authenticated and physical owner acceptance: **PARTIALLY PENDING** (see below). |
 | 2. Morning Talk | **DEPLOYED TO PRODUCTION** (2026-09-27). Authenticated desktop smoke passed; mobile layout and real-workflow owner acceptance remain pending. |
-| 3. Temperature / Humidity + QR workflow | NOT STARTED |
+| 3. Temperature / Humidity + QR workflow | **IMPLEMENTED LOCALLY — NOT YET DEPLOYED.** Production release gates and owner acceptance are pending. |
+
+### Phase 3 local implementation (Production rollout pending)
+
+The new forward-only migration `20260927110000_ci_environment_monitoring.sql` adds versioned check times and pause state to Location environment configuration, append-only readings and corrections, excursion follow-up, Bangkok day status, and a monthly report. Existing Phase 1 range configurations remain active with an empty schedule (`unscheduled`); no Production schedule is created automatically. The app adds Environment navigation, QR checks, history, excursions, Dashboard/Attention summaries, and an A4 report. A shelf with inherited monitoring is checked against its parent; its printed QR still opens the shelf detail.
+
+All readings, locations, schedules, and excursion actions used for local tests are synthetic and confined to disposable local databases. Production deployment, authenticated smoke, physical temperature checks, device camera checks, and owner acceptance are not yet claimed in this record.
 
 ### Phase 1 Production rollout record (2026-09-26)
 
@@ -102,7 +108,7 @@ Owner acceptance once a real Production location exists (no fake data is to be c
 
 - Phase 1 environment variables: `NEXT_PUBLIC_APP_ORIGIN` (public origin printed in Location QR labels) and `PORTAL_ALLOWED_HOSTS` (server-only, comma-separated Portal hostnames allowed in equipment links). Set them in the Vercel Production environment only if the defaults above stop being right.
 - Phase 1 also added a BEFORE INSERT trigger on `ci_stock_movement_lines` (`ci_movement_location_active`) that refuses stock-increasing lines into an inactive location, plus the index `ci_movement_location_idx`. It closes a race in which a receipt or transfer committed concurrently with a deactivation could leave stock in an inactive location.
-- Temperature / Humidity readings, schedules and QR check-in (Phase 3) are not implemented.
+- Temperature / Humidity readings, schedules and QR check-in (Phase 3) were not part of the Phase 1 release; the current local Phase 3 implementation is described above and is not yet deployed.
 
 ### Phase 2 Morning Talk Production rollout record (2026-09-27)
 
