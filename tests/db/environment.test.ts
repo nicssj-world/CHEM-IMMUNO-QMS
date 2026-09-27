@@ -201,6 +201,108 @@ test('Phase 3 environment: monitored ownership, immutable readings, rounds, corr
         await assert.rejects(pending, /CI_ALREADY_CORRECTED/);
       } finally { await Promise.allSettled([a.query('ROLLBACK'), b.query('ROLLBACK')]); await Promise.all([a.end(), b.end()]); }
     });
+
+    await t.test('excursion completion: one atomic step, Staff-authorized, legacy acknowledged evidence preserved', async () => {
+      const target = await rpc<string>(U.admin, 'ci_create_location_v2', [{ warehouse_id: 1, code: 'CHE-FR-COMPLETE', name: 'Completion fridge', location_type: 'refrigerator', env: range }], ['jsonb']);
+      const excursionRow = async (id: string) => (await owner(db => db.query('SELECT * FROM public.ci_environment_excursions WHERE id = $1', [id]))).rows[0];
+      const complete = (actor: string, id: string, action: string | null, note: string | null, referred = false) =>
+        rpc<null>(actor, 'ci_complete_environment_excursion', [id, action, note, referred], ['uuid', 'text', 'text', 'boolean']);
+
+      // Anonymous cannot call the workflow at all: no execute privilege, regardless of role checks inside the function.
+      const grants = await owner(db => db.query(`SELECT
+        has_function_privilege('anon', 'public.ci_complete_environment_excursion(uuid,text,text,boolean)', 'execute') AS anon_can,
+        has_function_privilege('authenticated', 'public.ci_complete_environment_excursion(uuid,text,text,boolean)', 'execute') AS authenticated_can,
+        has_function_privilege('anon', 'ci_private.ci_complete_environment_excursion(uuid,text,text,boolean)', 'execute') AS anon_can_private,
+        has_function_privilege('authenticated', 'ci_private.ci_complete_environment_excursion(uuid,text,text,boolean)', 'execute') AS authenticated_can_private`));
+      // publish_rpc grants execute on the private implementation itself to authenticated too (the same pattern every other
+      // ci_private RPC in this codebase uses) - safe because the function enforces its own authorization internally; only
+      // anon must never be able to call either the public wrapper or the private implementation.
+      assert.deepEqual(grants.rows[0], { anon_can: false, authenticated_can: true, anon_can_private: false, authenticated_can_private: true });
+
+      const opened = await rpc<{ excursion_id: string }>(U.staff, 'ci_record_environment_reading', [{ location_id: target, temperature_c: 9, client_request_id: uuid() }], ['jsonb']);
+      const id = opened.excursion_id; assert.ok(id);
+
+      // Authorization: Viewer denied, a warehouse-2 staff account denied, both without revealing whether the row exists.
+      await assert.rejects(complete(U.viewer, id, 'ตรวจตู้', 'ปรับอุณหภูมิแล้ว'), /CI_ACCESS_DENIED/);
+      await assert.rejects(complete(U.imm, id, 'ตรวจตู้', 'ปรับอุณหภูมิแล้ว'), /CI_ACCESS_DENIED/);
+      const missing = await complete(U.viewer, uuid(), 'x', 'y').catch(error => error);
+      assert.match(String(missing), /CI_ACCESS_DENIED/, 'an unknown id fails the same way as one the caller cannot read');
+
+      // Blank corrective action / blank resolution are both rejected before anything is written.
+      await assert.rejects(complete(U.staff, id, '   ', 'ผลตรวจสอบ'), /CI_REASON_REQUIRED/);
+      await assert.rejects(complete(U.staff, id, 'ตรวจตู้และย้ายน้ำยา', '  '), /CI_REASON_REQUIRED/);
+      assert.equal((await excursionRow(id)).status, 'open', 'a rejected attempt writes nothing');
+
+      // Staff (not just Supervisor/Admin) completes an OPEN excursion in a single call: one Save, immediately resolved.
+      await complete(U.staff, id, 'ตรวจตู้และย้ายน้ำยา', 'อุณหภูมิกลับสู่ช่วงปกติแล้ว', true);
+      const resolved = await excursionRow(id);
+      assert.equal(resolved.status, 'resolved');
+      assert.equal(resolved.immediate_action, 'ตรวจตู้และย้ายน้ำยา');
+      assert.equal(resolved.resolution_note, 'อุณหภูมิกลับสู่ช่วงปกติแล้ว');
+      assert.equal(resolved.equipment_referred, true);
+      assert.equal(resolved.resolved_by, U.staff);
+      assert.ok(resolved.resolved_at, 'resolved_at is populated');
+      assert.equal(resolved.acknowledged_by, null, 'no acknowledge stage was required or fabricated');
+      assert.equal(resolved.acknowledged_at, null);
+
+      // Duplicate completion (sequential, then concurrent) is rejected deterministically - never a second write.
+      await assert.rejects(complete(U.admin, id, 'ซ้ำ', 'ซ้ำ'), /CI_ENV_EXCURSION_STATE/);
+      const afterDuplicate = await excursionRow(id);
+      assert.deepEqual([afterDuplicate.resolution_note, afterDuplicate.resolved_by], ['อุณหภูมิกลับสู่ช่วงปกติแล้ว', U.staff], 'the rejected duplicate did not overwrite the first completion');
+
+      // Supervisor and Admin (in addition to Staff above) can also complete - none of this is Staff-only, it is
+      // Staff-and-above, matching the owner's role matrix. Verified against a second fresh excursion per role.
+      for (const [actor, code] of [[U.supervisor, 'CHE-FR-COMPLETE-SUP'], [U.admin, 'CHE-FR-COMPLETE-ADM']] as const) {
+        const loc = await rpc<string>(U.admin, 'ci_create_location_v2', [{ warehouse_id: 1, code, name: code, location_type: 'refrigerator', env: range }], ['jsonb']);
+        const opened2 = await rpc<{ excursion_id: string }>(U.staff, 'ci_record_environment_reading', [{ location_id: loc, temperature_c: 1, client_request_id: uuid() }], ['jsonb']);
+        await complete(actor, opened2.excursion_id, 'ดำเนินการแล้ว', 'ปกติแล้ว');
+        const row2 = await excursionRow(opened2.excursion_id);
+        assert.equal(row2.status, 'resolved'); assert.equal(row2.resolved_by, actor);
+      }
+
+      // A genuine concurrent race for the SAME excursion: exactly one completion succeeds, the other fails deterministically.
+      const raceTarget = await rpc<string>(U.admin, 'ci_create_location_v2', [{ warehouse_id: 1, code: 'CHE-FR-COMPLETE-RACE', name: 'Race fridge', location_type: 'refrigerator', env: range }], ['jsonb']);
+      const race = await rpc<{ excursion_id: string }>(U.staff, 'ci_record_environment_reading', [{ location_id: raceTarget, temperature_c: 9, client_request_id: uuid() }], ['jsonb']);
+      const a = new Client({ connectionString: dbUrl.toString() }); const b = new Client({ connectionString: dbUrl.toString() });
+      await Promise.all([a.connect(), b.connect()]);
+      try {
+        for (const db of [a, b]) { await db.query('BEGIN'); await db.query('SET LOCAL ROLE authenticated'); await db.query("SELECT set_config('request.jwt.claim.sub',$1,true)", [U.staff]); }
+        const call = (db: Client, note: string) => db.query('SELECT public.ci_complete_environment_excursion($1::uuid,$2::text,$3::text,$4::boolean)', [race.excursion_id, 'ตรวจตู้', note, false]);
+        await call(a, 'ผลที่ 1');
+        const pending = call(b, 'ผลที่ 2');
+        await new Promise(resolve => setTimeout(resolve, 30));
+        await a.query('COMMIT');
+        await assert.rejects(pending, /CI_ENV_EXCURSION_STATE/);
+      } finally { await Promise.allSettled([a.query('ROLLBACK'), b.query('ROLLBACK')]); await Promise.all([a.end(), b.end()]); }
+      assert.equal((await excursionRow(race.excursion_id)).resolution_note, 'ผลที่ 1');
+
+      // Direct authenticated table writes remain denied; the RPC is the only path (and its own row lock is what made the
+      // race above deterministic rather than a torn write).
+      await assert.rejects(user(U.staff, db => db.query('UPDATE public.ci_environment_excursions SET status = $1 WHERE id = $2', ['open', id])), /permission denied/);
+
+      // Legacy acknowledged compatibility: an excursion already acknowledged under the old two-step flow keeps its
+      // immediate_action as historical evidence - completion never overwrites it, only records the resolution.
+      const legacyTarget = await rpc<string>(U.admin, 'ci_create_location_v2', [{ warehouse_id: 1, code: 'CHE-FR-LEGACY-ACK', name: 'Legacy fridge', location_type: 'refrigerator', env: range }], ['jsonb']);
+      const legacy = await rpc<{ excursion_id: string }>(U.staff, 'ci_record_environment_reading', [{ location_id: legacyTarget, temperature_c: 9, client_request_id: uuid() }], ['jsonb']);
+      await rpc(U.staff, 'ci_acknowledge_environment_excursion', [legacy.excursion_id, 'บันทึกไว้แบบเดิม (สองขั้นตอน)'], ['uuid', 'text']);
+      assert.equal((await excursionRow(legacy.excursion_id)).status, 'acknowledged');
+      await assert.rejects(complete(U.staff, legacy.excursion_id, 'ข้อความใหม่ที่ควรถูกละเว้น', '   '), /CI_REASON_REQUIRED/, 'resolution is still required for a legacy acknowledged event');
+      await complete(U.staff, legacy.excursion_id, 'ข้อความใหม่ที่ควรถูกละเว้น', 'ปิดงานตามขั้นตอนใหม่');
+      const legacyResolved = await excursionRow(legacy.excursion_id);
+      assert.equal(legacyResolved.status, 'resolved');
+      assert.equal(legacyResolved.immediate_action, 'บันทึกไว้แบบเดิม (สองขั้นตอน)', 'the historical corrective action from acknowledge is never silently overwritten');
+      assert.equal(legacyResolved.resolution_note, 'ปิดงานตามขั้นตอนใหม่');
+      assert.ok(legacyResolved.acknowledged_by, 'acknowledge metadata from the legacy step remains on the row');
+      assert.equal(legacyResolved.resolved_by, U.staff);
+
+      // Concurrency and parameter linkage from Phase 3 are unaffected: after a resolved excursion, a genuine new
+      // out-of-range reading opens a brand NEW excursion (never reuses the resolved one), with correct parameters.
+      const again = await rpc<{ excursion_id: string; overall_status: string }>(U.staff, 'ci_record_environment_reading', [{ location_id: target, temperature_c: 9.5, client_request_id: uuid() }], ['jsonb']);
+      assert.equal(again.overall_status, 'out_of_range');
+      assert.notEqual(again.excursion_id, id, 'a new excursion is opened; the resolved one is not reused');
+      assert.deepEqual((await excursionRow(again.excursion_id)).parameters, ['temperature']);
+      assert.equal((await owner(db => db.query<{ n: number }>('SELECT count(*)::int AS n FROM public.ci_environment_excursions WHERE location_id = $1 AND status <> $2', [target, 'resolved']))).rows[0].n, 1, 'only the new excursion is unresolved');
+    });
   } finally {
     const admin = new Client({ connectionString: adminUrl.toString() }); await admin.connect();
     try { await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`); } finally { await admin.end(); }

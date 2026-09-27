@@ -38,6 +38,20 @@ export const ROUND_LABEL: Record<DayRound['state'], string> = {
   satisfied: 'ตรวจแล้ว', due: 'ถึงเวลาตรวจ', missed: 'ขาดการตรวจ', upcoming: 'ยังไม่ถึงเวลา',
   paused: 'หยุดเฝ้าระวัง', unscheduled: 'ยังไม่ตั้งเวลาตรวจ',
 };
+/** 'acknowledged' is a historical status only: the current workflow completes an excursion in one step and never creates it. */
+export const EXCURSION_STATUS_LABEL: Record<EnvironmentExcursion['status'], string> = {
+  open: 'รอดำเนินการ', acknowledged: 'รับทราบแล้ว', resolved: 'ดำเนินการแล้ว',
+};
+/**
+ * What the excursion detail page shows for completion: nothing once resolved or for a viewer (read-only either way); the
+ * full one-step form (corrective action + resolution) for an open excursion; or, for a legacy two-step 'acknowledged'
+ * excursion, only the resolution field, since its corrective action is already on file and is never re-asked for.
+ */
+export type ExcursionCompletionView = 'hidden' | 'complete' | 'legacy-complete';
+export function excursionCompletionView(status: EnvironmentExcursion['status'], canWork: boolean): ExcursionCompletionView {
+  if (status === 'resolved' || !canWork) return 'hidden';
+  return status === 'acknowledged' ? 'legacy-complete' : 'complete';
+}
 export const READING_LABEL: Record<string, string> = {
   in_range: 'อยู่ในช่วง', out_of_range: 'นอกช่วง', incomplete: 'บันทึกไม่ครบ', void: 'ยกเลิกข้อมูล',
 };

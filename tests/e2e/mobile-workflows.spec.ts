@@ -561,12 +561,20 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page.getByRole('heading', { name: 'นอกช่วง' })).toBeVisible();
   await page.getByRole('link', { name: 'ดูเหตุการณ์นอกช่วง' }).click();
   await expect(page.getByRole('heading', { name: /E2E-FR · เหตุการณ์นอกช่วง/ })).toBeVisible();
-  await page.getByLabel('การดำเนินการเบื้องต้น').fill('ตรวจตู้และย้ายน้ำยา E2E');
-  await page.getByRole('button', { name: 'รับทราบ', exact: true }).click();
-  await expect(page.getByText('รับทราบแล้ว', { exact: true }).first()).toBeVisible();
-  await page.getByLabel('สรุปการแก้ไข').fill('ติดตามอุณหภูมิและบันทึกเหตุการณ์ E2E');
-  await page.getByRole('button', { name: 'ปิดเหตุการณ์' }).click();
-  await expect(page.getByText(/ปิดแล้ว/).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'รับทราบ', exact: true }), 'no separate acknowledge stage exists any more').toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'ปิดเหตุการณ์' }), 'no separate Admin/Supervisor closure step exists any more').toHaveCount(0);
+  await page.getByLabel('การดำเนินการแก้ไข *').fill('ตรวจตู้และย้ายน้ำยา E2E');
+  await page.getByLabel('ผลหลังดำเนินการ *').fill('ติดตามอุณหภูมิและบันทึกเหตุการณ์ E2E');
+  await page.getByRole('button', { name: 'บันทึกการแก้ไข' }).click();
+  await expect(page.getByText('บันทึกการแก้ไขแล้ว').first()).toBeVisible();
+  await expect(page.getByText(/ดำเนินการแล้ว/).first()).toBeVisible();
+  await expect(page.getByText('การดำเนินการแก้ไข: ตรวจตู้และย้ายน้ำยา E2E')).toBeVisible();
+  await expect(page.getByText('ผลหลังดำเนินการ: ติดตามอุณหภูมิและบันทึกเหตุการณ์ E2E')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'บันทึกการแก้ไข' }), 'a resolved excursion shows no completion form at all').toHaveCount(0);
+  const fridgeExcursion = await admin.from('ci_environment_excursions').select('id').eq('location_id', fridge.data).eq('status', 'resolved').single();
+  expect(fridgeExcursion.error).toBeNull();
+  await page.goto('/attention?warehouse=CHE&type=env_excursion');
+  await expect(page.locator(`a[href="/environment/excursions/${fridgeExcursion.data!.id}"]`), 'a resolved excursion is not listed as an unresolved one in Attention').toHaveCount(0);
   await page.goto(`/environment/history?warehouse=CHE&location=${fridge.data}`);
   await expect(page.getByText(/4\.1 °C/).first()).toBeVisible();
   await expect(page.getByText('9 °C', { exact: true }).first()).toBeVisible();
@@ -1061,6 +1069,12 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.goto(`/q/${immToken}`);
   await expect(page.getByText(generic), 'a QR from a warehouse this account cannot open looks like any unknown QR').toBeVisible();
   await expectNotFound(`/locations/${immFridge.data}`, "another warehouse's location is indistinguishable from a missing one");
+  // A Viewer sees the resolved excursion's evidence read-only: no completion form, no button, ever.
+  await page.goto(`/environment/excursions/${fridgeExcursion.data!.id}`);
+  await expect(page.getByRole('heading', { name: /E2E-FR · เหตุการณ์นอกช่วง/ })).toBeVisible();
+  await expect(page.getByText('การดำเนินการแก้ไข: ตรวจตู้และย้ายน้ำยา E2E')).toBeVisible();
+  await expect(page.getByText('ผลหลังดำเนินการ: ติดตามอุณหภูมิและบันทึกเหตุการณ์ E2E')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'บันทึกการแก้ไข' })).toHaveCount(0);
   // ---- Phase 2: Morning Talk as a viewer ------------------------------------------------------------------------------------------
   await page.goto(`/morning-talk/${cheTalk.data}`);
   await expect(page.getByRole('checkbox', { name: /ตรวจเครื่อง E2E/ }), 'a viewer cannot tick the checklist').toBeDisabled();
@@ -1385,6 +1399,117 @@ test('environment monthly charts: month views, metrics, versioned ranges, correc
     }
     if (width === 375) await page.screenshot({ path: testInfo.outputPath('environment-location-375.png'), fullPage: true });
   }
+  expect(pageErrors).toEqual([]);
+  expect(serverErrors).toEqual([]);
+});
+
+// ---- Post-Phase-3: Environment excursion one-step completion (local disposable data only) --------------------------------
+// A fresh out-of-range excursion is created and completed in a single Save, by Staff (not just Supervisor/Admin), with no
+// separate acknowledge-then-close stages. A legacy 'acknowledged' excursion (the old two-step flow) is completed without
+// its historical corrective action being overwritten. Cross-warehouse and Viewer access remain denied.
+test('environment excursion completion: one Staff save resolves it, legacy acknowledged evidence is preserved, cross-warehouse denied', async ({ page }) => {
+  test.setTimeout(180_000);
+  const pageErrors: string[] = [];
+  const serverErrors: string[] = [];
+  const baseUrl = process.env.CI_E2E_BASE_URL || 'http://localhost:3100';
+  const origin = new URL(baseUrl).origin;
+  page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(origin)) serverErrors.push(`${response.status()} ${response.url()}`); });
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const publishable = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+  const service = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const password = process.env.CI_E2E_PASSWORD!;
+  if (!url || !service || !['localhost', '127.0.0.1', '::1'].includes(new URL(url).hostname)) throw new Error('Disposable local Supabase required');
+  const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
+  const client = createClient(url, publishable, { auth: { persistSession: false, autoRefreshToken: false } });
+  expect((await client.auth.signInWithPassword({ email: 'ephis.e2eadmin@chem-immuno.internal', password })).error).toBeNull();
+  const staffClient = createClient(url, publishable, { auth: { persistSession: false, autoRefreshToken: false } });
+  expect((await staffClient.auth.signInWithPassword({ email: 'ephis.e2estaff@chem-immuno.internal', password })).error).toBeNull();
+
+  const range = { temperature_monitored: true, temp_min_c: 2, temp_max_c: 8, humidity_monitored: false, rh_min_pct: null, rh_max_pct: null };
+  const fridge = await client.rpc('ci_create_location_v2', { p: { warehouse_id: 1, code: 'E2E-EXC-STAFF', name: 'Synthetic completion fridge', location_type: 'refrigerator', env: range } });
+  expect(fridge.error).toBeNull();
+  const legacyFridge = await client.rpc('ci_create_location_v2', { p: { warehouse_id: 1, code: 'E2E-EXC-LEGACY', name: 'Synthetic legacy fridge', location_type: 'refrigerator', env: range } });
+  expect(legacyFridge.error).toBeNull();
+
+  async function signInAs(ephisId: string) {
+    await page.goto('/login');
+    await page.getByRole('textbox', { name: 'Ephis ID' }).fill(ephisId);
+    await page.getByRole('textbox', { name: 'รหัสผ่าน' }).fill(password);
+    await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
+    await expect(page.getByRole('heading', { name: /ภาพรวมคลัง/ })).toBeVisible();
+  }
+
+  // Staff (not Admin/Supervisor) opens an out-of-range excursion and completes it in one Save.
+  await signInAs('e2estaff');
+  await page.goto(`/environment/check/${fridge.data}?warehouse=CHE`);
+  await page.getByLabel('อุณหภูมิ (°C)').fill('9.5');
+  await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+  await expect(page.getByText(/ค่าอยู่นอกช่วง/)).toBeVisible();
+  await page.getByRole('button', { name: 'ยืนยันบันทึก' }).click();
+  await page.getByRole('link', { name: 'ดูเหตุการณ์นอกช่วง' }).click();
+  await expect(page.getByRole('heading', { name: /E2E-EXC-STAFF · เหตุการณ์นอกช่วง/ })).toBeVisible();
+  await expect(page.getByText('รอดำเนินการ')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'รับทราบ', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'ปิดเหตุการณ์' })).toHaveCount(0);
+  const excursionUrl = page.url();
+  const excursionId = excursionUrl.split('/').at(-1)!;
+  await page.getByLabel('การดำเนินการแก้ไข *').fill('ตรวจตู้และย้ายน้ำยา E2E');
+  await page.getByLabel('ผลหลังดำเนินการ *').fill('อุณหภูมิกลับสู่ช่วงปกติแล้ว E2E');
+  await page.getByRole('button', { name: 'บันทึกการแก้ไข' }).click();
+  await expect(page.getByText('บันทึกการแก้ไขแล้ว')).toBeVisible();
+  await expect(page.getByText('ดำเนินการแล้ว')).toBeVisible();
+  const resolved = await admin.from('ci_environment_excursions').select('status,immediate_action,resolution_note,resolved_by,resolved_at,acknowledged_by').eq('id', excursionId).single();
+  expect(resolved.error).toBeNull();
+  expect(resolved.data).toMatchObject({ status: 'resolved', immediate_action: 'ตรวจตู้และย้ายน้ำยา E2E', resolution_note: 'อุณหภูมิกลับสู่ช่วงปกติแล้ว E2E', acknowledged_by: null });
+  expect(resolved.data!.resolved_by, 'the actor who saved is recorded as resolved_by').not.toBeNull();
+  expect(resolved.data!.resolved_at).not.toBeNull();
+
+  // Attention no longer lists this now-resolved excursion.
+  await page.goto('/attention?warehouse=CHE&type=env_excursion');
+  await expect(page.locator(`a[href="/environment/excursions/${excursionId}"]`), 'a resolved excursion leaves Attention').toHaveCount(0);
+
+  // A later genuine out-of-range reading on the same location opens a brand NEW excursion; the resolved one is untouched.
+  await page.goto(`/environment/check/${fridge.data}?warehouse=CHE`);
+  await page.getByLabel('อุณหภูมิ (°C)').fill('9.9');
+  await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+  await expect(page.getByText(/ค่าอยู่นอกช่วง/)).toBeVisible();
+  await page.getByRole('button', { name: 'ยืนยันบันทึก' }).click();
+  await page.getByRole('link', { name: 'ดูเหตุการณ์นอกช่วง' }).click();
+  const newExcursionId = page.url().split('/').at(-1)!;
+  expect(newExcursionId).not.toBe(excursionId);
+  await expect(page.getByText('รอดำเนินการ')).toBeVisible();
+  const stillResolved = await admin.from('ci_environment_excursions').select('status,resolution_note').eq('id', excursionId).single();
+  expect(stillResolved.data).toMatchObject({ status: 'resolved', resolution_note: 'อุณหภูมิกลับสู่ช่วงปกติแล้ว E2E' });
+
+  // Legacy compatibility: an excursion already 'acknowledged' under the old two-step flow (simulated here by calling the
+  // still-present legacy RPC directly) shows its corrective action read-only and asks only for the resolution.
+  const legacyReading = await staffClient.rpc('ci_record_environment_reading', { p: { location_id: legacyFridge.data, temperature_c: 9.2, client_request_id: crypto.randomUUID() } });
+  expect(legacyReading.error).toBeNull();
+  const legacyId = (legacyReading.data as { excursion_id: string }).excursion_id;
+  expect(await staffClient.rpc('ci_acknowledge_environment_excursion', { p_id: legacyId, p_immediate_action: 'บันทึกไว้แบบเดิม (สองขั้นตอน) E2E' }).then(r => r.error)).toBeNull();
+  await page.goto(`/environment/excursions/${legacyId}`);
+  await expect(page.getByText('รับทราบแล้ว')).toBeVisible();
+  await expect(page.getByText(/บันทึกไว้ก่อนหน้า.*รับทราบโดย/)).toBeVisible();
+  await expect(page.getByLabel('การดำเนินการแก้ไข *'), 'a legacy acknowledged excursion does not re-ask for the corrective action').toHaveCount(0);
+  await expect(page.locator('form').getByText('บันทึกไว้แบบเดิม (สองขั้นตอน) E2E'), 'the historical corrective action is shown read-only in the completion form').toBeVisible();
+  await page.getByLabel('ผลหลังดำเนินการ *').fill('ปิดงานตามขั้นตอนใหม่ E2E');
+  await page.getByRole('button', { name: 'บันทึกการแก้ไข' }).click();
+  await expect(page.getByText('ดำเนินการแล้ว')).toBeVisible();
+  const legacyResolved = await admin.from('ci_environment_excursions').select('immediate_action,resolution_note,status').eq('id', legacyId).single();
+  expect(legacyResolved.data).toMatchObject({ status: 'resolved', immediate_action: 'บันทึกไว้แบบเดิม (สองขั้นตอน) E2E', resolution_note: 'ปิดงานตามขั้นตอนใหม่ E2E' });
+
+  // A Viewer never sees a completion form on any excursion, resolved or open.
+  await signInAs('e2eviewer');
+  await page.goto(`/environment/excursions/${excursionId}`);
+  await expect(page.getByRole('button', { name: 'บันทึกการแก้ไข' })).toHaveCount(0);
+
+  // A Supervisor account scoped only to IMM (warehouse 2) cannot see or reach a CHE excursion: it looks exactly like a
+  // missing record, matching the existing cross-warehouse pattern for other Environment resources.
+  await signInAs('e2esupervisor');
+  await page.goto(`/environment/excursions/${excursionId}`);
+  await expect(page.getByRole('heading', { name: 'ไม่พบข้อมูลที่ต้องการ' })).toBeVisible();
+  await expect(page.getByText('E2E-EXC-STAFF')).toHaveCount(0);
   expect(pageErrors).toEqual([]);
   expect(serverErrors).toEqual([]);
 });

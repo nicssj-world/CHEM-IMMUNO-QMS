@@ -103,7 +103,10 @@ test('Phase 1 Location Master: hierarchy, ranges, monitor resolution, QR, audit 
       const master = files.find(file => file.endsWith('_ci_location_master.sql'))!;
       assert.ok(master, 'the Phase 1 migration must exist');
       await withOwner(async (client) => {
-        await applyFiles(client, ['tests/db/bootstrap.sql', ...files.filter(file => file !== master && !file.endsWith('_ci_environment_monitoring.sql')).map(file => `supabase/migrations/${file}`)]);
+        // Anything that depends on this migration's new columns/tables (Environment monitoring and its later, smaller
+        // corrections) must stay out of the "everything else" bucket too, or it fails before master ever runs.
+        const dependsOnMaster = ['_ci_environment_monitoring.sql', '_ci_environment_excursion_completion.sql'];
+        await applyFiles(client, ['tests/db/bootstrap.sql', ...files.filter(file => file !== master && !dependsOnMaster.some(suffix => file.endsWith(suffix))).map(file => `supabase/migrations/${file}`)]);
         await client.query(`INSERT INTO public.ci_locations(warehouse_id,code,name,created_at) VALUES (1,'OLD-1','Old one','2026-01-01T00:00:00Z'),(1,'OLD-2','Old two','2026-02-01T00:00:00Z'),(2,'OLD-3','Old three','2026-03-01T00:00:00Z')`);
         const precheck = await client.query(`SELECT id FROM public.ci_locations WHERE code <> btrim(code) OR char_length(btrim(code)) NOT BETWEEN 1 AND 40 OR name <> btrim(name) OR char_length(btrim(name)) NOT BETWEEN 1 AND 120`);
         assert.equal(precheck.rowCount, 0, 'the documented pre-check query returns no rows');

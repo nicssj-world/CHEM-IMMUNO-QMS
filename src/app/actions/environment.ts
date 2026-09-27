@@ -66,22 +66,18 @@ export async function correctEnvironmentReading(input: {
   return { ok: true, reading: data as SavedReading };
 }
 
-export async function acknowledgeEnvironmentExcursion(id: string, action: string): Promise<{ ok: boolean; message: string }> {
+// One-step completion: the same authorized actor records both the corrective action and the resolution and the
+// excursion becomes resolved immediately. There is no separate Admin/Supervisor approval or closure stage — see
+// ci_private.ci_complete_environment_excursion. `action` may be empty when completing a legacy 'acknowledged'
+// excursion (its historical immediate_action is preserved server-side and this value is ignored for that row).
+export async function completeEnvironmentExcursion(id: string, action: string, note: string, referred: boolean): Promise<{ ok: boolean; message: string }> {
   await requireAccess();
   const client = await createClient();
   if (!client) return { ok: false, message: 'ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล' };
-  const { error } = await client.rpc('ci_acknowledge_environment_excursion', { p_id: id, p_immediate_action: action.trim() });
-  if (error) return { ok: false, message: logUserMessage('acknowledgeEnvironmentExcursion', error) };
-  revalidatePath('/environment/excursions'); revalidatePath(`/environment/excursions/${id}`);
-  return { ok: true, message: 'รับทราบแล้ว' };
-}
-
-export async function resolveEnvironmentExcursion(id: string, note: string, referred: boolean): Promise<{ ok: boolean; message: string }> {
-  await requireAccess();
-  const client = await createClient();
-  if (!client) return { ok: false, message: 'ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล' };
-  const { error } = await client.rpc('ci_resolve_environment_excursion', { p_id: id, p_resolution_note: note.trim(), p_equipment_referred: referred });
-  if (error) return { ok: false, message: logUserMessage('resolveEnvironmentExcursion', error) };
+  const { error } = await client.rpc('ci_complete_environment_excursion', {
+    p_id: id, p_immediate_action: action.trim(), p_resolution_note: note.trim(), p_equipment_referred: referred,
+  });
+  if (error) return { ok: false, message: logUserMessage('completeEnvironmentExcursion', error) };
   revalidatePath('/environment/excursions'); revalidatePath(`/environment/excursions/${id}`); revalidatePath('/attention');
-  return { ok: true, message: 'ปิดเหตุการณ์แล้ว' };
+  return { ok: true, message: 'บันทึกการแก้ไขแล้ว' };
 }
