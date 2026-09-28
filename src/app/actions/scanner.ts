@@ -11,18 +11,26 @@ export type ScanResolution = { parsed: ParsedBarcode; locationQr?: { path: strin
 
 /** Approved identifier matches for a scan as product id -> warehouse id. */
 async function matchApprovedIdentifiers(client: SupabaseClient, parsed: ParsedBarcode, raw: string) {
-  const candidates: { kind: string; value: string }[] = [];
-  if (parsed.gtin) candidates.push({ kind: 'GTIN', value: parsed.gtin }, { kind: 'MANUFACTURER_BARCODE', value: parsed.gtin });
-  if (parsed.primary) candidates.push({ kind: 'HIBC_PRIMARY', value: parsed.primary });
-  if (parsed.additionalProductId) candidates.push({ kind: 'GS1_AI240', value: parsed.additionalProductId });
-  candidates.push({ kind: 'MANUFACTURER_BARCODE', value: raw.trim() });
-  const matches = await Promise.all(candidates.map(async ({ kind, value }) => {
-    const { data, error } = await client.from('ci_product_identifiers').select('product_id,warehouse_id').eq('kind',kind).eq('value',value).eq('approved',true).limit(2);
-    if (error) throw new Error(logUserMessage('scanner', error));
-    return data ?? [];
-  }));
+  const values = new Set<string>();
+  if (parsed.gtin) {
+    values.add(parsed.gtin);
+    // Some manually-entered GTINs include the GS1 AI 01 prefix in the stored value.
+    values.add(`01${parsed.gtin}`);
+  }
+  if (parsed.primary) values.add(parsed.primary);
+  if (parsed.pcn) values.add(parsed.pcn);
+  if (parsed.additionalProductId) values.add(parsed.additionalProductId);
+  // A standalone barcode can be an identifier of any registered kind. GS1 and
+  // HIBC payloads are structured, so their LOT/expiry/serial fields never enter this lookup.
+  if (parsed.standard === 'UNKNOWN' && raw.trim()) values.add(raw.trim());
+  if (!values.size) return new Map<string, number>();
+  const { data, error } = await client.from('ci_product_identifiers')
+    .select('product_id,warehouse_id')
+    .in('value', [...values])
+    .eq('approved', true);
+  if (error) throw new Error(logUserMessage('scanner', error));
   const ids = new Map<string, number>();
-  for (const item of matches.flat()) ids.set(item.product_id, Number(item.warehouse_id));
+  for (const item of data ?? []) ids.set(item.product_id, Number(item.warehouse_id));
   return ids;
 }
 
