@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ArrowUpFromLine, Boxes, CalendarDays, ClipboardCheck, ClipboardList, FileUp, History, House, ListChecks, MapPin, Megaphone, NotebookTabs, PackagePlus, QrCode, ScanLine, ScrollText, ShieldCheck, SlidersHorizontal, Thermometer, Trash2, UserCog, Users, Wrench, type LucideIcon } from 'lucide-react';
+import { ArrowLeftRight, ArrowUpFromLine, Boxes, ClipboardCheck, ClipboardList, FileUp, History, House, ListChecks, MapPin, NotebookTabs, PackagePlus, QrCode, ScanLine, ScrollText, ShieldCheck, SlidersHorizontal, Trash2, UserCog, Users, Wrench, type LucideIcon } from 'lucide-react';
 import type { AccessContext } from '@/lib/auth';
 
 // Navigation groups routes into workspaces. It changes where a link is shown, never who may use the page: every page, server
@@ -8,7 +8,7 @@ export type NavNeed = 'work' | 'supervise' | 'adminBoth';
 export type NavItem = { href: string; label: string; icon: LucideIcon; need?: NavNeed };
 /** `match` lists extra path prefixes that keep the tab active, for routes whose URL does not start with the tab's own href. */
 export type WorkspaceTab = NavItem & { match?: string[] };
-export type WorkspaceKey = 'dashboard' | 'morning-talk' | 'inventory' | 'operations' | 'environment' | 'reports' | 'admin';
+export type WorkspaceKey = 'dashboard' | 'inventory' | 'operations' | 'reports' | 'admin';
 export type Workspace = { key: WorkspaceKey; label: string; icon: LucideIcon; tabs: WorkspaceTab[] };
 export type NavPermissions = Record<NavNeed, boolean>;
 
@@ -17,11 +17,6 @@ export const workspaces: Workspace[] = [
   { key: 'dashboard', label: 'ภาพรวม', icon: House, tabs: [
     { href: '/', label: 'ภาพรวม', icon: House },
     { href: '/attention', label: 'รายการที่ต้องติดตาม', icon: ShieldCheck },
-  ] },
-  { key: 'morning-talk', label: 'Morning Talk', icon: Megaphone, tabs: [
-    { href: '/morning-talk', label: 'วันนี้', icon: CalendarDays },
-    { href: '/morning-talk/history', label: 'ประวัติ', icon: History },
-    { href: '/morning-talk/actions', label: 'งานค้าง', icon: ListChecks },
   ] },
   { key: 'inventory', label: 'คลังน้ำยา', icon: Boxes, tabs: [
     { href: '/stock', label: 'คงคลัง', icon: ClipboardList },
@@ -39,18 +34,10 @@ export const workspaces: Workspace[] = [
     { href: '/adjust', label: 'ปรับยอด', icon: ListChecks, need: 'supervise' },
     { href: '/dispose', label: 'กำจัดหมดอายุ', icon: Trash2, need: 'supervise' },
   ] },
-  { key: 'environment', label: 'อุณหภูมิ/ความชื้น', icon: Thermometer, tabs: [
-    { href: '/environment', label: 'ภาพรวม', icon: Thermometer },
-    { href: '/environment/check', label: 'ตรวจด้วย QR', icon: QrCode, need: 'work' },
-    { href: '/environment/history', label: 'ประวัติ', icon: History },
-    { href: '/environment/excursions', label: 'นอกช่วง', icon: ShieldCheck },
-  ] },
   { key: 'reports', label: 'รายงาน', icon: NotebookTabs, tabs: [
     { href: '/reports/monthly', label: 'รายงานรายเดือน', icon: NotebookTabs },
     { href: '/movements', label: 'ประวัติเคลื่อนไหว', icon: History },
     { href: '/audit', label: 'บันทึกการตรวจสอบ', icon: ScrollText, need: 'supervise' },
-    { href: '/reports/morning-talk', label: 'Morning Talk', icon: Megaphone },
-    { href: '/reports/environment', label: 'อุณหภูมิ/ความชื้น', icon: Thermometer },
   ] },
   { key: 'admin', label: 'จัดการระบบ', icon: UserCog, tabs: [
     { href: '/scan/review', label: 'คิวอนุมัติ Barcode', icon: QrCode, need: 'supervise' },
@@ -117,7 +104,7 @@ export function tabHref(href: string, warehouse: string | null | undefined) {
 // every visible tab as a direct link (no accordion): a category groups one or more workspaces under one heading purely for
 // visual presentation, and never changes which tabs exist, their hrefs, icons or role gates.
 // ---------------------------------------------------------------------------
-export type NavCategoryKey = 'home' | 'stock' | 'operations' | 'monitoring' | 'reports' | 'system';
+export type NavCategoryKey = 'home' | 'stock' | 'operations' | 'reports' | 'system';
 /** `collapsible: false` is Home only - it holds the two primary destinations, so it always stays visible and is never a button. */
 export type NavCategory = { key: NavCategoryKey; label: string; workspaces: WorkspaceKey[]; collapsible: boolean };
 
@@ -125,13 +112,11 @@ export const navCategories: NavCategory[] = [
   { key: 'home', label: 'หน้าหลัก', workspaces: ['dashboard'], collapsible: false },
   { key: 'stock', label: 'STOCK', workspaces: ['inventory'], collapsible: true },
   { key: 'operations', label: 'OPERATIONS', workspaces: ['operations'], collapsible: true },
-  // Morning Talk and Environment share one heading; each keeps every one of its own tabs as its own direct link.
-  { key: 'monitoring', label: 'MONITORING', workspaces: ['morning-talk', 'environment'], collapsible: true },
   { key: 'reports', label: 'REPORTS & AUDIT', workspaces: ['reports'], collapsible: true },
   { key: 'system', label: 'SYSTEM', workspaces: ['admin'], collapsible: true },
 ];
 
-/** One workspace's visible tabs inside a category. `workspaceLabel` is only rendered as a sub-heading when a category groups more than one workspace (MONITORING today) - it is what tells apart two tabs that happen to share a label and an icon, such as Morning Talk's and Environment's own "ประวัติ". */
+/** One workspace's visible tabs inside a category. `workspaceLabel` distinguishes groups when a category contains multiple workspaces. */
 export type SidebarGroup = { workspaceKey: WorkspaceKey; workspaceLabel: string; items: WorkspaceTab[] };
 export type SidebarCategory = { key: NavCategoryKey; label: string; collapsible: boolean; groups: SidebarGroup[] };
 

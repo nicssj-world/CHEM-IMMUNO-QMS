@@ -17,14 +17,6 @@ export default async function LocationQrLanding({ params }: { params: Promise<{ 
     const { data } = client ? await client.from('ci_locations').select('id,warehouse_id,active').eq('qr_token', token).maybeSingle() : { data: null };
     const warehouse = data && access.warehouses.find(item => Number(item.id) === data.warehouse_id);
     if (data && warehouse) {
-      if (data.active && warehouse.role !== 'viewer' && client) {
-        const [monitor, config] = await Promise.all([
-          client.rpc('ci_environment_monitor_location_id', { p_location_id: data.id }),
-          client.from('ci_location_env_configs').select('monitoring_state').eq('location_id', data.id).order('effective_from', { ascending: false }).limit(1),
-        ]);
-        if (monitor.data === data.id && config.data?.[0]?.monitoring_state === 'active')
-          redirect(`/environment/check/${data.id}?warehouse=${warehouse.code}&source=qr`);
-      }
       redirect(`/locations/${data.id}?warehouse=${warehouse.code}`);
     }
   }

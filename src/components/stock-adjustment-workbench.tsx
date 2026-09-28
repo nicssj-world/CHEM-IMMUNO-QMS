@@ -3,7 +3,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { adjustStock, getAdjustmentLotOptions } from '@/app/actions/inventory';
 import { resolveAdjustmentProductScan } from '@/app/actions/scanner';
-import { formatDateBE } from '@/lib/format';
 import { userMessage } from '@/lib/messages';
 import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
 import { ConfirmForm } from './confirm-form';
@@ -60,7 +59,7 @@ export function StockAdjustmentWorkbench({
   const after = Math.round((selectedBalance + delta) * 1000) / 1000;
   const selectedLocation = locationById.get(locationId);
   const selectedSummary = product
-    ? `${product.product_code} · ${product.display_name} · LOT ${lotNumber || 'ยังไม่ระบุ'} · หมดอายุ ${expiry ? formatDateBE(expiry) : 'ยังไม่ระบุ'}`
+    ? `${product.product_code} · ${product.display_name} · LOT ${lotNumber || 'ยังไม่ระบุ'} · หมดอายุ ${expiry || 'ยังไม่ระบุ'}`
     : 'สแกน Barcode หรือเลือกน้ำยาเอง';
   const canSubmit = Boolean(product && lotNumber.trim() && expiry && locationId && amount && Number(amount) > 0 && reason.trim() && !expiryConflict && locations.length && (lotId || direction > 0) && (direction > 0 || after >= 0));
 
@@ -142,7 +141,7 @@ export function StockAdjustmentWorkbench({
         const productLabel = `${result.product.code} · ${result.product.name}`;
         if (!trusted) tell('warn', `${productLabel} · Barcode มีคำเตือน`, 'ตรวจ LOT และวันหมดอายุก่อนปรับยอด');
         else if (!nextLot || !nextExpiry) tell('warn', `${productLabel}`, 'Barcode ไม่มี LOT หรือวันหมดอายุครบ · กรอกเอง');
-        else tell('ok', productLabel, `LOT ${nextLot} · หมดอายุ ${formatDateBE(nextExpiry)}`);
+        else tell('ok', productLabel, `LOT ${nextLot} · หมดอายุ ${nextExpiry}`);
       } else {
         setProductId('');
         setOptions([]);
@@ -210,7 +209,7 @@ export function StockAdjustmentWorkbench({
     <BarcodeScanner onScan={onScan} feedback={feedback} summary={summary}/>
     {formError && <p className="error" role="alert">{formError}</p>}
     {locations.length === 0 && <p className="notice">ยังไม่มีตำแหน่งจัดเก็บในคลังนี้ · เพิ่มตำแหน่งก่อนปรับยอด</p>}
-    <ConfirmForm action={adjustStock} className="surface p-5 sm:p-7 grid gap-4" message={data => `ยืนยันปรับยอด ${summaryText}\nLOT ${lotNumber} · หมดอายุ ${formatDateBE(expiry)} · ${selectedLocation?.code ?? ''}\nปรับ ${delta > 0 ? '+' : ''}${delta} · ยอดตำแหน่งนี้ ${selectedBalance} → ${after}\nเหตุผล: ${String(data.get('reason') ?? '')}\n\nบันทึกแล้วแก้ไขไม่ได้ ต้องใช้การยกเลิกรายการ`}>
+    <ConfirmForm action={adjustStock} className="surface p-5 sm:p-7 grid gap-4" message={data => `ยืนยันปรับยอด ${summaryText}\nLOT ${lotNumber} · หมดอายุ ${expiry} · ${selectedLocation?.code ?? ''}\nปรับ ${delta > 0 ? '+' : ''}${delta} · ยอดตำแหน่งนี้ ${selectedBalance} → ${after}\nเหตุผล: ${String(data.get('reason') ?? '')}\n\nบันทึกแล้วแก้ไขไม่ได้ ต้องใช้การยกเลิกรายการ`}>
       <input type="hidden" name="lot_id" value={lotId}/>
       <input type="hidden" name="product_id" value={productId}/>
       <input type="hidden" name="warehouse_id" value={warehouseId}/>
@@ -229,10 +228,10 @@ export function StockAdjustmentWorkbench({
       </select></label>
       {product && <p className="notice text-sm"><strong>{product.product_code}</strong> · {product.display_name}</p>}
 
-      {uniqueLots.length > 0 && <label className="field">เลือก LOT ที่มีอยู่ (ไม่ต้องเลือกเมื่อสแกน LOT ใหม่)<select className="input" value={lotId} onChange={event => selectExistingLot(event.target.value)}><option value="">สแกนหรือกรอก LOT</option>{uniqueLots.map(option => <option key={option.lot_id} value={option.lot_id}>LOT {option.lot_number} · หมดอายุ {formatDateBE(option.expiry_date)} · คงเหลือ {options.filter(row => row.lot_id === option.lot_id).reduce((sum,row) => sum + row.balance,0)}</option>)}</select></label>}
+      {uniqueLots.length > 0 && <label className="field">เลือก LOT ที่มีอยู่ (ไม่ต้องเลือกเมื่อสแกน LOT ใหม่)<select className="input" value={lotId} onChange={event => selectExistingLot(event.target.value)}><option value="">สแกนหรือกรอก LOT</option>{uniqueLots.map(option => <option key={option.lot_id} value={option.lot_id}>LOT {option.lot_number} · หมดอายุ {option.expiry_date} · คงเหลือ {options.filter(row => row.lot_id === option.lot_id).reduce((sum,row) => sum + row.balance,0)}</option>)}</select></label>}
       <div className="grid sm:grid-cols-2 gap-3">
         <label className="field">LOT<input className="input" value={lotNumber} onChange={event => changeLotNumber(event.target.value)} autoCapitalize="characters" autoCorrect="off" autoComplete="off" maxLength={80} required/></label>
-        <label className="field">วันหมดอายุ<input className="input" type="date" value={expiry} onChange={event => changeExpiry(event.target.value)} required/>{expiry && <span className="muted text-xs">รูปแบบ พ.ศ.: {formatDateBE(expiry)}</span>}</label>
+        <label className="field">วันหมดอายุ<input className="input" type="date" value={expiry} onChange={event => changeExpiry(event.target.value)} required/>{expiry && <span className="muted text-xs">ตามฉลาก (ค.ศ.): {expiry}</span>}</label>
       </div>
       {expiryConflict && <p className="error" role="alert">LOT นี้มีวันหมดอายุในระบบไม่ตรงกับ Barcode · ตรวจฉลากและข้อมูลเดิมก่อน</p>}
       {lotNumber && expiry && !lotExists && !expiryConflict && <p className="notice text-sm">ยังไม่มี LOT นี้ในคลัง · การปรับเพิ่ม (+) จะสร้าง LOT และยอดเริ่มต้นพร้อมกัน</p>}

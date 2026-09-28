@@ -31,9 +31,6 @@ type Props = {
   hasChildren?: boolean;
 };
 
-/** Phones often have no minus key on the decimal keypad, so every range field gets a sign toggle. */
-function flipSign(text: string) { const value = text.trim(); return value.startsWith('-') ? value.slice(1) : `-${value}`; }
-
 export function LocationForm({ mode, warehouse, initial, parents, cancelHref, locationId, expectedUpdatedAt, codeLocked = false, hasChildren = false }: Props) {
   const router = useRouter();
   const [value, setValue] = useState<LocationFormFields>(initial);
@@ -41,8 +38,8 @@ export function LocationForm({ mode, warehouse, initial, parents, cancelHref, lo
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
   const set = <K extends keyof LocationFormFields>(field: K, next: LocationFormFields[K]) => setValue(current => ({ ...current, [field]: next }));
-  const monitorable = isMonitorableType(value.location_type);
-  const showMonitoring = monitorable || value.own_monitoring;
+  // Preserve existing monitoring settings in the edit payload while their UI is paused.
+  const showMonitoring = isMonitorableType(value.location_type) || value.own_monitoring;
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -66,19 +63,6 @@ export function LocationForm({ mode, warehouse, initial, parents, cancelHref, lo
 
   const fieldError = (field: string) => errors[field] ? <p id={`error-${field}`} className="text-sm text-[#8c2534]" role="alert">{errors[field]}</p> : null;
   const describe = (field: string) => (errors[field] ? { 'aria-invalid': true, 'aria-describedby': `error-${field}` } as const : {});
-  const range = (label: string, minField: 'temp_min_c' | 'rh_min_pct', maxField: 'temp_max_c' | 'rh_max_pct', unit: string) => (
-    <div className="grid sm:grid-cols-2 gap-3">
-      {([['ต่ำสุด', minField], ['สูงสุด', maxField]] as const).map(([side, field]) => <div key={field} className="grid gap-1">
-        <label className="field" htmlFor={`f-${field}`}>{label} {side} ({unit})</label>
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-          <input id={`f-${field}`} className="input" inputMode="decimal" autoComplete="off" value={value[field]} onChange={event => set(field, event.target.value)} placeholder="ไม่จำกัด" {...describe(field)} />
-          <button type="button" className="button secondary px-3" aria-label={`สลับเครื่องหมายบวก/ลบ ${label} ${side}`} onClick={() => set(field, flipSign(value[field]))}>±</button>
-        </div>
-        {fieldError(field)}
-      </div>)}
-    </div>
-  );
-
   return <form onSubmit={submit} className="grid gap-5" noValidate>
     <section className="surface p-5 sm:p-7 grid gap-4 content-start">
       <h2 className="font-bold text-lg">ข้อมูลตำแหน่งใน {warehouse.name}</h2>
@@ -114,25 +98,6 @@ export function LocationForm({ mode, warehouse, initial, parents, cancelHref, lo
       <div className="grid gap-1"><label className="field" htmlFor="f-description">รายละเอียดเพิ่มเติม
         <textarea id="f-description" className="input" rows={3} value={value.description} onChange={event => set('description', event.target.value)} maxLength={1000} {...describe('description')} />
       </label>{fieldError('description')}</div>
-    </section>
-
-    <section className="surface p-5 sm:p-7 grid gap-4 content-start" aria-labelledby="monitoring-heading">
-      <div><h2 id="monitoring-heading" className="font-bold text-lg">ช่วงอุณหภูมิ / ความชื้นที่ยอมรับได้</h2><p className="muted text-sm mt-1">กำหนดช่วงของตำแหน่งที่ต้องเฝ้าระวัง (ห้อง ตู้เย็น ตู้แช่แข็ง ตู้เก็บ) · ตำแหน่งย่อยอย่างชั้นวางใช้ค่าจากตำแหน่งแม่โดยอัตโนมัติ · เว้นค่าต่ำสุดหรือสูงสุดว่างได้ เช่น ตู้แช่แข็ง “≤ -20 °C”</p></div>
-      {!monitorable && <label className="flex items-center gap-3 min-h-11 font-semibold"><input type="checkbox" className="h-5 w-5" checked={value.own_monitoring} onChange={event => set('own_monitoring', event.target.checked)} />ตั้งค่าเฝ้าระวังแยกสำหรับตำแหน่งนี้ (ปกติใช้ค่าจากตำแหน่งแม่)</label>}
-      {showMonitoring ? <>
-        <label className="flex items-center gap-3 min-h-11 font-semibold"><input type="checkbox" className="h-5 w-5" checked={value.temperature_monitored} onChange={event => set('temperature_monitored', event.target.checked)} />เฝ้าระวังอุณหภูมิ (°C)</label>
-        {value.temperature_monitored && range('อุณหภูมิ', 'temp_min_c', 'temp_max_c', '°C')}
-        <label className="flex items-center gap-3 min-h-11 font-semibold"><input type="checkbox" className="h-5 w-5" checked={value.humidity_monitored} onChange={event => set('humidity_monitored', event.target.checked)} />เฝ้าระวังความชื้นสัมพัทธ์ (%RH)</label>
-        {value.humidity_monitored && range('ความชื้น', 'rh_min_pct', 'rh_max_pct', '%RH')}
-        {mode === 'edit' && (value.temperature_monitored || value.humidity_monitored) && <div className="grid gap-4 border-t border-line pt-5">
-          <div><h3 className="font-bold">เวลาตรวจประจำวัน</h3><p className="muted text-sm">ใช้เวลาไทยทุกวัน · เว้นว่างหมายถึงยังไม่กำหนดรอบ ไม่ถือว่าขาดการตรวจ</p></div>
-          <div className="flex flex-wrap gap-2"><button type="button" className="button secondary" onClick={() => set('check_times', ['08:30'])}>08:30</button><button type="button" className="button secondary" onClick={() => set('check_times', ['08:30', '15:30'])}>08:30 + 15:30</button><button type="button" className="button secondary" onClick={() => set('check_times', [])}>ล้างเวลา</button></div>
-          {value.check_times.map((time, index) => <div key={index} className="flex items-end gap-2"><label className="field flex-1">รอบ {index + 1}<input type="time" className="input" value={time} onChange={event => set('check_times', value.check_times.map((item, i) => i === index ? event.target.value : item))}/></label><button type="button" className="button secondary" onClick={() => set('check_times', value.check_times.filter((_, i) => i !== index))}>ลบรอบ</button></div>)}
-          {value.check_times.length < 4 && <button type="button" className="button secondary justify-self-start" onClick={() => set('check_times', [...value.check_times, ''])}>เพิ่มรอบ</button>}{fieldError('check_times')}
-          <label className="flex items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={value.monitoring_state === 'paused'} onChange={event => set('monitoring_state', event.target.checked ? 'paused' : 'active')}/>หยุดเฝ้าระวังชั่วคราว</label>
-          {value.monitoring_state === 'paused' && <label className="field">เหตุผลที่หยุด<input className="input" value={value.pause_reason} onChange={event => set('pause_reason', event.target.value)} required maxLength={1000}/>{fieldError('pause_reason')}</label>}
-        </div>}
-      </> : <p className="muted text-sm">ตำแหน่งนี้ไม่ตั้งค่าเฝ้าระวังเอง</p>}
     </section>
 
     <section className="surface p-5 sm:p-7 grid gap-4 content-start" aria-labelledby="portal-heading">

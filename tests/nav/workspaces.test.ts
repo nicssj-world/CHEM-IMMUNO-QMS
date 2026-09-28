@@ -25,33 +25,27 @@ const adminBoth = [{ code: 'CHE', role: 'admin' }, { code: 'IMM', role: 'admin' 
 test('a viewer sees the read-only tabs, and a workspace with nothing visible is dropped', () => {
   assert.deepEqual(tabsOf(viewerOnly), {
     dashboard: ['/', '/attention'],
-    'morning-talk': ['/morning-talk', '/morning-talk/history', '/morning-talk/actions'],
     inventory: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
     operations: ['/receive'],
-    environment: ['/environment', '/environment/history', '/environment/excursions'],
-    reports: ['/reports/monthly', '/movements', '/reports/morning-talk', '/reports/environment'],
+    reports: ['/reports/monthly', '/movements'],
   });
 });
 
 test('CHE staff can work (issue, transfer, count) but not adjust, dispose, audit or administer', () => {
   assert.deepEqual(tabsOf(staffChe), {
     dashboard: ['/', '/attention'],
-    'morning-talk': ['/morning-talk', '/morning-talk/history', '/morning-talk/actions'],
     inventory: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
     operations: ['/receive', '/issue', '/transfer', '/counts'],
-    environment: ['/environment', '/environment/check', '/environment/history', '/environment/excursions'],
-    reports: ['/reports/monthly', '/movements', '/reports/morning-talk', '/reports/environment'],
+    reports: ['/reports/monthly', '/movements'],
   });
 });
 
 test('roles are per warehouse: a supervisor in one warehouse gets supervisor tabs, without the both-warehouse admin tabs', () => {
   assert.deepEqual(tabsOf(mixed), {
     dashboard: ['/', '/attention'],
-    'morning-talk': ['/morning-talk', '/morning-talk/history', '/morning-talk/actions'],
     inventory: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
     operations: ['/receive', '/issue', '/transfer', '/counts', '/adjust', '/dispose'],
-    environment: ['/environment', '/environment/check', '/environment/history', '/environment/excursions'],
-    reports: ['/reports/monthly', '/movements', '/audit', '/reports/morning-talk', '/reports/environment'],
+    reports: ['/reports/monthly', '/movements', '/audit'],
     admin: ['/scan/review'],
   });
 });
@@ -61,55 +55,47 @@ test('an admin of one warehouse cannot see the both-warehouse admin pages; an ad
   assert.deepEqual(tabsOf(adminBoth).admin, ['/scan/review', '/import', '/admin/users']);
 });
 
-test('the desktop sidebar has seven workspaces plus the Scan quick action', () => {
-  assert.equal(visibleWorkspaces(navPermissions(access(...adminBoth))).length, 7);
-  assert.equal(visibleWorkspaces(navPermissions(access(...viewerOnly))).length, 6);
+test('the desktop sidebar has five workspaces plus the Scan quick action', () => {
+  assert.equal(visibleWorkspaces(navPermissions(access(...adminBoth))).length, 5);
+  assert.equal(visibleWorkspaces(navPermissions(access(...viewerOnly))).length, 4);
   assert.equal(scanItem.href, '/scan');
   assert.ok(!workspaces.some(workspace => workspace.tabs.some(tab => tab.href === '/scan')), 'Scan stays a quick action, not a tab');
 });
 
-test('Morning Talk and Environment are real workspaces', () => {
-  assert.deepEqual(workspaces.map(workspace => workspace.key), ['dashboard', 'morning-talk', 'inventory', 'operations', 'environment', 'reports', 'admin']);
+test('paused modules and their reports are hidden from navigation', () => {
+  assert.deepEqual(workspaces.map(workspace => workspace.key), ['dashboard', 'inventory', 'operations', 'reports', 'admin']);
   const hrefs = workspaces.flatMap(workspace => workspace.tabs.map(tab => tab.href));
-  assert.ok(hrefs.includes('/environment/check') && hrefs.includes('/reports/environment'));
-  assert.deepEqual(workspaces.find(workspace => workspace.key === 'morning-talk')!.tabs.map(tab => tab.label), ['วันนี้', 'ประวัติ', 'งานค้าง']);
-  assert.equal(workspaces.find(workspace => workspace.key === 'reports')!.tabs.at(-1)!.href, '/reports/environment');
+  for (const href of ['/morning-talk', '/morning-talk/history', '/morning-talk/actions', '/environment', '/environment/check', '/environment/history', '/environment/excursions', '/reports/morning-talk', '/reports/environment']) assert.ok(!hrefs.includes(href), `${href} stays out of navigation`);
 });
 
-test('Morning Talk is visible to every role that can open a warehouse, with no role gate on any of its tabs', () => {
-  for (const grants of [viewerOnly, staffChe, mixed, adminChe, adminBoth]) assert.deepEqual(tabsOf(grants)['morning-talk'], ['/morning-talk', '/morning-talk/history', '/morning-talk/actions']);
-  for (const tab of [...workspaces.find(workspace => workspace.key === 'morning-talk')!.tabs, workspaces.find(workspace => workspace.key === 'reports')!.tabs.find(tab => tab.href === '/reports/morning-talk')!]) assert.equal(tab.need, undefined, `${tab.href} is gated inside the pages and the database, not by navigation`);
+test('paused modules stay out of navigation for every warehouse role', () => {
+  for (const grants of [viewerOnly, staffChe, mixed, adminChe, adminBoth]) {
+    const hrefs = Object.values(tabsOf(grants)).flat();
+    assert.ok(!hrefs.some(href => href.startsWith('/morning-talk') || href.startsWith('/environment') || href === '/reports/morning-talk' || href === '/reports/environment'));
+  }
 });
 
-test('Morning Talk routes resolve to their own tab, and the printable report stays in Reports', () => {
+test('paused module routes are outside navigation; active reports stay in Reports', () => {
   const at = (pathname: string) => { const found = activeTab(pathname); return found ? `${found.workspace.key}:${found.tab.href}` : null; };
-  assert.equal(at('/morning-talk'), 'morning-talk:/morning-talk');
-  assert.equal(at('/morning-talk/history'), 'morning-talk:/morning-talk/history');
-  assert.equal(at('/morning-talk/actions'), 'morning-talk:/morning-talk/actions');
-  assert.equal(at('/morning-talk/new'), 'morning-talk:/morning-talk');
-  assert.equal(at('/morning-talk/0a1b2c'), 'morning-talk:/morning-talk');
-  assert.equal(at('/morning-talk/0a1b2c/edit'), 'morning-talk:/morning-talk');
-  assert.equal(at('/reports/morning-talk'), 'reports:/reports/morning-talk');
+  for (const pathname of ['/morning-talk', '/morning-talk/history', '/morning-talk/actions', '/morning-talk/new', '/morning-talk/0a1b2c/edit', '/environment', '/environment/check', '/environment/history', '/environment/excursions', '/reports/morning-talk', '/reports/environment']) assert.equal(at(pathname), null, `${pathname} has no navigation tab while paused`);
   assert.equal(at('/reports/monthly'), 'reports:/reports/monthly');
   assert.equal(at('/morning-talks'), null, 'a prefix must end at a path boundary');
-  assert.equal(activeWorkspace('/morning-talk/history')?.key, 'morning-talk');
-  assert.equal(activeWorkspace('/reports/morning-talk')?.key, 'reports');
+  assert.equal(activeWorkspace('/morning-talk/history'), null);
+  assert.equal(activeWorkspace('/reports/morning-talk'), null);
 });
 
 test('the mobile bottom bar is not changed by the new workspace', async () => {
   const { readFile } = await import('node:fs/promises');
   const bottom = await readFile(path.join(process.cwd(), 'src/components/bottom-nav.tsx'), 'utf8');
-  assert.doesNotMatch(bottom, /morning/i, 'Morning Talk is reached through the tab strip and /more, not a sixth bottom tab');
+  assert.doesNotMatch(bottom, /morning/i, 'paused modules stay out of the mobile bottom bar');
   for (const label of ['ภาพรวม', 'คงคลัง', 'สแกน', 'รับเข้า', 'เพิ่มเติม']) assert.ok(bottom.includes(label), label);
 });
 
 test('navigation does not relax any authorization: every tab keeps its previous role gate', () => {
   const previous: Record<string, string | undefined> = {
     '/': undefined, '/attention': undefined, '/receive': undefined, '/issue': 'work', '/transfer': 'work', '/counts': 'work', '/adjust': 'supervise', '/dispose': 'supervise',
-    '/morning-talk': undefined, '/morning-talk/history': undefined, '/morning-talk/actions': undefined, '/reports/morning-talk': undefined,
     '/products': undefined, '/stock': undefined, '/reorder': undefined, '/vendors': undefined, '/reports/monthly': undefined, '/movements': undefined,
     '/scan/review': 'supervise', '/locations': 'supervise', '/import': 'adminBoth', '/audit': 'supervise', '/admin/users': 'adminBoth',
-    '/environment': undefined, '/environment/check': 'work', '/environment/history': undefined, '/environment/excursions': undefined, '/reports/environment': undefined,
   };
   for (const tab of workspaces.flatMap(workspace => workspace.tabs)) {
     if (tab.href === '/locations') { assert.equal(tab.need, undefined, 'the Locations tab is now visible to every role that can read a warehouse (navigation only)'); continue; }
@@ -184,10 +170,11 @@ test('every real page route belongs to exactly one workspace tab, or is one of t
   const routes = pageRoutes(path.join(process.cwd(), 'src/app/(app)'));
   assert.ok(routes.length > 25, 'the page scan found the app routes');
   const outside = new Set(['/scan', '/account', '/more']);
+  const pausedModuleRoute = (route: string) => route.startsWith('/morning-talk') || route.startsWith('/environment') || route === '/reports/morning-talk' || route === '/reports/environment';
   const qrEntry = (route: string) => route === '/q/sample';
   for (const route of routes) {
     const owners = workspaces.flatMap(workspace => workspace.tabs.filter(tab => activeTab(route)?.tab === tab).map(() => workspace.key));
-    if (outside.has(route) || qrEntry(route)) { assert.equal(owners.length, 0, `${route} is intentionally outside the workspaces`); continue; }
+    if (outside.has(route) || qrEntry(route) || pausedModuleRoute(route)) { assert.equal(owners.length, 0, `${route} is intentionally outside the workspaces`); continue; }
     assert.equal(owners.length, 1, `${route} must belong to exactly one workspace tab`);
   }
   for (const tab of workspaces.flatMap(workspace => workspace.tabs)) assert.ok(routes.includes(tab.href), `${tab.href} must be a real page`);
@@ -200,9 +187,8 @@ const categoriesFor = (grants: Grant[]) => sidebarCategories(navPermissions(acce
 const category = (grants: Grant[], key: string) => categoriesFor(grants).find(item => item.key === key)!;
 const categoryHrefs = (grants: Grant[], key: string) => category(grants, key)?.groups.flatMap(g => g.items.map(i => i.href));
 
-test('six named categories cover all seven workspaces; Morning Talk and Environment share one heading', () => {
-  assert.deepEqual(navCategories.map(c => c.key), ['home', 'stock', 'operations', 'monitoring', 'reports', 'system']);
-  assert.deepEqual(navCategories.find(c => c.key === 'monitoring')!.workspaces, ['morning-talk', 'environment']);
+test('five named categories cover all five active workspaces', () => {
+  assert.deepEqual(navCategories.map(c => c.key), ['home', 'stock', 'operations', 'reports', 'system']);
   const owned = navCategories.flatMap(c => c.workspaces);
   assert.deepEqual([...owned].sort(), workspaces.map(w => w.key).sort(), 'every workspace belongs to exactly one category');
 });
@@ -213,19 +199,15 @@ test('every category still carries its full set of visible links (rendering coll
     home: ['/', '/attention'],
     stock: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
     operations: ['/receive', '/issue', '/transfer', '/counts', '/adjust', '/dispose'],
-    monitoring: ['/morning-talk', '/morning-talk/history', '/morning-talk/actions', '/environment', '/environment/check', '/environment/history', '/environment/excursions'],
-    reports: ['/reports/monthly', '/movements', '/audit', '/reports/morning-talk', '/reports/environment'],
+    reports: ['/reports/monthly', '/movements', '/audit'],
     system: ['/scan/review', '/import', '/admin/users'],
   });
-  // MONITORING is the only category grouping more than one workspace, so it is the only one that needs a sub-heading per workspace.
-  assert.equal(category(adminBoth, 'monitoring').groups.length, 2);
-  assert.deepEqual(category(adminBoth, 'monitoring').groups.map(g => g.workspaceLabel), ['Morning Talk', 'อุณหภูมิ/ความชื้น']);
   for (const key of ['home', 'stock', 'operations', 'reports', 'system']) assert.equal(category(adminBoth, key).groups.length, 1, `${key} groups exactly one workspace`);
 });
 
 test('Home is the only non-collapsible category; every other category is collapsible', () => {
   assert.equal(category(adminBoth, 'home').collapsible, false);
-  for (const key of ['stock', 'operations', 'monitoring', 'reports', 'system']) assert.equal(category(adminBoth, key).collapsible, true, `${key} is collapsible`);
+  for (const key of ['stock', 'operations', 'reports', 'system']) assert.equal(category(adminBoth, key).collapsible, true, `${key} is collapsible`);
 });
 
 test('categoryForPathname resolves the category that owns the current route, or null outside every category', () => {
@@ -235,8 +217,8 @@ test('categoryForPathname resolves the category that owns the current route, or 
   assert.equal(categoryForPathname('/locations/abc/edit'), 'stock');
   assert.equal(categoryForPathname('/receive'), 'operations');
   assert.equal(categoryForPathname('/counts/abc'), 'operations');
-  assert.equal(categoryForPathname('/morning-talk/history'), 'monitoring');
-  assert.equal(categoryForPathname('/environment/excursions/abc'), 'monitoring');
+  assert.equal(categoryForPathname('/morning-talk/history'), null);
+  assert.equal(categoryForPathname('/environment/excursions/abc'), null);
   assert.equal(categoryForPathname('/reports/monthly'), 'reports');
   assert.equal(categoryForPathname('/admin/users'), 'system');
   assert.equal(categoryForPathname('/scan'), null, 'Scan is outside every category');

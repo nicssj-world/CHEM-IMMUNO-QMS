@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Pencil, Printer, Thermometer } from 'lucide-react';
+import { Pencil, Printer } from 'lucide-react';
 import { requireAccess, canSupervise } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { rotateLocationQr, setLocationActive } from '@/app/actions/locations';
@@ -8,23 +8,18 @@ import { ConfirmForm } from '@/components/confirm-form';
 import { LocationTypeIcon } from '@/components/location-type-icon';
 import { PortalLink } from '@/components/portal-link';
 import { expiryBucket, type ExpiryBucket } from '@/lib/inventory-insights';
-import { formatDate, formatDateTime } from '@/lib/format';
+import { formatDateTime } from '@/lib/format';
 import { logUserMessage, savedNotice } from '@/lib/messages';
 import { unitLabel } from '@/lib/units';
 import {
-  LOCATION_COLUMNS, buildLocationStock, describeEnvConfig, locationTypeLabel,
+  LOCATION_COLUMNS, buildLocationStock, locationTypeLabel,
   type BalanceRow, type LocationRow, type StockProduct,
 } from '@/lib/locations';
-import { bangkokDate, ENV_CONFIG_COLUMNS, ENV_READING_COLUMNS, readingValues, READING_LABEL, ROUND_LABEL, type DayRound, type EnvironmentReading, type MonitorConfig } from '@/lib/environment';
-import { latestConfigByLocation, resolveEnvironmentMonitor } from '@/lib/environment-monitor';
-import { normalizeMetricView, resolveTrendRange } from '@/lib/environment-trend';
-import { loadTrendData, trendMetrics } from '@/lib/environment-trend-data';
-import { EnvironmentTrendPanel, trendPeriodLabel } from '@/components/environment/trend-panel';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const expiryLabels: Record<ExpiryBucket, string> = { EXPIRED: 'หมดอายุแล้ว', '≤30': 'หมดอายุใน 30 วัน', '31–60': 'หมดอายุใน 31–60 วัน', '61–90': 'หมดอายุใน 61–90 วัน', '>90': '' };
 
-export default async function LocationDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; saved?: string; metric?: string }> }) {
+export default async function LocationDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; saved?: string }> }) {
   const { id } = await params;
   const query = await searchParams;
   const access = await requireAccess();
@@ -37,12 +32,8 @@ export default async function LocationDetailPage({ params, searchParams }: { par
   if (!location || !warehouse) notFound();
   const canManage = canSupervise(warehouse.role);
 
-  const [locationResult, configResult] = await Promise.all([
-    client.from('ci_locations').select(LOCATION_COLUMNS).eq('warehouse_id', warehouse.id).order('code'),
-    client.from('ci_location_env_configs').select(ENV_CONFIG_COLUMNS).eq('warehouse_id', warehouse.id),
-  ]);
+  const locationResult = await client.from('ci_locations').select(LOCATION_COLUMNS).eq('warehouse_id', warehouse.id).order('code');
   const all = (locationResult.data ?? []) as LocationRow[];
-  const configs = (configResult.data ?? []) as MonitorConfig[];
   const byId = new Map(all.map(item => [item.id, item]));
   const parent = location.parent_location_id ? byId.get(location.parent_location_id) : undefined;
   const children = all.filter(item => item.parent_location_id === id);
@@ -56,23 +47,6 @@ export default async function LocationDetailPage({ params, searchParams }: { par
   const stock = buildLocationStock(balances, (productResult.data ?? []) as StockProduct[], new Map(scope.map(item => [item.id, item.code])));
   const stockError = balanceResult.error ?? productResult.error;
 
-  const monitorId = resolveEnvironmentMonitor(id, all, configs);
-  const monitor = monitorId ? byId.get(monitorId) : undefined;
-  const monitorConfig = monitorId ? latestConfigByLocation(configs).get(monitorId) : undefined;
-  const ranges = describeEnvConfig(monitorConfig);
-  const [environmentReading, environmentRounds, environmentEvents] = monitorId ? await Promise.all([
-    client.from('ci_environment_effective_readings').select(ENV_READING_COLUMNS).eq('location_id', monitorId).order('observed_at', { ascending: false }).limit(1),
-    client.rpc('ci_environment_day_status', { p_warehouse_id: warehouse.id, p_date: bangkokDate() }),
-    client.from('ci_environment_excursions').select('id,status').eq('location_id', monitorId).neq('status', 'resolved').limit(1),
-  ]) : [{ data: [] }, { data: [] }, { data: [] }];
-  const latestReading = (environmentReading.data?.[0] ?? null) as EnvironmentReading | null;
-  const rounds = ((environmentRounds.data ?? []) as DayRound[]).filter(round => round.location_id === monitorId);
-  const openEvent = environmentEvents.data?.[0] ?? null;
-  // Compact trend for the monitored container (never a separate shelf trend): the whole current Bangkok month, effective readings only.
-  const trendRange = resolveTrendRange({ range: 'month' });
-  const trend = monitorId ? await loadTrendData(client, Number(warehouse.id), monitorId, trendRange) : null;
-  const trendAvailable = trend ? trendMetrics(trend.configs, monitorConfig, trendRange) : [];
-  const trendView = normalizeMetricView(query.metric, trendAvailable);
   const here = `?warehouse=${warehouse.code}`;
   const showSubLocation = children.length > 0;
 
@@ -103,32 +77,11 @@ export default async function LocationDetailPage({ params, searchParams }: { par
       </dl>
     </section>
 
-    <section className="surface p-5 sm:p-7 grid gap-3 min-w-0" aria-labelledby="environment-heading"><h2 id="environment-heading" className="font-bold text-lg flex items-center gap-2"><Thermometer size={20} aria-hidden className="text-[var(--teal)]" />{monitor && monitor.id !== id ? `สภาพแวดล้อมของ ${monitor.code} (ตู้/ห้องที่ตำแหน่งนี้อยู่)` : 'สภาพแวดล้อม'}</h2>
-      {monitor && monitor.id === id ? <p>ตำแหน่งนี้มีการเฝ้าระวังอุณหภูมิ/ความชื้นเอง</p>
-        : monitor ? <p>สภาพแวดล้อมควบคุมโดย <Link className="font-bold" href={`/locations/${monitor.id}${here}`}>{monitor.code}</Link> · {monitor.name}</p>
-        : <p className="muted">ไม่ได้ตั้งค่าการเฝ้าระวังอุณหภูมิ/ความชื้น</p>}
-      {ranges && (ranges.temperature || ranges.humidity) && <dl className="grid sm:grid-cols-2 gap-3 text-sm">
-        {ranges.temperature && <div><dt className="muted">อุณหภูมิที่ยอมรับได้</dt><dd className="text-lg font-bold">{ranges.temperature}</dd></div>}
-        {ranges.humidity && <div><dt className="muted">ความชื้นสัมพัทธ์ที่ยอมรับได้</dt><dd className="text-lg font-bold">{ranges.humidity}</dd></div>}
-      </dl>}
-      {monitor && <><p className="text-sm">เวลาตรวจ: {monitorConfig?.check_times.length ? monitorConfig.check_times.map(time => time.slice(0, 5)).join(', ') : 'ยังไม่ตั้งเวลาตรวจ'} · {monitorConfig?.monitoring_state === 'paused' ? `หยุดเฝ้าระวัง: ${monitorConfig.pause_reason ?? '—'}` : 'กำลังเฝ้าระวัง'}</p>
-        <p className="text-sm">ค่าล่าสุด: <strong>{readingValues(latestReading)}</strong>{latestReading && <> · {READING_LABEL[latestReading.overall_status]} · {formatDateTime(latestReading.observed_at)}</>}</p>
-        <div className="flex flex-wrap gap-2">{rounds.map((round, index) => <span key={`${round.round_no ?? 'special'}:${index}`} className="badge">{round.due_time?.slice(0, 5) ?? '—'} · {ROUND_LABEL[round.state]}</span>)}</div>
-        <div className="flex flex-wrap gap-2">{warehouse.role !== 'viewer' && monitorConfig?.monitoring_state === 'active' && <Link className="button" href={`/environment/check/${monitor.id}?warehouse=${warehouse.code}`}>บันทึกอุณหภูมิ/ความชื้นของ {monitor.code}</Link>}<Link className="button secondary" href={`/environment/history?warehouse=${warehouse.code}&location=${monitor.id}&range=month&month=${trendRange.month}&metric=${trendView ?? 'both'}`}>ดูกราฟและประวัติทั้งหมด</Link>{openEvent && <Link className="button secondary" href={`/environment/excursions/${openEvent.id}`}>เหตุการณ์นอกช่วง</Link>}{monitor.portal_equipment_url && <PortalLink url={monitor.portal_equipment_url} label={monitor.portal_equipment_label} context="ตรวจสอบเครื่องใน Portal"/>}</div>
-        {trend && <section className="grid gap-3 border-t border-line pt-4 min-w-0" aria-labelledby="trend-heading">
-          <h3 id="trend-heading" className="font-bold">แนวโน้มเดือนนี้ · {trendPeriodLabel(trendRange)}{monitor.id !== id ? ` ของ ${monitor.code}` : ''}</h3>
-          {monitor.id !== id && <p className="muted text-sm">กราฟนี้เป็นของ {monitor.code} ซึ่งเป็นตู้/ห้องที่เฝ้าระวังตำแหน่งนี้ · ตำแหน่งนี้ไม่มีค่าแยกของตัวเอง</p>}
-          <EnvironmentTrendPanel compact location={monitor} range={trendRange} view={trendView} available={trendAvailable} data={trend}
-            metricHref={view => `/locations/${id}?warehouse=${warehouse.code}&metric=${view}`} />
-        </section>}
-      </>}
-    </section>
-
     <section className="surface overflow-hidden" aria-labelledby="stock-heading"><div className="px-5 py-4 flex justify-between gap-3"><h2 id="stock-heading" className="font-bold">น้ำยาคงเหลือ{showSubLocation ? ' (รวมตำแหน่งย่อย)' : ''}</h2><span className="muted text-sm">{stock.length} รายการ LOT</span></div>
       {stockError && <p className="error mx-5 mb-4" role="alert">อ่านยอดคงเหลือไม่สำเร็จ: {logUserMessage('locationStock', stockError)}</p>}
       {stock.length ? <>
-        <div className="desktop-table table-wrap"><table className="data-table"><thead><tr><th>น้ำยา</th><th>LOT</th><th>หมดอายุ</th><th>จำนวน</th>{showSubLocation && <th>ตำแหน่ง</th>}</tr></thead><tbody>{stock.map(row => { const bucket = expiryBucket(row.expiry_date); return <tr key={row.key}><td><span className="font-bold">{row.product_code}</span><br/><span className="muted text-sm">{row.product_name}</span></td><td>{row.lot_number}</td><td>{formatDate(row.expiry_date)}{expiryLabels[bucket] && <> <span className="badge">{expiryLabels[bucket]}</span></>}</td><td className="font-bold">{row.quantity.toLocaleString()} {unitLabel(row.unit)}</td>{showSubLocation && <td>{row.location_code}</td>}</tr>; })}</tbody></table></div>
-        <ul className="mobile-card-list px-4 pb-4">{stock.map(row => { const bucket = expiryBucket(row.expiry_date); return <li key={row.key} className="rounded-xl border border-line p-3 grid gap-1"><p className="font-bold">{row.product_code} <span className="font-normal muted">{row.product_name}</span></p><p className="text-sm">LOT {row.lot_number} · หมดอายุ {formatDate(row.expiry_date)}{expiryLabels[bucket] && <> <span className="badge">{expiryLabels[bucket]}</span></>}</p><p className="text-sm font-bold">{row.quantity.toLocaleString()} {unitLabel(row.unit)}{showSubLocation ? <span className="font-normal muted"> · {row.location_code}</span> : null}</p></li>; })}</ul>
+        <div className="desktop-table table-wrap"><table className="data-table"><thead><tr><th>น้ำยา</th><th>LOT</th><th>หมดอายุ</th><th>จำนวน</th>{showSubLocation && <th>ตำแหน่ง</th>}</tr></thead><tbody>{stock.map(row => { const bucket = expiryBucket(row.expiry_date); return <tr key={row.key}><td><span className="font-bold">{row.product_code}</span><br/><span className="muted text-sm">{row.product_name}</span></td><td>{row.lot_number}</td><td>{row.expiry_date}{expiryLabels[bucket] && <> <span className="badge">{expiryLabels[bucket]}</span></>}</td><td className="font-bold">{row.quantity.toLocaleString()} {unitLabel(row.unit)}</td>{showSubLocation && <td>{row.location_code}</td>}</tr>; })}</tbody></table></div>
+        <ul className="mobile-card-list px-4 pb-4">{stock.map(row => { const bucket = expiryBucket(row.expiry_date); return <li key={row.key} className="rounded-xl border border-line p-3 grid gap-1"><p className="font-bold">{row.product_code} <span className="font-normal muted">{row.product_name}</span></p><p className="text-sm">LOT {row.lot_number} · หมดอายุ {row.expiry_date}{expiryLabels[bucket] && <> <span className="badge">{expiryLabels[bucket]}</span></>}</p><p className="text-sm font-bold">{row.quantity.toLocaleString()} {unitLabel(row.unit)}{showSubLocation ? <span className="font-normal muted"> · {row.location_code}</span> : null}</p></li>; })}</ul>
       </> : <p className="muted px-5 pb-5">ไม่มีน้ำยาคงเหลือในตำแหน่งนี้</p>}
     </section>
 

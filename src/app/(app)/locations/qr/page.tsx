@@ -4,8 +4,7 @@ import { selectedWarehouse } from '@/lib/warehouse';
 import { createClient } from '@/lib/supabase/server';
 import { WarehouseSwitch } from '@/components/warehouse-switch';
 import { PrintButton } from '@/components/print-button';
-import { ENV_CONFIG_COLUMNS, LOCATION_COLUMNS, describeEnvConfig, locationBreadcrumb, type EnvConfigRow, type LocationRow } from '@/lib/locations';
-import { latestConfigByLocation, resolveEnvironmentMonitor } from '@/lib/environment-monitor';
+import { LOCATION_COLUMNS, locationBreadcrumb, type LocationRow } from '@/lib/locations';
 import { appOrigin, locationQrUrl } from '@/lib/location-qr';
 import { qrDataUri } from '@/lib/qr';
 
@@ -27,14 +26,11 @@ export default async function LocationQrPage({ searchParams }: { searchParams: P
     return <main className="grid gap-4 max-w-[900px]"><div><p className="eyebrow mb-2">QR labels</p><h1 className="page-title">พิมพ์ป้าย QR ตำแหน่ง</h1></div><WarehouseSwitch warehouses={access.warehouses} selected={warehouse} path="/locations/qr"/><p className="notice">พิมพ์ป้าย QR ได้เฉพาะหัวหน้างานหรือผู้ดูแลระบบของคลังนี้ · <Link href={`/locations?warehouse=${warehouse.code}`}>กลับไปรายการตำแหน่ง</Link></p></main>;
   }
   const client = await createClient();
-  const [locationResult, configResult] = client ? await Promise.all([
-    client.from('ci_locations').select(LOCATION_COLUMNS).eq('warehouse_id', warehouse.id).order('code'),
-    client.from('ci_location_env_configs').select(ENV_CONFIG_COLUMNS).eq('warehouse_id', warehouse.id),
-  ]) : [{ data: [], error: null }, { data: [], error: null }];
+  const locationResult = client
+    ? await client.from('ci_locations').select(LOCATION_COLUMNS).eq('warehouse_id', warehouse.id).order('code')
+    : { data: [], error: null };
   const all = (locationResult.data ?? []) as LocationRow[];
-  const configs = (configResult.data ?? []) as EnvConfigRow[];
   const byId = new Map(all.map(location => [location.id, location]));
-  const current = latestConfigByLocation(configs);
 
   const ids = parseIds(params.ids);
   const selected = ids.length ? all.filter(location => ids.includes(location.id)) : all;
@@ -61,10 +57,7 @@ export default async function LocationQrPage({ searchParams }: { searchParams: P
     </div>
     {labels.length === 0 ? <p className="notice print-hide">{ids.length ? 'ไม่พบตำแหน่งที่เลือกในคลังนี้' : 'ยังไม่มีตำแหน่งที่ใช้งานในคลังนี้'}</p> : <section className="label-sheet" aria-label="ป้าย QR ตำแหน่ง">
       {labels.map((location, index) => {
-        const monitorId = resolveEnvironmentMonitor(location.id, all, configs);
-        const monitor = monitorId ? byId.get(monitorId) : null;
-        const ranges = monitorId === location.id ? describeEnvConfig(current.get(location.id) as EnvConfigRow | undefined) : null;
-        const detail = [location.storage_condition, ranges?.temperature, ranges?.humidity].filter(Boolean).join(' · ');
+        const detail = location.storage_condition;
         return <article className="location-label" key={location.id}>
           {/* eslint-disable-next-line @next/next/no-img-element -- a generated data URI; next/image cannot optimise it */}
           <img src={qr[index]} alt={`QR ตำแหน่ง ${location.code}`} />
@@ -72,7 +65,7 @@ export default async function LocationQrPage({ searchParams }: { searchParams: P
             <p className="location-label-code">{location.code}</p>
             <p className="location-label-name">{location.name}</p>
             <p className="location-label-meta">{warehouse.code}{detail ? ` · ${detail}` : ''}{!location.active ? ' · ปิดใช้งาน' : ''}</p>
-            <p className="location-label-foot">{monitor && monitor.id !== location.id ? `ควบคุมสภาพแวดล้อมโดย ${monitor.code}` : 'สแกนเพื่อเปิดตำแหน่ง'}</p>
+            <p className="location-label-foot">สแกนเพื่อเปิดตำแหน่ง</p>
           </div>
         </article>;
       })}
