@@ -80,6 +80,49 @@ export async function confirmReceipt(form: FormData) {
   success(path,`รับเข้า ${lines.length} แพ็กเกจ`);
 }
 
+export type EditReceiptResult = { ok: true } | { ok: false; message: string };
+
+/** Corrects the confirmed receipt, its original stock movement and its Invoice in one database transaction. */
+export async function editReceipt(receiptId: string, input: {
+  invoice: { invoice_number: string; invoice_date: string; po_number: string };
+  lines: { receipt_line_id?: string; invoice_line_id: string; quantity: number; lot_number: string; expiry_date: string; location_id: string }[];
+  assessment: import('@/lib/receipt-assessment').AssessmentInput;
+}): Promise<EditReceiptResult> {
+  const access = await requireAccess();
+  const client = await createClient();
+  if (!client) return { ok: false, message: 'ยังไม่ได้ตั้งค่า Supabase' };
+  const { data: receipt, error: receiptError } = await client.from('ci_receipts').select('id,warehouse_id').eq('id', receiptId).maybeSingle();
+  if (receiptError || !receipt) return { ok: false, message: logUserMessage('editReceipt', receiptError, 'ไม่พบใบรับเข้าที่ต้องการแก้ไข') };
+  const warehouse = access.warehouses.find(item => Number(item.id) === Number(receipt.warehouse_id));
+  if (!warehouse || !canSupervise(warehouse.role)) return { ok: false, message: 'เฉพาะ Admin และ Supervisor ของคลังนี้จึงแก้ไขใบรับเข้าได้' };
+  if (!Array.isArray(input.lines) || input.lines.length === 0) return { ok: false, message: 'กรุณาเก็บรายการน้ำยาไว้อย่างน้อยหนึ่งรายการ' };
+  if (input.lines.some(line => !Number.isSafeInteger(line.quantity) || line.quantity <= 0 || !line.invoice_line_id || !line.lot_number.trim() || !line.expiry_date || !line.location_id)) {
+    return { ok: false, message: 'กรุณาตรวจจำนวน, Product, LOT, วันหมดอายุ และตำแหน่งของทุกรายการ' };
+  }
+  const assessmentProblem = assessmentError(input.assessment);
+  if (assessmentProblem) return { ok: false, message: assessmentProblem };
+  const p_data = {
+    invoice: {
+      invoice_number: input.invoice.invoice_number.trim(),
+      invoice_date: input.invoice.invoice_date,
+      po_number: input.invoice.po_number.trim(),
+    },
+    lines: input.lines.map(line => ({
+      receipt_line_id: line.receipt_line_id || null,
+      invoice_line_id: line.invoice_line_id,
+      quantity: String(line.quantity),
+      lot_number: line.lot_number.trim(),
+      expiry_date: line.expiry_date,
+      location_id: line.location_id,
+    })),
+    assessment: toAssessmentPayload(input.assessment),
+  };
+  const { error } = await client.rpc('ci_edit_receipt', { p_receipt_id: receiptId, p_data });
+  if (error) return { ok: false, message: logUserMessage('editReceipt', error, 'บันทึกการแก้ไขใบรับเข้าไม่สำเร็จ') };
+  for (const path of ['/receive', '/stock', '/issue', '/transfer', '/adjust', '/attention', '/movements', '/vendors']) revalidatePath(path);
+  return { ok: true };
+}
+
 export async function issueStock(form: FormData) {
   const back = pageOf('/issue', form, ['warehouse','product','lot']);
   const client = await clientOrFail(back);
