@@ -2,7 +2,10 @@
 const codeMessages: Record<string, string> = {
   CI_ACCESS_DENIED: 'คุณไม่มีสิทธิ์ทำรายการนี้ในคลังนี้',
   CI_ACTIVE_USER_NEEDS_WAREHOUSE: 'ผู้ใช้ที่เปิดใช้งานต้องมีสิทธิ์อย่างน้อยหนึ่งคลัง',
+  CI_ADJUSTMENT_NEW_LOT_MUST_INCREASE: 'LOT ใหม่เริ่มยอดได้ด้วยการปรับเพิ่ม (+) เท่านั้น',
+  CI_ADJUSTMENT_PRODUCT_MISMATCH: 'น้ำยาไม่ตรงกับ LOT ที่เลือก · ตรวจรายการก่อนบันทึก',
   CI_ADJUSTMENT_REASON_OR_QUANTITY_INVALID: 'กรุณาระบุเหตุผล และจำนวนปรับที่ไม่เป็นศูนย์',
+  CI_ADJUSTMENT_LOT_MISMATCH: 'เลข LOT ไม่ตรงกับข้อมูลที่เลือก · ตรวจรายการก่อนบันทึก',
   CI_ALREADY_REVERSED: 'รายการนี้ถูกย้อนไปแล้ว ย้อนซ้ำไม่ได้',
   CI_CONFIRMED_HISTORY_IMMUTABLE: 'รายการที่ยืนยันแล้วแก้ไขไม่ได้ · ใช้การยกเลิกรายการแทน',
   CI_COUNT_APPROVAL_INVALID: 'อนุมัติรอบนับไม่ได้ · ยอดในระบบเปลี่ยนหลังเริ่มนับ หรือข้อมูลไม่ครบ',
@@ -48,6 +51,7 @@ const codeMessages: Record<string, string> = {
   CI_PRODUCT_IDENTIFIERS_REQUIRED: 'กรุณาระบุ REF ปัจจุบันของน้ำยา',
   CI_PRODUCT_IDENTITY_IMMUTABLE: 'แก้ไขรหัสหรือคลังของน้ำยาเดิมไม่ได้',
   CI_PRODUCT_NOT_FOUND: 'ไม่พบน้ำยา',
+  CI_STOCK_LOT_NOT_FOUND: 'ไม่พบ LOT ที่เลือก · โหลดหน้าใหม่แล้วลองอีกครั้ง',
   CI_PRODUCT_TYPE_HAS_RELATIONS: 'เปลี่ยนประเภทน้ำยาไม่ได้ เพราะมีความสัมพันธ์กับน้ำยาอื่นอยู่',
   CI_CURRENT_REF_REQUIRED: 'กรุณาระบุ REF ปัจจุบันของน้ำยา',
   CI_RECEIPT_ASSESSMENT_REQUIRED: 'กรุณาบันทึกผลตรวจรับให้ครบ',

@@ -7,6 +7,7 @@ import { logUserMessage } from '@/lib/messages';
 import { acknowledgement, checklistProgress, isDateOnly, isTalkScope, scopeLabel, searchTerm, TALK_SCOPES, type TalkRow } from '@/lib/morning-talk';
 import { TALK_COLUMNS, attachChildren } from '@/lib/morning-talk-data';
 import { ScopeBadge } from '@/components/morning-talk/talk-card';
+import { LiveSearchForm } from '@/components/live-search-form';
 
 const PAGE_SIZE = 20;
 type Params = { q?: string; scope?: string; from?: string; to?: string; page?: string };
@@ -44,13 +45,13 @@ export default async function MorningTalkHistoryPage({ searchParams }: { searchP
   const current = { q, scope, from, to };
   return <main className="grid gap-5 max-w-[980px]">
     <div><p className="eyebrow mb-2">Morning Talk</p><h1 className="page-title">ประวัติ Morning Talk</h1><p className="muted mt-2 text-sm">ทุกครั้งที่คุณมีสิทธิ์ดู · {total} รายการ</p></div>
-    <form method="get" className="surface p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_180px_160px_160px_auto] items-end" aria-label="ค้นหาประวัติ">
+    <LiveSearchForm className="surface p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_180px_160px_160px_auto] items-end" ariaLabel="ค้นหาประวัติ">
       <label className="field">ค้นหา<input className="input" type="search" name="q" defaultValue={q} maxLength={80} placeholder="หัวข้อหรือวาระ" /></label>
       <label className="field">ขอบเขต<select className="input" name="scope" defaultValue={scope}><option value="">ทั้งหมด</option>{TALK_SCOPES.map(item => <option key={item} value={item}>{item === 'ALL' ? 'ทั้งสองคลัง (ALL)' : `${scopeLabel(item)} (${item})`}</option>)}</select></label>
       <label className="field">ตั้งแต่<input className="input" type="date" name="from" defaultValue={from} /></label>
       <label className="field">ถึง<input className="input" type="date" name="to" defaultValue={to} /></label>
-      <div className="flex gap-2"><button className="button">ค้นหา</button>{(q || scope || from || to) && <Link className="button secondary" href="/morning-talk/history">ล้าง</Link>}</div>
-    </form>
+      <div className="flex gap-2">{(q || scope || from || to) && <Link className="button secondary" href="/morning-talk/history">ล้าง</Link>}</div>
+    </LiveSearchForm>
     <section aria-label="รายการ Morning Talk" className="grid gap-3">
       {detail.data.map(talk => { const ack = acknowledgement(talk.attendees); const progress = checklistProgress(talk.checklist); return <Link key={talk.id} href={`/morning-talk/${talk.id}`} className="surface p-4 grid gap-1.5 no-underline text-[var(--ink)]">
         <span className="flex flex-wrap items-center gap-2"><ScopeBadge scope={talk.scope} />{talk.status === 'cancelled' && <span className="badge" style={{ background: '#fff1f2', color: '#8c2534' }}><Ban size={13} aria-hidden className="mr-1" />ยกเลิกแล้ว</span>}<span className="muted text-sm">{formatDate(talk.talk_date)}</span></span>

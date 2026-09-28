@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { requireAccess } from '@/lib/auth';
+import { requireAccess, canSupervise } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { logUserMessage } from '@/lib/messages';
 import { safeReturnPath } from '@/lib/return-path';
@@ -103,10 +103,46 @@ export async function transferStock(form: FormData) {
 export async function adjustStock(form: FormData) {
   const back = pageOf('/adjust', form, ['warehouse','product']);
   const client = await clientOrFail(back);
-  const payload = { lot_id: value(form,'lot_id'), location_id: value(form,'location_id'), quantity_delta: value(form,'quantity_delta'), reason: value(form,'reason'), idempotency_key: value(form,'idempotency_key') };
+  const payload = {
+    lot_id: value(form,'lot_id') || null,
+    product_id: value(form,'product_id') || null,
+    warehouse_id: value(form,'warehouse_id') || null,
+    lot_number: value(form,'lot_number') || null,
+    expiry_date: value(form,'expiry_date') || null,
+    location_id: value(form,'location_id'),
+    quantity_delta: value(form,'quantity_delta'),
+    reason: value(form,'reason'),
+    idempotency_key: value(form,'idempotency_key'),
+  };
   const { error } = await client.rpc('ci_adjust_stock',{ p_data: payload });
   if (error) fail(back,error.message);
   success(back,`${value(form,'summary')} · ${Number(value(form,'quantity_delta')) > 0 ? '+' : ''}${value(form,'quantity_delta')}`);
+}
+
+export type AdjustmentLotOption = { lot_id: string; lot_number: string; expiry_date: string; location_id: string; balance: number };
+
+/** Loads only the selected product's LOT/location balances for a supervisor adjustment. */
+export async function getAdjustmentLotOptions(warehouseId: number, productId: string): Promise<AdjustmentLotOption[]> {
+  const access = await requireAccess();
+  const selected = access.warehouses.find(w => Number(w.id) === warehouseId);
+  if (!selected || !canSupervise(selected.role)) throw new Error('CI_ACCESS_DENIED');
+  const client = await createClient();
+  if (!client) throw new Error('ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล');
+  const { data: product, error: productError } = await client.from('ci_products')
+    .select('id').eq('id', productId).eq('warehouse_id', warehouseId).eq('active', true).maybeSingle();
+  if (productError) throw new Error(logUserMessage('inventory', productError));
+  if (!product) throw new Error('CI_PRODUCT_NOT_FOUND');
+  const rows: AdjustmentLotOption[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data: page, error } = await client.from('ci_stock_balances')
+      .select('lot_id,lot_number,expiry_date,location_id,balance')
+      .eq('warehouse_id', warehouseId).eq('product_id', productId)
+      .order('lot_number').order('expiry_date').order('location_id').range(from, from + 999);
+    if (error) throw new Error(logUserMessage('inventory', error));
+    rows.push(...(page ?? []).map(item => ({ ...item, balance: Number(item.balance) })));
+    if (!page || page.length < 1000) break;
+  }
+  return rows;
 }
 
 export async function disposeExpired(form: FormData) {

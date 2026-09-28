@@ -1,7 +1,7 @@
 'use server';
 
 import { parseBarcode, type ParsedBarcode } from '@/lib/barcode';
-import { requireAccess, canMutate } from '@/lib/auth';
+import { requireAccess, canMutate, canSupervise } from '@/lib/auth';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { logUserMessage } from '@/lib/messages';
@@ -143,6 +143,40 @@ export async function resolveProductScan(raw: string, symbology: string): Promis
   } else result.message = ids.size ? 'Barcode ตรงกับหลายน้ำยา · ต้องให้หัวหน้างานตรวจสอบ' : 'ไม่พบน้ำยาที่ตรงกับ Barcode · เลือกน้ำยาเอง';
   const { error } = await client.rpc('ci_record_scan', { p_data: {
     warehouse_id: result.product?.warehouseId ?? writable[0], invoice_id: null, invoice_line_id: null,
+    raw_payload: raw, symbology, parsed_fields: parsed, parse_warnings: parsed.warnings,
+  } });
+  if (error) throw new Error(logUserMessage('scanner', error));
+  return result;
+}
+
+export type AdjustmentProductScan = ProductScan;
+
+/** Resolves an adjustment scan only inside the selected warehouse and only for supervisors. */
+export async function resolveAdjustmentProductScan(raw: string, symbology: string, warehouseId: number): Promise<AdjustmentProductScan> {
+  const access = await requireAccess();
+  const selected = access.warehouses.find(w => Number(w.id) === warehouseId);
+  if (!selected || !canSupervise(selected.role)) throw new Error('CI_ACCESS_DENIED');
+  const locationQr = locationQrScan(raw, symbology);
+  if (locationQr) return locationQr;
+  const client = await createClient();
+  if (!client) throw new Error('ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล');
+  const parsed = parseBarcode(raw, symbology);
+  const ids = await matchApprovedIdentifiers(client, parsed, raw);
+  const result: ProductScan = { parsed };
+  if (ids.size === 1) {
+    const [productId, matchedWarehouseId] = [...ids][0];
+    if (matchedWarehouseId !== warehouseId) result.message = 'Barcode นี้เป็นน้ำยาของอีกคลัง · เลือกคลังให้ตรงก่อนปรับยอด';
+    else {
+      const { data: product, error } = await client.from('ci_products')
+        .select('id,product_code,display_name,warehouse_id')
+        .eq('id', productId).eq('warehouse_id', warehouseId).eq('active', true).maybeSingle();
+      if (error) throw new Error(logUserMessage('scanner', error));
+      if (product) result.product = { id: product.id, code: product.product_code, name: product.display_name, warehouseId: Number(product.warehouse_id) };
+      else result.message = 'ไม่พบน้ำยาที่เปิดใช้งานในคลังนี้';
+    }
+  } else result.message = ids.size ? 'Barcode ตรงกับหลายน้ำยา · ต้องให้หัวหน้างานตรวจสอบ' : 'ไม่พบน้ำยาที่ตรงกับ Barcode · เลือกน้ำยาเอง';
+  const { error } = await client.rpc('ci_record_scan', { p_data: {
+    warehouse_id: warehouseId, invoice_id: null, invoice_line_id: null,
     raw_payload: raw, symbology, parsed_fields: parsed, parse_warnings: parsed.warnings,
   } });
   if (error) throw new Error(logUserMessage('scanner', error));

@@ -9,6 +9,7 @@ import { resolveProductScan } from '@/app/actions/scanner';
 import { startInvoice } from '@/app/actions/inventory';
 import { saveReceiveDraft } from '@/lib/receive-draft';
 import { userMessage } from '@/lib/messages';
+import { formatDateBE } from '@/lib/format';
 
 type Product = { id: string; warehouse_id: number; product_code: string; display_name: string };
 type Vendor = { id: string; name: string };
@@ -69,7 +70,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
       else if (!trusted) say('warn', `${code} · Barcode มีคำเตือน`, 'กรอก LOT และวันหมดอายุเอง');
       else if (same) say('ok', `${code} · รวม ×${quantity}`, `LOT ${lot} · นับเพิ่มอีก 1`);
       else if (!lot || !expiry) say('warn', `${code} · ${result.product.name}`, 'Barcode ไม่มี LOT หรือวันหมดอายุ · กรอกเองได้');
-      else say('ok', `${code} · ${result.product.name}`, `LOT ${lot} · หมดอายุ ${expiry}`);
+      else say('ok', `${code} · ${result.product.name}`, `LOT ${lot} · หมดอายุ ${formatDateBE(expiry)}`);
     } catch (cause) { say('error', userMessage(cause instanceof Error ? cause.message : null, 'อ่าน Barcode ไม่สำเร็จ')); }
   }
 
@@ -135,7 +136,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2"><strong className="truncate text-sm">{label}</strong>{product && <span className="badge shrink-0">{warehouseTag(product.warehouse_id)}</span>}</span>
                   {product && <span className="block truncate text-xs muted">{product.display_name}</span>}
-                  <span className="block text-xs">LOT {line.lot || <span className="text-amber-800">ยังไม่ระบุ</span>} · หมดอายุ {line.expiry || <span className="text-amber-800">ยังไม่ระบุ</span>}</span>
+                  <span className="block text-xs">LOT {line.lot || <span className="text-amber-800">ยังไม่ระบุ</span>} · หมดอายุ {line.expiry ? formatDateBE(line.expiry) : <span className="text-amber-800">ยังไม่ระบุ</span>}</span>
                 </span>
                 <ChevronDown size={18} aria-hidden className={`shrink-0 muted transition-transform ${line.open ? 'rotate-180' : ''}`} />
               </button>
@@ -152,7 +153,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 <label className="field">LOT<input form={FORM_ID} className="input" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" value={line.lot} onChange={e => patch(line.key, { lot: e.target.value })} /></label>
-                <label className="field">วันหมดอายุ<input form={FORM_ID} className="input" type="date" value={line.expiry} onChange={e => patch(line.key, { expiry: e.target.value })} /></label>
+                <label className="field">วันหมดอายุ<input form={FORM_ID} className="input" type="date" value={line.expiry} onChange={e => patch(line.key, { expiry: e.target.value })} />{line.expiry && <span className="muted text-xs">รูปแบบ พ.ศ.: {formatDateBE(line.expiry)}</span>}</label>
               </div>
               {line.scanned && (!line.lot || !line.expiry) && <p className="text-xs muted">ไม่พบ LOT หรือวันหมดอายุใน Barcode · กรอกเอง หรือปล่อยว่างแล้วบันทึกตอนรับเข้า</p>}
               {line.raw && <p className="muted text-xs break-all">Scan: {line.raw}</p>}

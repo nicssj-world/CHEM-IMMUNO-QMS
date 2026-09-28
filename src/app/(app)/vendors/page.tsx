@@ -4,6 +4,7 @@ import { requireAccess } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { logUserMessage, savedNotice } from '@/lib/messages';
 import { VENDOR_COLUMNS, canManageVendors, formatTaxBranch, formatTaxId, vendorStatusLabel, type VendorRecord } from '@/lib/vendors';
+import { LiveSearchForm } from '@/components/live-search-form';
 
 const PAGE_SIZE = 25;
 
@@ -32,7 +33,7 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
     <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow mb-2">Vendor master</p><h1 className="page-title">ผู้ขาย</h1><p className="muted mt-2 text-sm">ข้อมูลผู้ขายใช้ร่วมกันทั้งสองคลัง · ผลตรวจรับ ปัญหา และการประเมินประจำปีดูได้ในหน้าผู้ขายแต่ละราย</p></div>
       <div className="flex flex-wrap gap-2">{canPolicy && <Link className="button secondary" href="/vendors/evaluation-policy">นโยบายประเมินผู้ขาย</Link>}{canManage && <Link className="button" href="/vendors/new"><Plus size={18} aria-hidden />เพิ่มผู้ขาย</Link>}</div></div>
     {params.error && <p className="error" role="alert">{params.error}</p>}{params.saved && <p className="notice" role="status">{savedNotice(params.saved, 'บันทึกแล้ว')}</p>}
-    <form method="get" className="surface p-4 grid sm:grid-cols-[1fr_200px_auto] gap-3 items-end"><label className="field">ค้นหา<input className="input" name="q" defaultValue={q} placeholder="รหัส ชื่อ หรือเลขประจำตัวผู้เสียภาษี" /></label><label className="field">สถานะ<select className="input" name="status" defaultValue={status}><option value="active">ใช้งาน</option><option value="inactive">ปิดการใช้งาน</option><option value="all">ทั้งหมด</option></select></label><button className="button" type="submit">ค้นหา</button></form>
+    <LiveSearchForm ariaLabel="ค้นหาและกรองผู้ขาย" className="surface p-4 grid sm:grid-cols-[1fr_200px] gap-3 items-end"><label className="field">ค้นหา<input className="input" type="search" name="q" maxLength={80} defaultValue={q} placeholder="รหัส ชื่อ หรือเลขประจำตัวผู้เสียภาษี" /></label><label className="field">สถานะ<select className="input" name="status" defaultValue={status}><option value="active">ใช้งาน</option><option value="inactive">ปิดการใช้งาน</option><option value="all">ทั้งหมด</option></select></label></LiveSearchForm>
     {error ? <p className="error" role="alert">อ่านข้อมูลผู้ขายไม่สำเร็จ: {logUserMessage('vendors', error)}</p> : <section className="surface overflow-hidden">
       <div className="px-5 py-4 flex justify-between gap-3"><h2 className="font-bold">รายชื่อผู้ขาย</h2><span className="muted text-sm">{total} ราย</span></div>
       <div className="desktop-table table-wrap"><table className="data-table"><thead><tr><th>รหัส</th><th>ชื่อผู้ขาย</th><th>เลขประจำตัวผู้เสียภาษี</th><th>ผู้ติดต่อ</th><th>สถานะ</th></tr></thead><tbody>{vendors.map(v => <tr key={v.id}>

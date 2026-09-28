@@ -5,6 +5,7 @@ import { selectedWarehouse } from '@/lib/warehouse';
 import { createClient } from '@/lib/supabase/server';
 import { createLocation } from '@/app/actions/inventory';
 import { WarehouseSwitch } from '@/components/warehouse-switch';
+import { LiveSearchForm } from '@/components/live-search-form';
 import { SubmitButton } from '@/components/submit-button';
 import { LocationTypeIcon } from '@/components/location-type-icon';
 import { logUserMessage, savedNotice } from '@/lib/messages';
@@ -48,11 +49,11 @@ export default async function LocationsPage({ searchParams }: { searchParams: Pr
       <div className="grid sm:grid-cols-[180px_1fr] gap-4"><label className="field">รหัสตำแหน่ง<input className="input" name="code" required maxLength={40} autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" placeholder="เช่น F1-A" autoFocus={Boolean(returnTo)}/></label><label className="field">ชื่อ / คำอธิบาย<input className="input" name="name" required maxLength={120} placeholder="เช่น ตู้เย็น 1 ชั้น A"/></label></div>
       <div><SubmitButton className="button" label="เพิ่มตำแหน่ง" pendingLabel="กำลังบันทึก…"/></div></form>
       : <p className="notice">เพิ่มและแก้ไขตำแหน่งได้เฉพาะหัวหน้างานหรือผู้ดูแลระบบของคลังนี้</p>}
-    <form method="get" className="surface p-4 flex gap-3 flex-wrap items-end"><input type="hidden" name="warehouse" value={warehouse.code}/>
-      <label className="field flex-1 min-w-[200px]">ค้นหาตำแหน่ง<input className="input" name="q" defaultValue={q} placeholder="รหัส ชื่อ หรือห้อง"/></label>
+    <LiveSearchForm ariaLabel="ค้นหาและกรองตำแหน่งจัดเก็บ" className="surface p-4 flex gap-3 flex-wrap items-end"><input type="hidden" name="warehouse" value={warehouse.code}/>
+      <label className="field flex-1 min-w-[200px]">ค้นหาตำแหน่ง<input className="input" type="search" name="q" maxLength={100} defaultValue={q} placeholder="รหัส ชื่อ หรือห้อง"/></label>
       <label className="field min-w-[150px]">ประเภท<select className="input" name="type" defaultValue={type}><option value="">ทุกประเภท</option>{LOCATION_TYPES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
       <label className="field min-w-[150px]">สถานะ<select className="input" name="active" defaultValue={active}><option value="">ทั้งหมด</option><option value="1">ใช้งาน</option><option value="0">ปิดใช้งาน</option></select></label>
-      <button className="button">กรอง</button></form>
+    </LiveSearchForm>
     <section className="surface overflow-hidden"><div className="px-5 py-4 flex justify-between gap-3"><h2 className="font-bold">ตำแหน่งทั้งหมด</h2><span className="muted text-sm">แสดง {shown.length} จาก {all.length} · ใช้งาน {all.filter(l => l.active).length}</span></div>
       {shown.length ? <ul className="grid">{shown.map(location => {
         const monitorId = resolveEnvironmentMonitor(location.id, all, configs);
