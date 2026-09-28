@@ -6,6 +6,7 @@ import { resolveAdjustmentProductScan } from '@/app/actions/scanner';
 import { userMessage } from '@/lib/messages';
 import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
 import { ConfirmForm } from './confirm-form';
+import { IntegerQuantityInput } from './integer-quantity-input';
 import { SubmitButton } from './submit-button';
 import type { LocationOption, StockOption } from './stock-operation-form';
 import type { PickerProduct } from './product-picker';
@@ -61,7 +62,7 @@ export function StockAdjustmentWorkbench({
   const selectedSummary = product
     ? `${product.product_code} · ${product.display_name} · LOT ${lotNumber || 'ยังไม่ระบุ'} · หมดอายุ ${expiry || 'ยังไม่ระบุ'}`
     : 'สแกน Barcode หรือเลือกน้ำยาเอง';
-  const canSubmit = Boolean(product && lotNumber.trim() && expiry && locationId && amount && Number(amount) > 0 && reason.trim() && !expiryConflict && locations.length && (lotId || direction > 0) && (direction > 0 || after >= 0));
+  const canSubmit = Boolean(product && lotNumber.trim() && expiry && locationId && amount && Number(amount) > 0 && !expiryConflict && locations.length && (lotId || direction > 0) && (direction > 0 || after >= 0));
 
   function tell(tone: ScanFeedback['tone'], title: string, detail?: string) {
     setFeedback({ id: ++feedbackId.current, tone, title, detail });
@@ -242,11 +243,11 @@ export function StockAdjustmentWorkbench({
 
       <fieldset className="grid gap-2"><legend className="field mb-2">ทิศทางและจำนวนที่ปรับ</legend>
         <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="ทิศทางการปรับ">{([[1,'เพิ่มยอด (+)'],[-1,'ลดยอด (−)']] as const).map(([value,label]) => <label key={value} className={`button secondary cursor-pointer text-center ${direction === value ? '!border-[var(--blue)] !bg-[#e8f1f8]' : ''} ${value < 0 && !lotId ? 'opacity-45' : ''}`}><input type="radio" className="sr-only" name="direction" checked={direction === value} disabled={value < 0 && !lotId} onChange={() => setDirection(value)}/>{label}</label>)}</div>
-        <label className="field">จำนวน<input className="input" aria-label="จำนวนที่ปรับ" type="number" inputMode="decimal" min="0.001" step="0.001" value={amount} onChange={event => setAmount(event.target.value)} required/></label>
+        <label className="field">จำนวน<IntegerQuantityInput className="input" aria-label="จำนวนที่ปรับ" min="1" value={amount} onChange={event => setAmount(event.target.value)} required/></label>
         {direction < 0 && !lotId && <p className="muted text-xs">การปรับลดต้องเลือก LOT ที่มีอยู่ในระบบ</p>}
         {direction < 0 && lotId && after < 0 && <p className="error text-sm" role="alert">จำนวนที่ลดมากกว่ายอดคงเหลือ ณ ตำแหน่งนี้</p>}
       </fieldset>
-      <label className="field">เหตุผล<textarea className="input min-h-24" name="reason" value={reason} onChange={event => setReason(event.target.value)} required maxLength={1000} placeholder="เช่น ตั้งยอดคงเหลือเริ่มต้นตามการตรวจนับ ณ วันที่…"/></label>
+      <label className="field">เหตุผล (ไม่บังคับ)<textarea className="input min-h-24" name="reason" value={reason} onChange={event => setReason(event.target.value)} maxLength={1000} placeholder="เช่น ตั้งยอดคงเหลือเริ่มต้นตามการตรวจนับ ณ วันที่…"/></label>
       {raw && <details><summary className="cursor-pointer text-sm font-semibold">ดูข้อมูล Barcode ที่สแกน</summary><p className="muted text-xs break-all mt-2">{raw}</p></details>}
       <SubmitButton label="ตรวจทานและปรับยอด" pendingLabel="กำลังบันทึก…" disabled={!canSubmit || busy}/>
     </ConfirmForm>

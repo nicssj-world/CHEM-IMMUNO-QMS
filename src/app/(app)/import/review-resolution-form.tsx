@@ -33,7 +33,8 @@ export function ReviewResolutionForm({
           <option value="platform">ผูกกับเครื่อง/กลุ่มเครื่องที่ตรวจสอบแล้ว</option>
         </select>
       </label>
-      {mode === 'product' && <div className="grid gap-2">
+      {mode === 'product' && <fieldset className="grid gap-2">
+        <legend className="font-semibold">น้ำยาปลายทางที่เกี่ยวข้อง <span className="text-[#b42318]" aria-hidden="true">*</span></legend>
         <label className="field">ค้นหาน้ำยาปลายทาง (REF หรือชื่อ)
           <input className="input" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="พิมพ์ REF หรือชื่อน้ำยา" />
         </label>
@@ -49,7 +50,7 @@ export function ReviewResolutionForm({
             {option.ref} ×
           </button>)}
         </div>}
-      </div>}
+      </fieldset>}
       {mode === 'platform' && <label className="field">เครื่อง / กลุ่มเครื่อง
         <select className="input" name="platformKey" required defaultValue="">
           <option value="" disabled>เลือกจากข้อมูลที่ยืนยันแล้ว</option>

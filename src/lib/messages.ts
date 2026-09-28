@@ -4,7 +4,7 @@ const codeMessages: Record<string, string> = {
   CI_ACTIVE_USER_NEEDS_WAREHOUSE: 'ผู้ใช้ที่เปิดใช้งานต้องมีสิทธิ์อย่างน้อยหนึ่งคลัง',
   CI_ADJUSTMENT_NEW_LOT_MUST_INCREASE: 'LOT ใหม่เริ่มยอดได้ด้วยการปรับเพิ่ม (+) เท่านั้น',
   CI_ADJUSTMENT_PRODUCT_MISMATCH: 'น้ำยาไม่ตรงกับ LOT ที่เลือก · ตรวจรายการก่อนบันทึก',
-  CI_ADJUSTMENT_REASON_OR_QUANTITY_INVALID: 'กรุณาระบุเหตุผล และจำนวนปรับที่ไม่เป็นศูนย์',
+  CI_ADJUSTMENT_QUANTITY_INVALID: 'จำนวนปรับต้องไม่เป็นศูนย์',
   CI_ADJUSTMENT_LOT_MISMATCH: 'เลข LOT ไม่ตรงกับข้อมูลที่เลือก · ตรวจรายการก่อนบันทึก',
   CI_ALREADY_REVERSED: 'รายการนี้ถูกย้อนไปแล้ว ย้อนซ้ำไม่ได้',
   CI_CONFIRMED_HISTORY_IMMUTABLE: 'รายการที่ยืนยันแล้วแก้ไขไม่ได้ · ใช้การยกเลิกรายการแทน',

@@ -36,8 +36,8 @@ export function EnvironmentExcursionActions({ id, status, canWork, existingActio
     {latestOut && <p className="error" role="alert">ค่าล่าสุดยังอยู่นอกช่วงที่กำหนด กรุณาตรวจสอบก่อนบันทึกการแก้ไข</p>}
     {legacy
       ? <div className="field"><span>การดำเนินการแก้ไข</span><p className="input" style={{ background: 'var(--surface-2)' }}>{existingAction ?? '—'}</p></div>
-      : <label className="field">การดำเนินการแก้ไข *<textarea className="input" required rows={3} value={action} onChange={event => setAction(event.target.value)} /></label>}
-    <label className="field">ผลหลังดำเนินการ *<textarea className="input" required rows={3} value={resolution} onChange={event => setResolution(event.target.value)} /></label>
+      : <label className="field">การดำเนินการแก้ไข<textarea className="input" required rows={3} value={action} onChange={event => setAction(event.target.value)} /></label>}
+    <label className="field">ผลหลังดำเนินการ<textarea className="input" required rows={3} value={resolution} onChange={event => setResolution(event.target.value)} /></label>
     <label className="flex items-center gap-2"><input type="checkbox" checked={referred} onChange={event => setReferred(event.target.checked)} />ส่งต่อเรื่องเครื่องมือไป Portal</label>
     <button disabled={pending} className="button justify-self-start">บันทึกการแก้ไข</button>
   </form>;

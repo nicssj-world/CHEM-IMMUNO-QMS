@@ -28,11 +28,10 @@ export function VendorForm({ mode, initial, vendorId, updatedAt, returnTo }: { m
     });
   }
 
-  const req = <span className="text-[#a3263a]" aria-hidden> *</span>;
   return <form className="surface p-5 sm:p-7 grid gap-5" onSubmit={submit} noValidate>
     <div className="grid sm:grid-cols-2 gap-4">
-      <label className="field"><span>รหัสผู้ขาย{req}</span><input className="input font-mono" value={value.vendorCode} onChange={set('vendorCode')} maxLength={80} required aria-required autoCapitalize="characters" autoCorrect="off" spellCheck={false} /></label>
-      <label className="field sm:col-span-2"><span>ชื่อผู้ขาย{req}</span><input className="input" value={value.name} onChange={set('name')} maxLength={200} required aria-required autoComplete="organization" /><small className="muted font-normal">ใช้ชื่อตามที่ปรากฏบนใบเสนอราคา/Invoice รวมคำนำหน้านิติบุคคล เช่น “บริษัท … จำกัด”</small></label>
+      <label className="field"><span>รหัสผู้ขาย</span><input className="input font-mono" value={value.vendorCode} onChange={set('vendorCode')} maxLength={80} required aria-required autoCapitalize="characters" autoCorrect="off" spellCheck={false} /></label>
+      <label className="field sm:col-span-2"><span>ชื่อผู้ขาย</span><input className="input" value={value.name} onChange={set('name')} maxLength={200} required aria-required autoComplete="organization" /><small className="muted font-normal">ใช้ชื่อตามที่ปรากฏบนใบเสนอราคา/Invoice รวมคำนำหน้านิติบุคคล เช่น “บริษัท … จำกัด”</small></label>
       <label className="field sm:col-span-2">ชื่อตามหนังสือรับรอง (ถ้าต่างจากชื่อข้างบน)<input className="input" value={value.legalName} onChange={set('legalName')} maxLength={300} /></label>
       <label className="field">เลขประจำตัวผู้เสียภาษี<input className="input font-mono" inputMode="numeric" placeholder="13 หลัก" value={value.taxId} onChange={e => setValue(c => ({ ...c, taxId: e.target.value.replace(/\D/g, '').slice(0, 13) }))} /></label>
       <label className="field"><span>รหัสสาขา</span><input className="input font-mono" inputMode="numeric" placeholder="00000" value={value.taxBranchCode} onChange={e => setValue(c => ({ ...c, taxBranchCode: e.target.value.replace(/\D/g, '').slice(0, 5) }))} /><small className="muted font-normal">สำนักงานใหญ่คือ 00000</small></label>

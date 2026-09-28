@@ -111,7 +111,7 @@ export async function adjustStock(form: FormData) {
     expiry_date: value(form,'expiry_date') || null,
     location_id: value(form,'location_id'),
     quantity_delta: value(form,'quantity_delta'),
-    reason: value(form,'reason'),
+    reason: value(form,'reason') || null,
     idempotency_key: value(form,'idempotency_key'),
   };
   const { error } = await client.rpc('ci_adjust_stock',{ p_data: payload });

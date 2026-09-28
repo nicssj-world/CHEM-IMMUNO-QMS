@@ -37,7 +37,7 @@ export function ReceiptAssessmentFields({ value, onChange }: { value: Assessment
       <Choice name="complaint" label="ข้อร้องเรียน" value={value.hasComplaint ? 'yes' : 'no'} options={[['no', 'ไม่มี', false], ['yes', 'มีข้อร้องเรียน', true]]} onChange={v => set({ hasComplaint: v === 'yes' })} />
     </fieldset>
 
-    {conditional && <fieldset className="assess-reasons"><legend className="font-bold">เหตุผลที่ยอมรับน้ำยาแบบมีเงื่อนไข <span className="text-[#8a5a00]">(จำเป็น)</span></legend>
+    {conditional && <fieldset className="assess-reasons"><legend className="font-bold">เหตุผลที่ยอมรับน้ำยาแบบมีเงื่อนไข <span className="text-[#8a5a00]">(จำเป็น)</span> <span className="text-[#b42318]" aria-hidden="true">*</span></legend>
       <p className="muted text-sm">เลือกอย่างน้อย 1 ข้อ ระบบเสนอ “เอกสารอยู่ระหว่างติดตาม” ให้อัตโนมัติเฉพาะเมื่อเอกสารไม่ครบ</p>
       <div className="grid sm:grid-cols-2 gap-2">{ASSESSMENT_REASON_CODES.map(code => <label key={code} className="assess-reason"><input type="checkbox" checked={value.reasonCodes.includes(code)} onChange={() => toggleReason(code)} /><span>{REASON_LABELS[code]}</span></label>)}</div>
       {value.reasonCodes.includes('other') && <label className="field">ระบุเหตุผลอื่น<input className="input" value={value.otherReasonDetail} maxLength={1000} onChange={e => set({ otherReasonDetail: e.target.value })} required /></label>}

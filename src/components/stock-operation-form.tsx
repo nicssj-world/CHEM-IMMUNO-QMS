@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { transferStock, adjustStock, disposeExpired } from '@/app/actions/inventory';
 import { ConfirmForm } from './confirm-form';
+import { IntegerQuantityInput } from './integer-quantity-input';
 import { SubmitButton } from './submit-button';
 
 export type StockOption = { lot_id: string; lot_number: string; expiry_date: string; location_id: string; location_code: string; product_code: string; product_name: string; balance: number };
@@ -34,12 +35,12 @@ export function StockOperationForm({ kind, options, locations, submissionKey, wa
     {kind === 'transfer' && <label className="field">ปลายทาง<select className="input" name="to_location_id" required defaultValue=""><option value="">เลือกตำแหน่งปลายทาง</option>{locations.filter(l => l.id !== selected?.location_id).map(l => <option key={l.id} value={l.id}>{l.parent_code ? `${l.parent_code} › ` : ''}{l.code} · {l.name}</option>)}</select></label>}
     {kind === 'adjust' ? <fieldset className="grid gap-2"><legend className="field mb-2">ทิศทางและจำนวนที่ปรับ</legend>
       <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="ทิศทางการปรับ">{([[1,'เพิ่มยอด (+)'],[-1,'ลดยอด (−)']] as const).map(([value,text]) => <label key={value} className={`button secondary cursor-pointer ${direction === value ? '!border-[var(--blue)] !bg-[#e8f1f8]' : ''}`}><input type="radio" className="sr-only" name="direction" checked={direction === value} onChange={() => setDirection(value)}/>{text}</label>)}</div>
-      <input className="input" aria-label="จำนวนที่ปรับ" type="number" inputMode="decimal" min="0.001" step="0.001" value={amount} onChange={e => setAmount(e.target.value)} required/>
+      <label className="field">จำนวนที่ปรับ<IntegerQuantityInput className="input" min="1" value={amount} onChange={e => setAmount(e.target.value)} required/></label>
       <input type="hidden" name="quantity_delta" value={delta || ''}/>
       {selected && amount && <p className="muted text-sm">ยอดหลังปรับ {Math.round((Number(selected.balance) + delta) * 1000) / 1000}</p>}
     </fieldset>
-      : <label className="field">จำนวน<input className="input" name="quantity" type="number" inputMode="decimal" step="0.001" min="0.001" max={Number(selected?.balance ?? 0) || undefined} required/></label>}
-    {kind !== 'transfer' && <label className="field">เหตุผล<textarea className="input min-h-24" name="reason" required placeholder={kind === 'dispose' ? 'หลักฐานและวิธีการกำจัด' : 'เหตุผลการปรับยอด'}/></label>}
+      : <label className="field">จำนวน<IntegerQuantityInput className="input" name="quantity" min="1" max={Number(selected?.balance ?? 0) || undefined} required/></label>}
+    {kind !== 'transfer' && <label className="field">เหตุผล{kind === 'adjust' ? ' (ไม่บังคับ)' : ''}<textarea className="input min-h-24" name="reason" required={kind === 'dispose'} placeholder={kind === 'dispose' ? 'หลักฐานและวิธีการกำจัด' : 'เหตุผลการปรับยอด (ไม่บังคับ)'}/></label>}
     <SubmitButton label={submitLabel[kind]} pendingLabel="กำลังบันทึก…" disabled={!selected}/>
   </>;
 

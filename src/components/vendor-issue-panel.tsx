@@ -111,7 +111,7 @@ export function VendorIssuePanel({ issues, attachments, vendorId, warehouseId, i
         <div><button type="button" className="button secondary" disabled={pending || !file} onClick={upload}>แนบหลักฐาน</button></div></div>}
       {canCancel && selected.status !== 'cancelled' && <div className="grid gap-3"><h3 className="font-bold">ยกเลิกปัญหา <small className="muted font-normal">(ผู้ดูแลระบบ)</small></h3>
         <label className="field">เหตุผล<select className="input" value={cancelReason} onChange={e => setCancelReason(e.target.value)}>{ISSUE_MANUAL_CANCEL_REASONS.map(r => <option key={r} value={r}>{ISSUE_CANCEL_REASON_LABELS[r]}</option>)}</select></label>
-        {cancelReason === 'other' && <label className="field">ระบุเหตุผลอื่น<textarea className="input min-h-20" value={cancelNote} onChange={e => setCancelNote(e.target.value)} /></label>}
+        {cancelReason === 'other' && <label className="field">ระบุเหตุผลอื่น<textarea className="input min-h-20" value={cancelNote} onChange={e => setCancelNote(e.target.value)} required /></label>}
         <div><button type="button" className="button danger" disabled={pending || (cancelReason === 'other' && !cancelNote.trim())} onClick={() => { if (window.confirm('ยืนยันยกเลิกปัญหานี้? การยกเลิกย้อนกลับไม่ได้')) submitCancel(); }}>ยืนยันยกเลิกปัญหา</button></div></div>}
     </div>}
 

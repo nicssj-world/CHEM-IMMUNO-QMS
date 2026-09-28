@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Minus, Plus } from 'lucide-react';
 import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
+import { IntegerQuantityInput } from './integer-quantity-input';
 import { SubmitButton } from './submit-button';
 import { resolveProductScan } from '@/app/actions/scanner';
 import { startInvoice } from '@/app/actions/inventory';
@@ -122,7 +123,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
       <label className="field">เลขที่ PO (ถ้ามี)<input form={FORM_ID} className="input" name="po_number" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" /></label>
     </div>
     <div className="grid gap-3">
-      <div><h3 className="font-bold">รายการน้ำยา</h3><p className="muted text-sm mt-1">สแกน Datamatrix ของน้ำยาแต่ละชิ้น ระบบจะเพิ่มรายการและกรอก LOT / วันหมดอายุให้ · กล้องเปิดค้างสแกนต่อเนื่องได้ · สแกน LOT เดิมซ้ำจะเพิ่มจำนวน (ถือ Barcode ค้างไว้นับครั้งเดียว ต้องเอาออกจากกรอบก่อนสแกนชิ้นใหม่)</p></div>
+      <div><h3 className="font-bold">รายการน้ำยา <span className="text-[#b42318]" aria-hidden="true">*</span></h3><p className="muted text-sm mt-1">ต้องมีอย่างน้อย 1 รายการ · สแกน Datamatrix ของน้ำยาแต่ละชิ้น ระบบจะเพิ่มรายการและกรอก LOT / วันหมดอายุให้ · กล้องเปิดค้างสแกนต่อเนื่องได้ · สแกน LOT เดิมซ้ำจะเพิ่มจำนวน (ถือ Barcode ค้างไว้นับครั้งเดียว ต้องเอาออกจากกรอบก่อนสแกนชิ้นใหม่)</p></div>
       <BarcodeScanner onScan={onScan} continuous dock feedback={feedback} summary={summary} />
       <div className="grid gap-2">
         {[...lines].reverse().map(line => {
@@ -148,7 +149,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
             {line.open && <div className="grid gap-3 border-t border-line p-3">
               <div className="grid sm:grid-cols-[1fr_120px] gap-3">
                 <label className="field">น้ำยา<select form={FORM_ID} className="input" value={line.productId} onChange={e => patch(line.key, { productId: e.target.value })} required><option value="">เลือกน้ำยา</option>{products.map(p => <option key={p.id} value={p.id}>[{warehouseTag(p.warehouse_id)}] {p.product_code} · {p.display_name}</option>)}</select></label>
-                <label className="field">จำนวน<input form={FORM_ID} className="input" type="number" inputMode="decimal" min="0.001" step="0.001" value={line.quantity} onChange={e => patch(line.key, { quantity: e.target.value })} required /></label>
+                <label className="field">จำนวน<IntegerQuantityInput form={FORM_ID} className="input" min="1" value={line.quantity} onChange={e => patch(line.key, { quantity: e.target.value })} required /></label>
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 <label className="field">LOT<input form={FORM_ID} className="input" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" value={line.lot} onChange={e => patch(line.key, { lot: e.target.value })} /></label>

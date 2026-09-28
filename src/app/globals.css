@@ -43,6 +43,8 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .eyebrow { font-size: .72rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; color: var(--teal); }
 .muted { color: var(--muted); }
 .field { display: grid; gap: 7px; color: var(--ink); font-weight: 650; font-size: .88rem; }
+.field:has(:required:enabled), label:has(:required:enabled) { position: relative; }
+.field:has(:required:enabled)::before, label:has(:required:enabled)::before { content: '*'; position: absolute; inset-inline-start: 0; top: 0; transform: translateX(-.7em); color: #b42318; font-weight: 800; }
 .input { width: 100%; min-height: 46px; padding: 10px 13px; border: 1px solid #bfd0d8; border-radius: 10px; background: #fff; color: var(--ink); }
 .input:disabled { background: #eaf0f2; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 9px 16px; border-radius: 10px; border: 1px solid transparent; background: var(--blue); color: white; font-weight: 700; cursor: pointer; text-decoration: none; }
