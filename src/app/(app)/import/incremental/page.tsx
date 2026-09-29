@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { FileSpreadsheet, LockKeyhole } from 'lucide-react';
 import { SubmitButton } from '@/components/submit-button';
-import { applyIncrementalImport, stageIncrementalWorkbook } from '@/app/actions/incremental-import';
+import { ConfirmSubmitForm } from '@/components/confirm-submit-form';
+import { applyIncrementalImport, cancelIncrementalImport, stageIncrementalWorkbook } from '@/app/actions/incremental-import';
 import { requireAccess } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 
@@ -14,6 +15,7 @@ type Batch = {
   staged_at: string;
   applied_at: string | null;
 };
+type HistoryBatch = { id: string; status: 'applied'; staged_at: string; applied_at: string | null };
 
 type Change = { field: string; current: unknown; imported: unknown };
 type ImportRow = {
@@ -44,6 +46,9 @@ const errorText: Record<string, string> = {
   source: 'โครงสร้าง workbook ไม่ตรงกับตาราง Product ของ CHE/IMM',
   'no-delta': 'ไม่พบแถวที่เพิ่มหรือเปลี่ยนจาก Product Master ปัจจุบัน',
   stage: 'บันทึก Preview ไม่สำเร็จ กรุณาตรวจสิทธิ์และการเชื่อมต่อ',
+  active: 'มี Preview ที่ยังไม่ Apply กรุณาทำชุดนี้ต่อหรือยกเลิกก่อนเริ่มชุดใหม่',
+  'batch-check': 'ตรวจสถานะ Preview ไม่สำเร็จ กรุณาโหลดหน้าอีกครั้งก่อนเริ่มชุดใหม่',
+  cancel: 'ยกเลิก Preview ไม่สำเร็จ ชุดอาจถูก Apply ไปแล้วหรือมีข้อผิดพลาดในฐานข้อมูล',
   batch: 'รหัสชุด Preview ไม่ถูกต้อง',
   apply: 'Apply ไม่สำเร็จ หรือข้อมูล Product เปลี่ยนหลังสร้าง Preview กรุณาสร้าง Preview ใหม่',
 };
@@ -56,7 +61,7 @@ function valueText(value: unknown): string {
 }
 
 export default async function IncrementalImportPage({ searchParams }: {
-  searchParams: Promise<{ batch?: string; error?: string; staged?: string; applied?: string }>;
+  searchParams: Promise<{ batch?: string; error?: string; staged?: string; applied?: string; cancelled?: string }>;
 }) {
   const params = await searchParams;
   const access = await requireAccess();
@@ -67,13 +72,21 @@ export default async function IncrementalImportPage({ searchParams }: {
   </main>;
 
   const client = await createClient();
-  const { data: batchData, error: batchError } = client
+  const activeResult = client
     ? await client.from('ci_incremental_product_import_batches')
         .select('id,status,source_filename,source_sha256,row_count,staged_at,applied_at')
+        .eq('status', 'preview').order('staged_at', { ascending: false }).limit(1)
+    : { data: null, error: null };
+  const historyResult = client
+    ? await client.from('ci_incremental_product_import_batches')
+        .select('id,status,staged_at,applied_at').eq('status', 'applied')
         .order('staged_at', { ascending: false }).limit(20)
     : { data: null, error: null };
-  const batches = (batchData ?? []) as Batch[];
-  const current = batches.find(item => item.id === params.batch) ?? batches[0];
+  const activeBatches = (activeResult.data ?? []) as Batch[];
+  const history = (historyResult.data ?? []) as HistoryBatch[];
+  const batchError = activeResult.error ?? historyResult.error;
+  const current = activeBatches.find(item => item.id === params.batch) ?? activeBatches[0];
+  const uploadBlocked = Boolean(current || batchError);
   const { data: rowData, error: rowsError } = current && client
     ? await client.from('ci_incremental_product_import_rows')
         .select('id,source_sheet,source_row,disposition,product_id,match_method,candidate,changes,details')
@@ -99,6 +112,7 @@ export default async function IncrementalImportPage({ searchParams }: {
     {params.error && <p className="error" role="alert">{errorText[params.error] ?? 'ไม่สามารถทำรายการได้'}</p>}
     {params.staged && <p className="notice" role="status">สร้าง Preview แล้ว ตรวจทุกแถวก่อน Apply</p>}
     {params.applied && <p className="notice" role="status">Apply ชุดนำเข้าเสร็จแล้ว</p>}
+    {params.cancelled && <p className="notice" role="status">ยกเลิก Preview แล้ว เริ่มเลือก workbook ชุดใหม่ได้</p>}
     {!client && <p className="error">ยังไม่ได้ตั้งค่าการเชื่อมต่อ Supabase</p>}
     {batchError && <p className="error">โหลดชุด Preview ไม่สำเร็จ</p>}
     <section className="surface grid gap-4 p-5" aria-labelledby="upload-heading">
@@ -107,20 +121,19 @@ export default async function IncrementalImportPage({ searchParams }: {
           <p className="muted text-sm">ระบบอ่านเฉพาะโครงสร้าง CHE/IMM ที่กำหนด และซ่อนแถวเดิมที่ไม่เปลี่ยนจาก Initial Import</p></div>
       </div>
       <form action={stageIncrementalWorkbook} className="grid gap-3 sm:flex sm:items-end">
-        <label className="field min-w-0 flex-1">เลือก workbook (.xlsx)
-          <input className="input h-auto" type="file" name="workbook" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
+        <label className="field min-w-0 flex-1">{current ? 'ทำ Preview ปัจจุบันให้เสร็จก่อนเริ่มชุดใหม่' : 'เลือก workbook (.xlsx)'}
+          <input className="input h-auto" type="file" name="workbook" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required disabled={uploadBlocked} />
         </label>
-        <SubmitButton className="button" label="สร้าง Preview" pendingLabel="กำลังเปรียบเทียบ…" />
+        <SubmitButton className="button" label="สร้าง Preview" pendingLabel="กำลังเปรียบเทียบ…" disabled={uploadBlocked} />
       </form>
+      {current && <p className="notice" role="status">มี Preview ที่ยังไม่ Apply อยู่ด้านล่าง คุณสามารถทำต่อหรือยกเลิกชุดนี้ก่อนสร้าง Preview ใหม่</p>}
     </section>
-    {batches.length > 0 && <section className="grid gap-3" aria-labelledby="batch-list-heading">
-      <h2 id="batch-list-heading" className="font-bold">Preview ล่าสุด</h2>
-      <div className="flex flex-wrap gap-2">{batches.map(batch => <Link key={batch.id}
-        href={`/import/incremental?batch=${batch.id}`}
-        className={`min-h-11 rounded-xl border px-4 py-3 text-sm no-underline ${current?.id === batch.id ? 'border-[var(--teal)] bg-tint text-[var(--ink)]' : 'border-[var(--line)] bg-white text-[var(--ink)]'}`}>
-        <strong>{batch.status === 'applied' ? 'Applied' : 'Preview'}</strong>
-        <span className="muted ml-2">{formatDate(batch.staged_at)}</span>
-      </Link>)}</div>
+    {history.length > 0 && <section className="grid gap-3" aria-labelledby="batch-list-heading">
+      <h2 id="batch-list-heading" className="font-bold">ประวัติการนำเข้า</h2>
+      <div className="flex flex-wrap gap-2">{history.map(batch => <div key={batch.id}
+        className="min-h-11 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm">
+        <strong>Applied</strong><span className="muted ml-2">{formatDate(batch.staged_at)}</span>
+      </div>)}</div>
     </section>}
     {current && <>
       <section className="surface grid gap-4 p-5" aria-labelledby="preview-heading">
@@ -141,6 +154,9 @@ export default async function IncrementalImportPage({ searchParams }: {
             <SubmitButton className="button" label="Apply รายการที่ปลอดภัย" pendingLabel="กำลัง Apply…"
               disabled={safeCount === 0 || !!rowsError || !!batchError} />
           </form>
+          <ConfirmSubmitForm action={cancelIncrementalImport} fieldName="batchId" fieldValue={current.id}
+            confirmation="ยืนยันยกเลิก Preview นี้หรือไม่? ระบบจะลบเฉพาะ batch ที่ยังไม่ Apply และแถว staging ที่เกี่ยวข้อง"
+            label="ยกเลิก Preview" pendingLabel="กำลังยกเลิก…" />
           <p className="muted text-xs">Apply จะสร้าง New, อัปเดต Update และข้าม Existing; Conflict/Duplicate จะไม่ถูกเปลี่ยน</p>
         </div>}
       </section>

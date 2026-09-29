@@ -63,6 +63,10 @@ async function readMaster(client: Awaited<ReturnType<typeof createClient>>): Pro
 
 export async function stageIncrementalWorkbook(formData: FormData): Promise<void> {
   const client = await requireIncrementalAdmin();
+  const { data: activeBatch, error: activeBatchError } = await client.from('ci_incremental_product_import_batches')
+    .select('id').eq('status', 'preview').limit(1).maybeSingle();
+  if (activeBatchError) redirect(`${basePath}?error=batch-check`);
+  if (activeBatch) redirect(`${basePath}?batch=${activeBatch.id}&error=active`);
   const file = formData.get('workbook');
   if (!(file instanceof File) || file.size < 1 || file.size > 1_000_000) redirect(`${basePath}?error=file`);
   let workbook;
@@ -83,6 +87,16 @@ export async function stageIncrementalWorkbook(formData: FormData): Promise<void
   redirect(`${basePath}?batch=${data}&staged=1`);
 }
 
+export async function cancelIncrementalImport(formData: FormData): Promise<void> {
+  const client = await requireIncrementalAdmin();
+  const batchId = String(formData.get('batchId') ?? '');
+  if (!uuidPattern.test(batchId)) redirect(`${basePath}?error=batch`);
+  const { error } = await client.rpc('ci_cancel_incremental_product_import', { p_batch_id: batchId });
+  if (error) redirect(`${basePath}?batch=${batchId}&error=cancel`);
+  revalidatePath(basePath);
+  redirect(`${basePath}?cancelled=1`);
+}
+
 export async function applyIncrementalImport(formData: FormData): Promise<void> {
   const client = await requireIncrementalAdmin();
   const batchId = String(formData.get('batchId') ?? '');
@@ -92,5 +106,5 @@ export async function applyIncrementalImport(formData: FormData): Promise<void> 
   revalidatePath(basePath);
   revalidatePath('/products');
   revalidatePath('/stock');
-  redirect(`${basePath}?batch=${batchId}&applied=1`);
+  redirect(`${basePath}?applied=1`);
 }

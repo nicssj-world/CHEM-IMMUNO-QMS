@@ -78,7 +78,7 @@ test('exact workbook and owner resolution manifest stage and apply atomically in
       const staged = await client.query<{ batch_id: string }>(
         'select public.ci_stage_import_batch($1::jsonb) as batch_id', [JSON.stringify(payload)],
       );
-      const batchId = staged.rows[0].batch_id;
+      let batchId = staged.rows[0].batch_id;
       assert.match(batchId, /^[0-9a-f-]{36}$/);
       const stagingCounts = await client.query<{ products: string; reviews: string; used_with: string; resolutions: string; critical_open: string }>(
         `select (select count(*) from public.ci_import_rows where batch_id=$1)::text as products,
@@ -91,6 +91,45 @@ test('exact workbook and owner resolution manifest stage and apply atomically in
       assert.deepEqual(stagingCounts.rows[0], {
         products: '162', reviews: '20', used_with: '12', resolutions: '20', critical_open: '0',
       });
+
+      const productMasterSnapshot = async () => (await client.query<{
+        products: string; identifiers: string; relations: string; platforms: string;
+        product_state: string; identifier_state: string; relation_state: string; platform_state: string;
+      }>(`select
+        (select count(*)::text from public.ci_products) as products,
+        (select count(*)::text from public.ci_product_identifiers) as identifiers,
+        (select count(*)::text from public.ci_product_relations) as relations,
+        (select count(*)::text from public.ci_product_platforms) as platforms,
+        (select md5(coalesce(string_agg(to_jsonb(p)::text, E'\\n' order by p.id),'')) from public.ci_products p) as product_state,
+        (select md5(coalesce(string_agg(to_jsonb(i)::text, E'\\n' order by i.id),'')) from public.ci_product_identifiers i) as identifier_state,
+        (select md5(coalesce(string_agg(to_jsonb(r)::text, E'\\n' order by r.id),'')) from public.ci_product_relations r) as relation_state,
+        (select md5(coalesce(string_agg(to_jsonb(pp)::text, E'\\n' order by pp.id),'')) from public.ci_product_platforms pp) as platform_state`)).rows[0];
+      const initialMasterBeforeCancel = await productMasterSnapshot();
+      await client.query('select public.ci_cancel_import_batch($1::uuid)', [batchId]);
+      const cancelledInitialRows = await client.query<{ batches: string; products: string; reviews: string; resolutions: string }>(
+        `select
+          (select count(*)::text from public.ci_import_batches where id=$1) as batches,
+          (select count(*)::text from public.ci_import_rows where batch_id=$1) as products,
+          (select count(*)::text from public.ci_import_review_items where batch_id=$1) as reviews,
+          (select count(*)::text from public.ci_import_review_resolutions where batch_id=$1) as resolutions`,
+        [batchId],
+      );
+      assert.deepEqual(cancelledInitialRows.rows[0], { batches: '0', products: '0', reviews: '0', resolutions: '0' });
+      assert.deepEqual(await productMasterSnapshot(), initialMasterBeforeCancel);
+      assert.equal((await client.query<{ count: string }>(
+        `select count(*)::text as count from public.ci_audit_logs
+         where entity_table='ci_import_batches' and entity_id=$1 and action='CANCEL'`, [batchId],
+      )).rows[0].count, '2');
+      batchId = (await client.query<{ batch_id: string }>(
+        'select public.ci_stage_import_batch($1::jsonb) as batch_id', [JSON.stringify(payload)],
+      )).rows[0].batch_id;
+      await client.query('savepoint duplicate_initial_active_batch');
+      await assert.rejects(
+        client.query('select public.ci_stage_import_batch($1::jsonb)', [JSON.stringify(payload)]),
+        /ci_import_batches_one_staged_idx/,
+      );
+      await client.query('rollback to savepoint duplicate_initial_active_batch');
+
       await client.query('savepoint staff_resolution_visibility');
       await client.query("select set_config('request.jwt.claim.sub',$1,true)", [staffId]);
       const staffVisible = await client.query<{ visible: string; immunology: string }>(
@@ -130,6 +169,18 @@ test('exact workbook and owner resolution manifest stage and apply atomically in
           where r.batch_id=b.id and r.status='open')::text as open
          from public.ci_import_batches b where b.id=$1`, [batchId]);
       assert.deepEqual(status.rows[0], { status: 'applied', open: '0' });
+      await client.query('savepoint applied_initial_cancel');
+      await assert.rejects(
+        client.query('select public.ci_cancel_import_batch($1::uuid)', [batchId]),
+        /CI_IMPORT_NOT_CANCELLABLE/,
+      );
+      await client.query('rollback to savepoint applied_initial_cancel');
+      assert.equal((await client.query<{ count: string }>(
+        `select count(*)::text as count from public.ci_import_batches where status='staged'`,
+      )).rows[0].count, '0');
+      assert.equal((await client.query<{ count: string }>(
+        `select count(*)::text as count from public.ci_import_batches where id=$1 and status='applied'`, [batchId],
+      )).rows[0].count, '1');
 
       const types = await client.query<{ type: string; active_count: string; source_count: string }>(
         `select t.type,
@@ -248,7 +299,7 @@ test('exact workbook and owner resolution manifest stage and apply atomically in
          from public.ci_import_review_resolutions where batch_id=$1`,
         [batchId, adminId],
       );
-      assert.deepEqual(manifestRecords.rows[0], { count: '20', actors: '20', timestamps: '20', audited: '20' });
+      assert.deepEqual(manifestRecords.rows[0], { count: '20', actors: '20', timestamps: '20', audited: '40' });
 
       const loadIncrementalMaster = async (): Promise<IncrementalMaster> => {
         const products = await client.query<IncrementalMaster['products'][number]>(
@@ -293,7 +344,7 @@ test('exact workbook and owner resolution manifest stage and apply atomically in
       assert.deepEqual(acceptancePreview.map(row => row.candidate.ref_current), [
         '07700814001','09796762001','08463115190','08463123190','04813707001',
       ]);
-      const incrementalBatchId = await stageIncremental(incrementalFilename, incrementalWorkbook.source_sha256, acceptancePreview);
+      let incrementalBatchId = await stageIncremental(incrementalFilename, incrementalWorkbook.source_sha256, acceptancePreview);
       const previewCounts = await client.query<{ disposition: string; count: string }>(
         `select disposition,count(*)::text as count from public.ci_incremental_product_import_rows
          where batch_id=$1 group by disposition order by disposition`, [incrementalBatchId],
@@ -301,6 +352,27 @@ test('exact workbook and owner resolution manifest stage and apply atomically in
       assert.deepEqual(previewCounts.rows, [
         { disposition: 'Existing', count: '2' }, { disposition: 'New', count: '3' },
       ]);
+      const incrementalMasterBeforeCancel = await productMasterSnapshot();
+      await client.query('select public.ci_cancel_incremental_product_import($1::uuid)', [incrementalBatchId]);
+      const cancelledIncrementalRows = await client.query<{ batches: string; rows: string; audit: string }>(
+        `select
+          (select count(*)::text from public.ci_incremental_product_import_batches where id=$1) as batches,
+          (select count(*)::text from public.ci_incremental_product_import_rows where batch_id=$1) as rows,
+          (select count(*)::text from public.ci_incremental_product_import_audit where import_batch_id=$1) as audit`,
+        [incrementalBatchId],
+      );
+      assert.deepEqual(cancelledIncrementalRows.rows[0], { batches: '0', rows: '0', audit: '0' });
+      assert.deepEqual(await productMasterSnapshot(), incrementalMasterBeforeCancel);
+      assert.equal((await client.query<{ count: string }>(
+        `select count(*)::text as count from public.ci_incremental_product_import_batches where status='preview'`,
+      )).rows[0].count, '0');
+      incrementalBatchId = await stageIncremental(incrementalFilename, incrementalWorkbook.source_sha256, acceptancePreview);
+      await client.query('savepoint duplicate_incremental_active_batch');
+      await assert.rejects(
+        stageIncremental(incrementalFilename, incrementalWorkbook.source_sha256, acceptancePreview),
+        /ci_incremental_import_batches_one_preview_idx/,
+      );
+      await client.query('rollback to savepoint duplicate_incremental_active_batch');
       const reactionsBefore = await client.query<{ id: string; product_code: string; ref: string; platform_key: string }>(
         `select p.id,p.product_code,i.value as ref,pl.platform_key
          from public.ci_products p join public.ci_product_identifiers i on i.product_id=p.id and i.kind='REF_CURRENT'
@@ -336,6 +408,18 @@ test('exact workbook and owner resolution manifest stage and apply atomically in
         { ref: '08463123190', product_code: 'CHE-0092', product_type: 'consumable', packing_size_raw: null },
         { ref: '04813707001', product_code: 'CHE-0093', product_type: 'consumable', packing_size_raw: null },
       ]);
+      await client.query('savepoint applied_incremental_cancel');
+      await assert.rejects(
+        client.query('select public.ci_cancel_incremental_product_import($1::uuid)', [incrementalBatchId]),
+        /CI_INCREMENTAL_IMPORT_NOT_CANCELLABLE/,
+      );
+      await client.query('rollback to savepoint applied_incremental_cancel');
+      assert.equal((await client.query<{ count: string }>(
+        `select count(*)::text as count from public.ci_incremental_product_import_batches where status='preview'`,
+      )).rows[0].count, '0');
+      assert.equal((await client.query<{ count: string }>(
+        `select count(*)::text as count from public.ci_incremental_product_import_batches where id=$1 and status='applied'`, [incrementalBatchId],
+      )).rows[0].count, '1');
 
       let master = await loadIncrementalMaster();
       const platformProduct = master.products.find(product => master.identifiers.some(identifier =>
