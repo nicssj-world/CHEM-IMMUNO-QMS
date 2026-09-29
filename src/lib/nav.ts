@@ -42,6 +42,7 @@ export const workspaces: Workspace[] = [
   { key: 'admin', label: 'จัดการระบบ', icon: UserCog, tabs: [
     { href: '/scan/review', label: 'คิวอนุมัติ Barcode', icon: QrCode, need: 'supervise' },
     { href: '/import', label: 'นำเข้าทะเบียนน้ำยา', icon: FileUp, need: 'adminBoth' },
+    { href: '/import/incremental', label: 'นำเข้า Product เพิ่มเติม', icon: PackagePlus, need: 'adminBoth' },
     { href: '/admin/users', label: 'ผู้ใช้', icon: UserCog, need: 'adminBoth' },
   ] },
 ];

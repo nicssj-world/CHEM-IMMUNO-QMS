@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { Client } from 'pg';
 import { APPROVED_WORKBOOK_FILENAME, previewApprovedWorkbook } from '../../src/lib/import/approved-workbook';
+import { classifyIncrementalImport, parseIncrementalWorkbook, type IncrementalMaster } from '../../src/lib/import/incremental';
 
 const configuredDatabaseUrl = process.env.CI_TEST_DATABASE_URL;
 if (!configuredDatabaseUrl) {
@@ -248,6 +249,266 @@ test('exact workbook and owner resolution manifest stage and apply atomically in
         [batchId, adminId],
       );
       assert.deepEqual(manifestRecords.rows[0], { count: '20', actors: '20', timestamps: '20', audited: '20' });
+
+      const loadIncrementalMaster = async (): Promise<IncrementalMaster> => {
+        const products = await client.query<IncrementalMaster['products'][number]>(
+          `select id,warehouse_id,product_code,product_type,source_name,display_name,packing_size_raw,source_sheet,source_row,raw_source
+           from public.ci_products order by id`,
+        );
+        const identifiers = await client.query<IncrementalMaster['identifiers'][number]>(
+          `select product_id,warehouse_id,kind,value,approved from public.ci_product_identifiers order by id`,
+        );
+        const relations = await client.query<IncrementalMaster['relations'][number]>(
+          `select source_product_id,target_product_id,relation_type from public.ci_product_relations order by id`,
+        );
+        const platforms = await client.query<IncrementalMaster['platforms'][number]>(
+          `select id,warehouse_id,platform_key,display_name from public.ci_platforms order by id`,
+        );
+        const productPlatforms = await client.query<IncrementalMaster['product_platforms'][number]>(
+          `select product_id,platform_id from public.ci_product_platforms order by id`,
+        );
+        return {
+          products: products.rows, identifiers: identifiers.rows, relations: relations.rows,
+          platforms: platforms.rows, product_platforms: productPlatforms.rows,
+        };
+      };
+      const stageIncremental = async (sourceFilename: string, sourceSha256: string, rows: ReturnType<typeof classifyIncrementalImport>) => {
+        const staged = await client.query<{ batch_id: string }>(
+          `select public.ci_stage_incremental_product_import($1::jsonb) as batch_id`,
+          [JSON.stringify({ source_filename: sourceFilename, source_sha256: sourceSha256, rows })],
+        );
+        return staged.rows[0].batch_id;
+      };
+      const applyIncremental = async (id: string) => client.query<{ result: {
+        new: number; existing: number; updated: number; conflict: number; duplicate_in_file: number;
+      } }>('select public.ci_apply_incremental_product_import($1::uuid) as result', [id]);
+
+      const incrementalFilename = 'Summary_72 items + FOC_Chonburi_revised 2026_20092026.xlsx';
+      const incrementalWorkbook = await parseIncrementalWorkbook(
+        await readFile(join(process.cwd(), 'tests/import/fixtures', incrementalFilename)), incrementalFilename,
+      );
+      const acceptancePreview = classifyIncrementalImport(incrementalWorkbook.rows, await loadIncrementalMaster());
+      assert.equal(acceptancePreview.length, 5);
+      assert.deepEqual(acceptancePreview.map(row => row.classification), ['Existing','Existing','New','New','New']);
+      assert.deepEqual(acceptancePreview.map(row => row.candidate.ref_current), [
+        '07700814001','09796762001','08463115190','08463123190','04813707001',
+      ]);
+      const incrementalBatchId = await stageIncremental(incrementalFilename, incrementalWorkbook.source_sha256, acceptancePreview);
+      const previewCounts = await client.query<{ disposition: string; count: string }>(
+        `select disposition,count(*)::text as count from public.ci_incremental_product_import_rows
+         where batch_id=$1 group by disposition order by disposition`, [incrementalBatchId],
+      );
+      assert.deepEqual(previewCounts.rows, [
+        { disposition: 'Existing', count: '2' }, { disposition: 'New', count: '3' },
+      ]);
+      const reactionsBefore = await client.query<{ id: string; product_code: string; ref: string; platform_key: string }>(
+        `select p.id,p.product_code,i.value as ref,pl.platform_key
+         from public.ci_products p join public.ci_product_identifiers i on i.product_id=p.id and i.kind='REF_CURRENT'
+         left join public.ci_product_platforms pp on pp.product_id=p.id
+         left join public.ci_platforms pl on pl.id=pp.platform_id
+         where i.value in ('07700814001','09796762001') order by i.value,pl.platform_key`,
+      );
+      const appliedIncremental = await applyIncremental(incrementalBatchId);
+      assert.deepEqual(appliedIncremental.rows[0].result, {
+        new: 3, existing: 2, updated: 0, conflict: 0, duplicate_in_file: 0,
+      });
+      const initialAndIncrementalTotals = await client.query<{ products: string; identifiers: string }>(
+        `select (select count(*)::text from public.ci_products) as products,
+          (select count(*)::text from public.ci_product_identifiers) as identifiers`,
+      );
+      assert.deepEqual(initialAndIncrementalTotals.rows[0], { products: '165', identifiers: '359' });
+      const reactionsAfter = await client.query<{ id: string; product_code: string; ref: string; platform_key: string }>(
+        `select p.id,p.product_code,i.value as ref,pl.platform_key
+         from public.ci_products p join public.ci_product_identifiers i on i.product_id=p.id and i.kind='REF_CURRENT'
+         left join public.ci_product_platforms pp on pp.product_id=p.id
+         left join public.ci_platforms pl on pl.id=pp.platform_id
+         where i.value in ('07700814001','09796762001') order by i.value,pl.platform_key`,
+      );
+      assert.deepEqual(reactionsAfter.rows, reactionsBefore.rows);
+      const newCatalogRows = await client.query<{ ref: string; product_code: string; product_type: string; packing_size_raw: string | null }>(
+        `select i.value as ref,p.product_code,p.product_type,p.packing_size_raw
+         from public.ci_products p join public.ci_product_identifiers i on i.product_id=p.id and i.kind='REF_CURRENT'
+         where i.value=any($1::text[]) order by p.product_code`,
+        [['08463115190','08463123190','04813707001']],
+      );
+      assert.deepEqual(newCatalogRows.rows, [
+        { ref: '08463115190', product_code: 'CHE-0091', product_type: 'consumable', packing_size_raw: null },
+        { ref: '08463123190', product_code: 'CHE-0092', product_type: 'consumable', packing_size_raw: null },
+        { ref: '04813707001', product_code: 'CHE-0093', product_type: 'consumable', packing_size_raw: null },
+      ]);
+
+      let master = await loadIncrementalMaster();
+      const platformProduct = master.products.find(product => master.identifiers.some(identifier =>
+        identifier.product_id === product.id && identifier.kind === 'REF_CURRENT' && identifier.value === '07700814001'))!;
+      const platformCandidate = {
+        warehouse_code: 'CHE' as const, source_name: platformProduct.display_name, product_type: platformProduct.product_type,
+        packing_size_raw: null, source_sheet: 'FOC item_chem c503 c703 ISE', source_row: 1001,
+        raw_source: { test: 'platform replacement' }, ref_current: '07700814001',
+        manufacturer_barcode: master.identifiers.find(item => item.product_id === platformProduct.id && item.kind === 'MANUFACTURER_BARCODE')!.value,
+        replaces_ref: null, used_with: 'cobas pro c703',
+      };
+      const platformPreview = classifyIncrementalImport([platformCandidate], master);
+      assert.equal(platformPreview[0].classification, 'Update');
+      const platformBefore = await client.query<{ platform_keys: string[] }>(
+        `select array_agg(pl.platform_key order by pl.platform_key) as platform_keys
+         from public.ci_product_platforms pp join public.ci_platforms pl on pl.id=pp.platform_id
+         where pp.product_id=$1`, [platformProduct.id],
+      );
+      const platformBatchId = await stageIncremental('platform-update-test.xlsx', 'A'.repeat(64), platformPreview);
+      const platformApply = await applyIncremental(platformBatchId);
+      assert.deepEqual(platformApply.rows[0].result, {
+        new: 0, existing: 0, updated: 1, conflict: 0, duplicate_in_file: 0,
+      });
+      const platformAfter = await client.query<{ id: string; product_code: string; platform_key: string }>(
+        `select p.id,p.product_code,pl.platform_key from public.ci_products p
+         join public.ci_product_platforms pp on pp.product_id=p.id join public.ci_platforms pl on pl.id=pp.platform_id
+         where p.id=$1 order by pl.platform_key`, [platformProduct.id],
+      );
+      assert.deepEqual(platformAfter.rows, [{ id: platformProduct.id, product_code: platformProduct.product_code, platform_key: 'c703' }]);
+
+      master = await loadIncrementalMaster();
+      const relation = master.relations.find(item => item.relation_type === 'uses_consumable')!;
+      const relationProduct = master.products.find(product => product.id === relation.target_product_id)!;
+      const originalRelationSources = master.relations.filter(item => item.target_product_id === relationProduct.id && item.relation_type.startsWith('uses_'));
+      const alternateReagent = master.products.find(product => product.warehouse_id === relationProduct.warehouse_id &&
+        product.product_type === 'reagent' && !originalRelationSources.some(item => item.source_product_id === product.id))!;
+      const relationCandidate = {
+        warehouse_code: relationProduct.warehouse_id === 1 ? 'CHE' as const : 'IMM' as const,
+        source_name: relationProduct.display_name, product_type: relationProduct.product_type,
+        packing_size_raw: null, source_sheet: relationProduct.source_sheet!, source_row: 1002,
+        raw_source: { test: 'relationship replacement' },
+        ref_current: master.identifiers.find(item => item.product_id === relationProduct.id && item.kind === 'REF_CURRENT')!.value,
+        manufacturer_barcode: master.identifiers.find(item => item.product_id === relationProduct.id && item.kind === 'MANUFACTURER_BARCODE')!.value,
+        replaces_ref: null,
+        used_with: relationProduct.warehouse_id === 1 ? alternateReagent.source_name.split(',',1)[0].trim() : alternateReagent.source_name,
+      };
+      const relationPreview = classifyIncrementalImport([relationCandidate], master);
+      assert.equal(relationPreview[0].classification, 'Update');
+      const relationBatchId = await stageIncremental('relationship-update-test.xlsx', 'B'.repeat(64), relationPreview);
+      const relationApply = await applyIncremental(relationBatchId);
+      assert.deepEqual(relationApply.rows[0].result, {
+        new: 0, existing: 0, updated: 1, conflict: 0, duplicate_in_file: 0,
+      });
+      const relationsAfter = await client.query<{ source_product_id: string; relation_type: string }>(
+        `select source_product_id,relation_type from public.ci_product_relations
+         where target_product_id=$1 and relation_type like 'uses_%' order by source_product_id`, [relationProduct.id],
+      );
+      assert.deepEqual(relationsAfter.rows, [{ source_product_id: alternateReagent.id, relation_type: 'uses_consumable' }]);
+      const relationAudit = await client.query<{ field: string }>(
+        `select field from public.ci_incremental_product_import_audit where product_id=$1 and import_batch_id=$2 order by id`,
+        [relationProduct.id, relationBatchId],
+      );
+      assert.deepEqual(relationAudit.rows, [{ field: 'Used with / Product relationship' }]);
+
+      const existingHistory = await client.query<{ id: string; product_code: string; warehouse_id: number; product_type: string; source_name: string; display_name: string; current_ref: string; barcode: string; relations: string }>(
+        `select p.id,p.product_code,p.warehouse_id,p.product_type,p.source_name,p.display_name,
+          current.value as current_ref,barcode.value as barcode,
+          (select count(*)::text from public.ci_product_relations r where r.source_product_id=p.id or r.target_product_id=p.id) as relations
+         from public.ci_products p
+         join public.ci_product_identifiers current on current.product_id=p.id and current.kind='REF_CURRENT'
+         join public.ci_product_identifiers barcode on barcode.product_id=p.id and barcode.kind='MANUFACTURER_BARCODE'
+         where p.id=$1`, [relationProduct.id],
+      );
+      const identityBefore = existingHistory.rows[0];
+      await client.query('reset role');
+      const historyLocation = await client.query<{ id: string }>(
+        `insert into public.ci_locations(warehouse_id,code,name) values($1,'INCR-REF-TEST','Incremental REF test') returning id`,
+        [identityBefore.warehouse_id],
+      );
+      const historyLot = await client.query<{ id: string }>(
+        `insert into public.ci_stock_lots(warehouse_id,product_id,lot_number,expiry_date)
+         values($1,$2,'INCR-REF-LOT','2027-12-31') returning id`, [identityBefore.warehouse_id,identityBefore.id],
+      );
+      const historyTransaction = await client.query<{ id: string }>(
+        `insert into public.ci_stock_transactions(warehouse_id,kind,idempotency_key,request_hash,actor_id)
+         values($1,'receive','incremental-ref-test','incremental-ref-test',$2) returning id`, [identityBefore.warehouse_id,adminId],
+      );
+      await client.query(
+        `insert into public.ci_stock_movement_lines(transaction_id,warehouse_id,lot_id,location_id,quantity_delta)
+         values($1,$2,$3,$4,2)`, [historyTransaction.rows[0].id,identityBefore.warehouse_id,historyLot.rows[0].id,historyLocation.rows[0].id],
+      );
+      await client.query('set local role authenticated');
+      await client.query("select set_config('request.jwt.claim.sub',$1,true)", [adminId]);
+
+      master = await loadIncrementalMaster();
+      const replacementCandidate = {
+        warehouse_code: identityBefore.warehouse_id === 1 ? 'CHE' as const : 'IMM' as const,
+        source_name: `${identityBefore.display_name} revised`, product_type: identityBefore.product_type as 'reagent'|'calibrator'|'control'|'consumable',
+        packing_size_raw: null, source_sheet: relationProduct.source_sheet!, source_row: 1003,
+        raw_source: { test: 'deterministic REF replacement' }, ref_current: '99999999999',
+        manufacturer_barcode: identityBefore.barcode, replaces_ref: identityBefore.current_ref, used_with: null,
+      };
+      const replacementPreview = classifyIncrementalImport([replacementCandidate], master);
+      assert.equal(replacementPreview[0].classification, 'Update');
+      assert.equal(replacementPreview[0].product_id, identityBefore.id);
+      const replacementBatchId = await stageIncremental('ref-replacement-test.xlsx', 'C'.repeat(64), replacementPreview);
+      const replacementApply = await applyIncremental(replacementBatchId);
+      assert.deepEqual(replacementApply.rows[0].result, {
+        new: 0, existing: 0, updated: 1, conflict: 0, duplicate_in_file: 0,
+      });
+      const identityAfter = await client.query<{ id: string; product_code: string; source_name: string; display_name: string; ref_current: string; legacy_ref: string; lot_product_id: string; movement_count: string; relation_count: string }>(
+        `select p.id,p.product_code,p.source_name,p.display_name,current.value as ref_current,legacy.value as legacy_ref,
+          l.product_id as lot_product_id,
+          (select count(*)::text from public.ci_stock_movement_lines m where m.lot_id=l.id) as movement_count,
+          (select count(*)::text from public.ci_product_relations r where r.source_product_id=p.id or r.target_product_id=p.id) as relation_count
+         from public.ci_products p
+         join public.ci_product_identifiers current on current.product_id=p.id and current.kind='REF_CURRENT'
+         join public.ci_product_identifiers legacy on legacy.product_id=p.id and legacy.kind='REF_LEGACY' and legacy.value=$2
+         join public.ci_stock_lots l on l.product_id=p.id where p.id=$1`, [identityBefore.id,identityBefore.current_ref],
+      );
+      assert.deepEqual(identityAfter.rows[0], {
+        id: identityBefore.id, product_code: identityBefore.product_code, source_name: identityBefore.source_name,
+        display_name: `${identityBefore.display_name} revised`, ref_current: '99999999999', legacy_ref: identityBefore.current_ref,
+        lot_product_id: identityBefore.id, movement_count: '1', relation_count: identityBefore.relations,
+      });
+      const platformAudit = await client.query<{ field: string; old_value: string[]; new_value: string[] }>(
+        `select field,old_value,new_value
+         from public.ci_incremental_product_import_audit where product_id=$1 order by id`, [platformProduct.id],
+      );
+      assert.deepEqual(platformAudit.rows, [{ field: 'Platform mapping', old_value: platformBefore.rows[0].platform_keys, new_value: ['c703'] }]);
+      const replacementAudit = await client.query<{ field: string; old_value: string | null; new_value: string | null; action: string; source_filename: string; source_row: number; actor_id: string; created_at: string; batch_id: string }>(
+        `select field,old_value#>>'{}' as old_value,new_value#>>'{}' as new_value,action,
+          source_filename,source_row,actor_id,created_at::text,import_batch_id as batch_id
+         from public.ci_incremental_product_import_audit where product_id=$1 and import_batch_id=$2 order by id`,
+        [identityBefore.id, replacementBatchId],
+      );
+      assert.deepEqual(replacementAudit.rows.map(row => row.field), ['Product Name','REF_CURRENT','REF_LEGACY']);
+      assert.ok(replacementAudit.rows.every(row => row.source_filename === 'ref-replacement-test.xlsx'
+        && row.source_row === 1003 && row.actor_id === adminId && row.created_at && row.batch_id === replacementBatchId));
+      assert.equal(replacementAudit.rows.find(row => row.field === 'REF_CURRENT')?.old_value, identityBefore.current_ref);
+      assert.equal(replacementAudit.rows.find(row => row.field === 'REF_CURRENT')?.new_value, '99999999999');
+      assert.ok(replacementAudit.rows.filter(row => ['REF_CURRENT','REF_LEGACY'].includes(row.field))
+        .every(row => row.action === 'PRODUCT_IDENTIFIER_REPLACED'));
+
+      master = await loadIncrementalMaster();
+      const legacyNoteCandidate = {
+        warehouse_code: identityBefore.warehouse_id === 1 ? 'CHE' as const : 'IMM' as const,
+        source_name: `${identityAfter.rows[0].display_name} revised again`, product_type: identityBefore.product_type as 'reagent'|'calibrator'|'control'|'consumable',
+        packing_size_raw: null, source_sheet: relationProduct.source_sheet!, source_row: 1004,
+        raw_source: { test: 'replacement explicitly refers to prior legacy REF' }, ref_current: '88888888888',
+        manufacturer_barcode: '99999999998', replaces_ref: identityBefore.current_ref, used_with: null,
+      };
+      const legacyNotePreview = classifyIncrementalImport([legacyNoteCandidate], master);
+      assert.equal(legacyNotePreview[0].classification, 'Update');
+      assert.equal(legacyNotePreview[0].product_id, identityBefore.id);
+      const legacyNoteBatchId = await stageIncremental('legacy-ref-replacement-test.xlsx', 'D'.repeat(64), legacyNotePreview);
+      const legacyNoteApply = await applyIncremental(legacyNoteBatchId);
+      assert.deepEqual(legacyNoteApply.rows[0].result, {
+        new: 0, existing: 0, updated: 1, conflict: 0, duplicate_in_file: 0,
+      });
+      const finalIdentity = await client.query<{ id: string; product_code: string; current_ref: string; barcode: string; legacy_refs: string[] }>(
+        `select p.id,p.product_code,current.value as current_ref,barcode.value as barcode,
+          array(select value from public.ci_product_identifiers where product_id=p.id and kind='REF_LEGACY' order by value) as legacy_refs
+         from public.ci_products p
+         join public.ci_product_identifiers current on current.product_id=p.id and current.kind='REF_CURRENT'
+         join public.ci_product_identifiers barcode on barcode.product_id=p.id and barcode.kind='MANUFACTURER_BARCODE'
+         where p.id=$1`, [identityBefore.id],
+      );
+      assert.deepEqual(finalIdentity.rows[0], {
+        id: identityBefore.id, product_code: identityBefore.product_code, current_ref: '88888888888',
+        barcode: '99999999998', legacy_refs: [identityBefore.current_ref,'99999999999'].sort(),
+      });
+
       await client.query('savepoint immutable_resolution');
       await client.query('reset role');
       await assert.rejects(
