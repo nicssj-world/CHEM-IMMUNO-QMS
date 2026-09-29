@@ -8,6 +8,7 @@ export type ParsedBarcode = {
   pcn?: string;
   lot?: string;
   expiry?: string;
+  productionDate?: string;
   serial?: string;
   quantity?: number;
   primary?: string;
@@ -59,14 +60,14 @@ function parseGs1(payload: string, result: ParsedBarcode) {
   let cursor = 0;
   while (cursor < text.length) {
     if (text[cursor] === GS) { cursor++; continue; }
-    const match = parenthesized ? /^\((01|10|17|21|240)\)/.exec(text.slice(cursor)) : /^(01|10|17|21|240)/.exec(text.slice(cursor));
+    const match = parenthesized ? /^\((01|10|11|13|15|16|17|21|240)\)/.exec(text.slice(cursor)) : /^(01|10|11|13|15|16|17|21|240)/.exec(text.slice(cursor));
     if (!match) { result.warnings.push(`Unknown or malformed AI at offset ${cursor}`); return; }
     const ai = match[1];
     cursor += match[0].length;
     if (seen.has(ai)) { result.warnings.push(`Duplicate AI ${ai}`); return; }
     seen.add(ai);
     let value: string;
-    if (ai === '01' || ai === '17') {
+    if (['01', '11', '13', '15', '16', '17'].includes(ai)) {
       const length = ai === '01' ? 14 : 6;
       value = text.slice(cursor, cursor + length);
       if (!/^\d+$/.test(value) || value.length !== length) { result.warnings.push(`Invalid AI ${ai}`); return; }
@@ -85,6 +86,7 @@ function parseGs1(payload: string, result: ParsedBarcode) {
     if (ai === '10') result.lot = value;
     if (ai === '21') result.serial = value;
     if (ai === '240') result.additionalProductId = value;
+    if (ai === '11') result.productionDate = yymmdd(value);
     if (ai === '17') {
       result.expiry = yymmdd(value);
       if (!result.expiry) { result.warnings.push('Invalid AI 17 expiry'); return; }
@@ -146,7 +148,7 @@ export function parseBarcode(raw: string, symbology = 'manual'): ParsedBarcode {
   const result: ParsedBarcode = { raw, symbology, standard: 'UNKNOWN', warnings: [] };
   const text = raw.trim();
   if (!text) { result.warnings.push('Empty barcode'); return result; }
-  if (/^\](?:C1|d2|e0)/.test(text) || /^(?:\x1d|<GS>)?\(?01\)?\d{14}/.test(text)) parseGs1(text, result);
+  if (/^\](?:C1|d2|e0)/.test(text) || /^\(240\)/.test(text) || /^(?:\x1d|<GS>)?\(?01\)?\d{14}/.test(text)) parseGs1(text, result);
   else if (/^(?:\](?:A0|C0|d1))?\*?\+/.test(text)) parseHibc(text, result);
   else result.warnings.push('Unrecognized barcode standard; use manual Product search');
   return result;

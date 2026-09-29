@@ -1,4 +1,7 @@
+import { cache } from 'react';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { safeReturnPath } from '@/lib/return-path';
 import { createClient } from '@/lib/supabase/server';
 import { canMutateRole, canSuperviseRole, resolveAppAccess, type AppRole, type AppWarehouse } from '@/lib/auth-identity';
 
@@ -6,7 +9,8 @@ export type Role = AppRole;
 export type Warehouse = AppWarehouse;
 export type AccessContext = import('@/lib/auth-identity').AppAccess;
 
-export async function getAccessContext(): Promise<AccessContext | null> {
+// The layout and the page both need access; cache() makes that one set of Supabase queries per request instead of two.
+export const getAccessContext = cache(async (): Promise<AccessContext | null> => {
   const client = await createClient();
   if (!client) return null;
   const { data: userResult, error: authError } = await client.auth.getUser();
@@ -21,11 +25,14 @@ export async function getAccessContext(): Promise<AccessContext | null> {
     .eq('active', true);
   if (error || !access?.length) return null;
   return resolveAppAccess(userResult.user.id, userResult.user.email, profile, access);
-}
+});
 
 export async function requireAccess() {
   const access = await getAccessContext();
-  if (!access) redirect('/login');
+  if (!access) {
+    const back = safeReturnPath((await headers()).get('x-return-to'));
+    redirect(back && back !== '/' ? `/login?next=${encodeURIComponent(back)}` : '/login');
+  }
   return access;
 }
 
