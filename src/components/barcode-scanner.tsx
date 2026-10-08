@@ -32,6 +32,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
   const manualInput = useRef<HTMLInputElement>(null);
   const photoInput = useRef<HTMLInputElement>(null);
   const photoBusyRef = useRef(false);
+  const acceptingRef = useRef(false);
   const [active, setActive] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -48,7 +49,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
   }
 
   async function accept(raw: string, symbology: string, fromCamera = false) {
-    if (!raw.trim()) return;
+    if (!raw.trim() || acceptingRef.current) return;
     const now = Date.now();
     const previous = last.current;
     if (continuous) {
@@ -57,14 +58,18 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
       last.current = { raw, at: now };
       navigator.vibrate?.(60);
       setStatus('อ่านแล้ว · สแกนชิ้นถัดไปได้เลย');
-      await onScan(raw, symbology);
+      acceptingRef.current = true;
+      try { await onScan(raw, symbology); }
+      finally { acceptingRef.current = false; }
       return;
     }
     if (previous?.raw === raw && now - previous.at < 2500) { setStatus('สแกนซ้ำเร็วเกินไป · ตรวจรายการก่อนสแกนอีกครั้ง'); return; }
     last.current = { raw, at: now };
     stop();
     setStatus(isQr ? 'อ่าน QR แล้ว · กำลังเปิดตำแหน่ง' : 'อ่าน Barcode แล้ว · ตรวจ Product, LOT และวันหมดอายุก่อนบันทึก');
-    await onScan(raw, symbology);
+    acceptingRef.current = true;
+    try { await onScan(raw, symbology); }
+    finally { acceptingRef.current = false; }
   }
 
   async function decodePhoto(file?: File) {
@@ -78,6 +83,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
     setStatus('กำลังอ่าน Data Matrix จากภาพบนอุปกรณ์…');
     // This function works entirely inside the browser: no file bytes are uploaded.
     const objectUrl = URL.createObjectURL(file);
+    let decoded = false;
     try {
       const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([
         import('@zxing/browser'),
@@ -124,9 +130,11 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
       }
       if (!result) throw new Error('DECODE_EMPTY');
       setStatus('อ่าน Data Matrix จากภาพสำเร็จ · ไม่ได้อัปโหลดรูป');
-      await accept(result.getText(), BarcodeFormat[result.getBarcodeFormat()] ?? 'image');
+      decoded = true;
+      try { await accept(result.getText(), BarcodeFormat[result.getBarcodeFormat()] ?? 'image'); }
+      catch { setStatus('อ่าน Data Matrix สำเร็จ แต่ตรวจสอบสินค้าผ่าน Server ไม่สำเร็จ · โปรดลองใหม่'); }
     } catch {
-      setStatus('อ่าน Data Matrix จากภาพไม่สำเร็จ · ถ่ายให้คมชัด อยู่ห่างพอให้โฟกัสได้ และวางรหัสใกล้กลางภาพ');
+      if (!decoded) setStatus('อ่าน Data Matrix จากภาพไม่สำเร็จ · ถ่ายให้คมชัด อยู่ห่างพอให้โฟกัสได้ และวางรหัสใกล้กลางภาพ');
     } finally {
       URL.revokeObjectURL(objectUrl);
       photoBusyRef.current = false;

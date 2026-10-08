@@ -13,6 +13,7 @@ import { SubmitButton } from './submit-button';
 import { ReceiptAssessmentFields } from './receipt-assessment-fields';
 import { DEFAULT_ASSESSMENT, assessmentError, type AssessmentInput } from '@/lib/receipt-assessment';
 import { preselectLocation } from '@/lib/receive-location';
+import { scanBatchFields } from '@/lib/barcode';
 
 type Product = { id: string; warehouse_id: number; product_code: string; display_name: string; default_location_id: string | null };
 type Location = { id: string; warehouse_id: number; code: string; name: string; parent_code?: string | null };
@@ -101,7 +102,8 @@ export function ReceiveWorkbench({ invoiceId, idempotencyKey, lines, products, l
       setScan(result);
       const lineId = result.invoiceLineId ?? '';
       const locationId = preselectLocation(result.productId ? productById.get(result.productId)?.default_location_id : null, warehouseId, locations);
-      setDraft({ invoiceLineId: lineId, quantity: '1', lot: result.parsed.lot ?? '', expiry: result.parsed.expiry ?? '', locationId, raw });
+      const batch = scanBatchFields(result.parsed);
+      setDraft({ invoiceLineId: lineId, quantity: '1', lot: batch.lot, expiry: batch.expiry, locationId, raw });
       setMessage(result.message ?? (result.parsed.warnings.length ? 'Barcode มีคำเตือน · ตรวจข้อมูลด้วยตนเอง' : 'พบน้ำยา · LOT/วันหมดอายุมาจาก Barcode โปรดตรวจทาน'));
     } catch (error) { setMessage(userMessage(error instanceof Error ? error.message : null, 'อ่าน Barcode ไม่สำเร็จ')); }
   }

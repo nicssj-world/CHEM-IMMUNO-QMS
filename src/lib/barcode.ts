@@ -169,3 +169,9 @@ export function barcodeIdentifierCandidates(parsed: ParsedBarcode): string[] {
   if (parsed.standard === 'UNKNOWN' && parsed.raw.trim()) values.add(parsed.raw.trim());
   return [...values];
 }
+
+/** Common conservative decoded-batch trust rule for receiving and issue. */
+export function scanBatchFields(parsed: ParsedBarcode): { lot: string; expiry: string; requiresReview: boolean } {
+  if (parsed.warnings.length) return { lot: '', expiry: '', requiresReview: true };
+  return { lot: parsed.lot ?? '', expiry: parsed.expiry ?? '', requiresReview: !parsed.lot || !parsed.expiry };
+}

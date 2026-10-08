@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { BarcodeScanner } from './barcode-scanner';
 import { resolveScan } from '@/app/actions/scanner';
 import { userMessage } from '@/lib/messages';
+import { scanBatchFields } from '@/lib/barcode';
 
 /** Scanning only picks the Product (and LOT); the quantity and confirmation still happen in the issue form. */
 export function IssueScan({ warehouseId, warehouseCode }: { warehouseId: number; warehouseCode: string }) {
@@ -27,7 +28,7 @@ export function IssueScan({ warehouseId, warehouseCode }: { warehouseId: number;
         return;
       }
       // A Barcode with parse warnings can carry a wrong LOT, so only trust it when clean.
-      const lot = result.parsed.warnings.length ? '' : result.parsed.lot ?? '';
+      const lot = scanBatchFields(result.parsed).lot;
       const query = new URLSearchParams({ warehouse: warehouseCode, product: result.productId });
       if (lot) query.set('lot', lot);
       setMessage(`พบ ${result.productCode ?? 'น้ำยา'}${lot ? ` · LOT ${lot}` : ' · Barcode ไม่มี LOT ให้เลือก LOT เอง'}`);

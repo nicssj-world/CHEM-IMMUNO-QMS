@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { barcodeIdentifierCandidates, parseBarcode } from '../../src/lib/barcode';
+import { barcodeIdentifierCandidates, parseBarcode, scanBatchFields } from '../../src/lib/barcode';
 
 test('GS1-128 retains GTIN leading zero, LOT, expiry, serial and AI 240 semantics', () => {
   const raw = ']C101000123456789051725123110LOT-A\x1d21SER-7\x1d240EXTRA';
@@ -86,4 +86,9 @@ test('Roche reagent optical Data Matrix bytes parse to exact REF/GTIN/LOT/expiry
     assert.ok(barcodeIdentifierCandidates(parsed).includes(item.ref));
     assert.ok(barcodeIdentifierCandidates(parsed).includes(item.gtin));
   }
+});
+
+test('common batch trust rejects malformed GS1 without discarding clean batch', () => {
+  assert.deepEqual(scanBatchFields(parseBarcode('(01)00012345678905(17)271231(10)LOT-A')), {lot:'LOT-A',expiry:'2027-12-31',requiresReview:false});
+  assert.deepEqual(scanBatchFields(parseBarcode(']d201000123456789051799999910LOT')), {lot:'',expiry:'',requiresReview:true});
 });
