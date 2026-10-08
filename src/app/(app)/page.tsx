@@ -25,7 +25,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const movementCount = (kind: string) => client.from('ci_stock_transactions').select('id', { count: 'exact', head: true }).eq('warehouse_id', warehouse.id).eq('kind', kind).gte('created_at', weekAgo);
   const [products, reorders, expired, expiring30, expiring90, stockedRows, lots, received7, issued7, movements, vendors, mapping, issues] = await Promise.all([
     client.from('ci_products').select('id', { count: 'exact' }).eq('warehouse_id', warehouse.id).eq('active', true).limit(2000),
-    client.from('ci_reorder_status').select('product_id,usable_stock,rop,suggested_order').eq('warehouse_id', warehouse.id).limit(2000),
+    client.from('ci_reorder_status').select('product_id,usable_stock,rop,suggested_order', { count: 'exact' }).eq('warehouse_id', warehouse.id).limit(2000),
     positive().lt('expiry_date', today),
     positive().gte('expiry_date', today).lte('expiry_date', addDays(today, 30)),
     positive().gte('expiry_date', today).lte('expiry_date', addDays(today, 90)),
@@ -34,12 +34,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     movementCount('receive'),
     movementCount('issue'),
     client.from('ci_stock_transactions').select('id,kind,created_at,purpose').eq('warehouse_id', warehouse.id).order('created_at', { ascending: false }).limit(8),
-    client.from('ci_vendor_metrics').select('receipt_count,discrepancy_count').eq('warehouse_id', warehouse.id).eq('fiscal_year', fiscalYear(today)).limit(500),
+    client.from('ci_vendor_metrics').select('receipt_count,discrepancy_count', { count: 'exact' }).eq('warehouse_id', warehouse.id).eq('fiscal_year', fiscalYear(today)).limit(500),
     client.from('ci_identifier_mapping_requests').select('id', { count: 'exact', head: true }).eq('warehouse_id', warehouse.id).eq('status', 'proposed'),
     client.from('ci_vendor_issues').select('id', { count: 'exact', head: true }).eq('warehouse_id', warehouse.id).eq('status', 'open'),
   ]);
   const error = [products, reorders, expired, expiring30, expiring90, stockedRows, lots, received7, issued7, movements, vendors, mapping, issues].find(r => r.error)?.error;
   if (error) return <main className="grid gap-4"><h1 className="page-title">ภาพรวมคลัง</h1><p className="error" role="alert">อ่านข้อมูลไม่สำเร็จ: {logUserMessage('dashboard', error)}</p></main>;
+  if ((products.count ?? 0) > (products.data?.length ?? 0) || (reorders.count ?? 0) > (reorders.data?.length ?? 0) || (vendors.count ?? 0) > (vendors.data?.length ?? 0)) return <main className="grid gap-4"><h1 className="page-title">ภาพรวมคลัง</h1><p className="error" role="alert">จำนวนข้อมูลเกินขอบเขตการแสดงผล Dashboard · ไม่แสดง KPI ที่อาจไม่ครบ กรุณาติดต่อผู้ดูแลระบบ</p></main>;
   const activeIds = new Set((products.data ?? []).map(p => p.id));
   const reorderRows = ((reorders.data ?? []) as Reorder[]).filter(r => activeIds.has(r.product_id));
   const status = reorderRows.map(r => reorderAttention(Number(r.usable_stock), r.rop == null ? null : Number(r.rop)));

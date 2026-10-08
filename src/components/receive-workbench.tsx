@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { BarcodeScanner } from './barcode-scanner';
 import { checkLotExpiryConflict, proposeScanMapping, registerInvoiceAttachment, removeInvoiceAttachment, resolveScan, type ScanResolution } from '@/app/actions/scanner';
 import { confirmReceipt } from '@/app/actions/inventory';
-import { takeReceiveDraft } from '@/lib/receive-draft';
+import { clearReceiveDraft, readReceiveDraft } from '@/lib/receive-draft';
 import { userMessage } from '@/lib/messages';
 import { IntegerQuantityInput } from './integer-quantity-input';
 import { SubmitButton } from './submit-button';
@@ -57,14 +57,16 @@ export function ReceiveWorkbench({ invoiceId, idempotencyKey, lines, products, l
   const [seenToken, setSeenToken] = useState(savedToken);
   if (savedToken !== seenToken) {
     setSeenToken(savedToken);
-    if (savedToken) { setPackages([]); setAssessment(DEFAULT_ASSESSMENT); setAssessmentProblem(''); setMessage('บันทึกรับเข้าแล้ว · สแกนแพ็กเกจถัดไปได้'); }
+    if (savedToken) { clearReceiveDraft(invoiceId); setPackages([]); setAssessment(DEFAULT_ASSESSMENT); setAssessmentProblem(''); setMessage('บันทึกรับเข้าแล้ว · สแกนแพ็กเกจถัดไปได้'); }
   }
 
   // Lines scanned while creating the invoice arrive as ready-made packages; the user only picks locations.
   useEffect(() => {
     if (hydrated.current) return;
     hydrated.current = true;
-    const scanned = takeReceiveDraft(invoiceId);
+    // A successful receipt must not re-import already-booked stock after redirect or refresh.
+    if (savedToken) { clearReceiveDraft(invoiceId); return; }
+    const scanned = readReceiveDraft(invoiceId);
     if (!scanned.length) return;
     void (async () => {
       const accepted: Package[] = [];
@@ -87,7 +89,7 @@ export function ReceiveWorkbench({ invoiceId, idempotencyKey, lines, products, l
       setPackages(prev => [...prev, ...accepted]);
       setMessage(`นำเข้า ${accepted.length} แพ็กเกจจากที่สแกนไว้ · เลือกตำแหน่งแล้วบันทึกผลตรวจรับ${skipped.length ? ` · ข้าม ${skipped.length} รายการ: ${skipped.join(' / ')}` : ''}`);
     })();
-  }, [invoiceId, lines, locations, productById, warehouseIds]);
+  }, [invoiceId, lines, locations, productById, warehouseIds, savedToken]);
 
   const candidateKind = scan?.parsed.gtin ? 'GTIN' : scan?.parsed.primary ? 'HIBC_PRIMARY' : scan?.parsed.additionalProductId ? 'GS1_AI240' : 'OTHER';
   const candidateValue = scan?.parsed.gtin ?? scan?.parsed.primary ?? scan?.parsed.additionalProductId ?? scan?.parsed.raw.trim() ?? '';

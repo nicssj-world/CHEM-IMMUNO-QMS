@@ -30,6 +30,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
   // An existing vendor + invoice number reopens that invoice; its lines are not changed, so the user decides before leaving.
   const [existing, setExisting] = useState<{ id: string; lines: Line[] } | null>(null);
   const [pending, startTransition] = useTransition();
+  const submitting = useRef(false);
   const productById = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
   const rows = useRef(new Map<string, HTMLDivElement>());
   const feedbackId = useRef(0);
@@ -88,8 +89,9 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
-    setExisting(null);
     event.preventDefault();
+    if (submitting.current) return;
+    setExisting(null);
     setError('');
     const form = new FormData(event.currentTarget);
     const usable = lines.filter(l => l.productId && Number(l.quantity) > 0);
@@ -99,7 +101,9 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
       setError('มีรายการที่ยังไม่ได้เลือกน้ำยาหรือจำนวน');
       return;
     }
+    submitting.current = true;
     startTransition(async () => {
+      try {
       const result = await startInvoice({
         vendorId: String(form.get('vendor_id') ?? ''), invoiceNumber: String(form.get('invoice_number') ?? ''),
         invoiceDate: String(form.get('invoice_date') ?? ''), poNumber: String(form.get('po_number') ?? ''),
@@ -108,6 +112,8 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
       if (!result.ok) { setError(result.message); return; }
       if (result.existing) { setExisting({ id: result.invoiceId, lines: usable }); return; }
       openInvoice(result.invoiceId, usable);
+      } catch (cause) { setError(userMessage(cause instanceof Error ? cause.message : null, 'สร้าง Invoice ไม่สำเร็จ')); }
+      finally { submitting.current = false; }
     });
   }
 
