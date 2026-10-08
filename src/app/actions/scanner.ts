@@ -7,19 +7,27 @@ import { createClient } from '@/lib/supabase/server';
 import { logUserMessage } from '@/lib/messages';
 import { locationQrScan, looksLikeLocationQr } from '@/lib/location-qr';
 
-export type ScanResolution = { parsed: ParsedBarcode; locationQr?: { path: string | null }; productId?: string; productCode?: string; invoiceLineId?: string; message?: string; scanId?: string; otherWarehouse?: boolean };
+export type ScanResolution = { parsed: ParsedBarcode; locationQr?: { path: string | null }; productId?: string; productCode?: string; matchedIdentifier?: { kind: string; value: string }; invoiceLineId?: string; message?: string; scanId?: string; otherWarehouse?: boolean };
 
-/** Approved identifier matches for a scan as product id -> warehouse id. */
-async function matchApprovedIdentifiers(client: SupabaseClient, parsed: ParsedBarcode, raw: string) {
+/** Resolve approved identifiers only; preserve exact value and type for UI feedback. */
+async function matchApprovedIdentifiers(client: SupabaseClient, parsed: ParsedBarcode) {
   const values = barcodeIdentifierCandidates(parsed);
-  if (!values.length) return new Map<string, number>();
+  const ids = new Map<string, { warehouseId: number; kind: string; value: string }>();
+  if (!values.length) return ids;
   const { data, error } = await client.from('ci_product_identifiers')
-    .select('product_id,warehouse_id')
+    .select('product_id,warehouse_id,kind,value')
     .in('value', values)
     .eq('approved', true);
   if (error) throw new Error(logUserMessage('scanner', error));
-  const ids = new Map<string, number>();
-  for (const item of data ?? []) ids.set(item.product_id, Number(item.warehouse_id));
+  // A full GS1 symbol may match both AI 240 and GTIN to the same product.
+  // Prefer the exact REF when both exist; matching one product is still unique.
+  const priority = ['REF_CURRENT', 'MANUFACTURER_BARCODE', 'GS1_AI240', 'GTIN', 'HIBC_PRIMARY', 'HIBC_PCN', 'REF_LEGACY', 'OTHER'];
+  for (const item of data ?? []) {
+    const previous = ids.get(item.product_id);
+    if (!previous || priority.indexOf(item.kind) < priority.indexOf(previous.kind)) {
+      ids.set(item.product_id, { warehouseId: Number(item.warehouse_id), kind: item.kind, value: item.value });
+    }
+  }
   return ids;
 }
 
@@ -32,15 +40,17 @@ export async function resolveScan(raw: string, symbology: string, warehouseId: n
   const client = await createClient();
   if (!client) throw new Error('ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล');
   const parsed = parseBarcode(raw, symbology);
-  const ids = await matchApprovedIdentifiers(client, parsed, raw);
+  const ids = await matchApprovedIdentifiers(client, parsed);
   const result: ScanResolution = { parsed };
   if (ids.size === 1) {
-    const [productId, matchedWarehouseId] = [...ids][0];
+    const [productId, matched] = [...ids][0];
+    const matchedWarehouseId = matched.warehouseId;
     if (matchedWarehouseId !== warehouseId) { result.otherWarehouse = true; result.message = 'Barcode นี้เป็นน้ำยาของอีกคลัง · สลับคลังก่อนทำรายการ'; }
     else {
       const { data: product } = await client.from('ci_products').select('product_code').eq('id',productId).maybeSingle();
       result.productId = productId;
       result.productCode = product?.product_code;
+      if (product) result.matchedIdentifier = { kind: matched.kind, value: matched.value };
       if (invoiceId) {
         const { data: line } = await client.from('ci_invoice_lines').select('id').eq('invoice_id',invoiceId).eq('product_id',productId).limit(1).maybeSingle();
         if (line) result.invoiceLineId = line.id;
@@ -120,10 +130,11 @@ export async function resolveProductScan(raw: string, symbology: string): Promis
   const client = await createClient();
   if (!client) throw new Error('ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล');
   const parsed = parseBarcode(raw, symbology);
-  const ids = await matchApprovedIdentifiers(client, parsed, raw);
+  const ids = await matchApprovedIdentifiers(client, parsed);
   const result: ProductScan = { parsed };
   if (ids.size === 1) {
-    const [productId, warehouseId] = [...ids][0];
+    const [productId, matched] = [...ids][0];
+    const warehouseId = matched.warehouseId;
     if (!writable.includes(warehouseId)) result.message = 'Barcode นี้เป็นของคลังที่บัญชีนี้ไม่มีสิทธิ์รับเข้า';
     else {
       const { data: product } = await client.from('ci_products').select('id,product_code,display_name,warehouse_id').eq('id', productId).maybeSingle();
@@ -150,10 +161,11 @@ export async function resolveAdjustmentProductScan(raw: string, symbology: strin
   const client = await createClient();
   if (!client) throw new Error('ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล');
   const parsed = parseBarcode(raw, symbology);
-  const ids = await matchApprovedIdentifiers(client, parsed, raw);
+  const ids = await matchApprovedIdentifiers(client, parsed);
   const result: ProductScan = { parsed };
   if (ids.size === 1) {
-    const [productId, matchedWarehouseId] = [...ids][0];
+    const [productId, matched] = [...ids][0];
+    const matchedWarehouseId = matched.warehouseId;
     if (matchedWarehouseId !== warehouseId) result.message = 'Barcode นี้เป็นน้ำยาของอีกคลัง · เลือกคลังให้ตรงก่อนปรับยอด';
     else {
       const { data: product, error } = await client.from('ci_products')

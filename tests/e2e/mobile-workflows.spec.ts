@@ -696,6 +696,15 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page).toHaveURL(/\/scan$/);
   await page.goto('/scan');
   await expect(page.getByRole('button', { name: /สแกนอีกครั้ง/ })).toBeVisible();
+  // A plain approved REF resolves to a product, but cannot supply LOT/expiry.
+  await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill('E2E-C1');
+  await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
+  await expect(page.getByText('พบสินค้า CHE-0001')).toBeVisible();
+  await expect(page.getByText(/ตรงกับ REF_CURRENT:.*E2E-C1/)).toBeVisible();
+  await expect(page.getByText(/รูปแบบข้อมูล: รหัสสินค้าเดี่ยว/)).toBeVisible();
+  await expect(page.getByText(/กรุณาสแกน Data Matrix บนฉลาก/)).toBeVisible();
+  await expect(page.getByText(/Unrecognized barcode standard/)).toHaveCount(0);
+  await page.goto('/scan');
   await expect(page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ })).toBeVisible();
   await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill('(01)00012345678905(17)270101(10)LOT-A');
   await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
