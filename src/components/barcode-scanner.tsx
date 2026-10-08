@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { IScannerControls } from '@zxing/browser';
 import { AlertTriangle, CheckCircle2, ImagePlus, Maximize2, Minimize2, X, XCircle } from 'lucide-react';
 import { playScanTone, primeScanTone } from '@/lib/scan-tone';
+import { photoScanRegions } from '@/lib/photo-scan-regions';
 
 /** A new `id` shows the result again, even when the text is the same as the last scan. */
 export type ScanFeedback = { id: number; tone: 'ok' | 'warn' | 'error'; title: string; detail?: string };
@@ -102,31 +103,37 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
         image.onload = () => resolve();
         image.onerror = () => reject(new Error('IMAGE_LOAD_FAILED'));
       });
-      // First use the full-resolution still image. A centered crop is a fallback
-      // for photos with a relatively small symbol and distracting background.
+      // Try the original image first. If the symbol occupies a small off-center
+      // area (common on Roche boxes), search overlapping tiles across the photo.
+      // Decode directly from canvas rather than creating large PNG data URLs.
       let result: Awaited<ReturnType<typeof reader.decodeFromImageElement>> | undefined;
       try {
         result = await reader.decodeFromImageElement(image);
       } catch {
+        setStatus('กำลังค้นหา Data Matrix ในส่วนต่าง ๆ ของภาพ…');
         const canvas = document.createElement('canvas');
-        const side = Math.min(image.naturalWidth, image.naturalHeight);
-        const crop = side * 0.7;
-        const size = Math.min(1600, Math.ceil(crop));
-        canvas.width = size;
-        canvas.height = size;
-        const context = canvas.getContext('2d');
+        const context = canvas.getContext('2d', { willReadFrequently: true });
         if (!context) throw new Error('CANVAS_UNAVAILABLE');
-        context.drawImage(image, (image.naturalWidth - crop) / 2, (image.naturalHeight - crop) / 2, crop, crop, 0, 0, size, size);
-        const croppedImage = new window.Image();
-        croppedImage.src = canvas.toDataURL('image/png');
-        await new Promise<void>((resolve, reject) => {
-          croppedImage.onload = () => resolve();
-          croppedImage.onerror = () => reject(new Error('CROP_LOAD_FAILED'));
-        });
-        result = await reader.decodeFromImageElement(croppedImage);
-        croppedImage.removeAttribute('src');
-        canvas.width = 0;
-        canvas.height = 0;
+        try {
+          for (const region of photoScanRegions(image.naturalWidth, image.naturalHeight)) {
+            // Keep canvas buffers bounded on mobile Safari even for large photos.
+            const size = Math.min(1400, region.side);
+            canvas.width = size;
+            canvas.height = size;
+            context.drawImage(image, region.x, region.y, region.side, region.side, 0, 0, size, size);
+            try {
+              result = reader.decodeFromCanvas(canvas);
+              break;
+            } catch {
+              // This tile had no decodable symbol; try another region.
+            }
+            // Yield between attempts to keep the mobile interface responsive.
+            await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+          }
+        } finally {
+          canvas.width = 0;
+          canvas.height = 0;
+        }
       }
       if (!result) throw new Error('DECODE_EMPTY');
       setStatus('อ่าน Data Matrix จากภาพสำเร็จ · ไม่ได้อัปโหลดรูป');
@@ -134,7 +141,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
       try { await accept(result.getText(), BarcodeFormat[result.getBarcodeFormat()] ?? 'image'); }
       catch { setStatus('อ่าน Data Matrix สำเร็จ แต่ตรวจสอบสินค้าผ่าน Server ไม่สำเร็จ · โปรดลองใหม่'); }
     } catch {
-      if (!decoded) setStatus('อ่าน Data Matrix จากภาพไม่สำเร็จ · ถ่ายให้คมชัด อยู่ห่างพอให้โฟกัสได้ และวางรหัสใกล้กลางภาพ');
+      if (!decoded) setStatus('อ่าน Data Matrix จากภาพไม่สำเร็จ · ลองครอปรูปให้เหลือรหัสพร้อมขอบสีขาว หรือถ่ายให้คมชัดขึ้น');
     } finally {
       URL.revokeObjectURL(objectUrl);
       photoBusyRef.current = false;
@@ -182,7 +189,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
         <button type="button" className="button secondary min-h-12" disabled={photoBusy} onClick={() => photoInput.current?.click()}>
           <ImagePlus size={18} aria-hidden /> {photoBusy ? 'กำลังถอดรหัส…' : 'ถ่ายภาพ / เลือกรูป Data Matrix'}
         </button>
-        <p className="muted text-xs basis-full">เลือกถ่ายภาพด้วยกล้องหรือใช้รูปในเครื่อง · ถอดรหัสบนอุปกรณ์ ไม่อัปโหลดภาพ · วาง Data Matrix ใกล้กึ่งกลางภาพ</p>
+        <p className="muted text-xs basis-full">เลือกถ่ายภาพด้วยกล้องหรือใช้รูปในเครื่อง · ถอดรหัสบนอุปกรณ์ ไม่อัปโหลดภาพ · ระบบจะค้นหารหัสจากหลายบริเวณของภาพโดยอัตโนมัติ</p>
       </div>}
       <div className={`relative w-full max-w-lg overflow-hidden rounded-xl bg-slate-900 ${active ? '' : 'hidden'}`}>
         <video ref={video} muted playsInline className={`block w-full object-cover ${expanded ? 'h-[min(70dvh,600px)]' : 'h-[clamp(260px,42dvh,360px)]'}`} aria-label={`ภาพจากกล้องเพื่อสแกน ${codeLabel}`}/>
