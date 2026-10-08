@@ -52,7 +52,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
       const result = await resolveProductScan(raw, symbology);
       if (result.locationQr) { say('warn', 'นี่คือ QR ตำแหน่งจัดเก็บ', 'ไม่ใช่ Barcode น้ำยา · ไม่ได้เพิ่มรายการ'); return; }
       const batch = scanBatchFields(result.parsed);
-      const trusted = result.parsed.warnings.length === 0;
+      const trusted = !batch.requiresReview;
       const lot = batch.lot;
       const expiry = batch.expiry;
       const productId = result.product?.id ?? '';

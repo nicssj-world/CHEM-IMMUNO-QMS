@@ -21,17 +21,17 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
   try { month = reportMonth(params.month,bangkokToday()); } catch { return <p className="error" role="alert">เดือนรายงานไม่ถูกต้อง</p>; }
   const [report, reorder, expiry, vendors, locations, productCount, unitRows] = await Promise.all([
     client.rpc('ci_monthly_inventory_report',{p_warehouse_id:warehouse.id,p_month:`${month}-01`}),
-    client.from('ci_reorder_status').select('product_id,usable_stock,rop,suggested_order').eq('warehouse_id',warehouse.id).limit(500),
+    client.from('ci_reorder_status').select('product_id,usable_stock,rop,suggested_order',{count:'exact'}).eq('warehouse_id',warehouse.id).limit(500),
     client.from('ci_stock_balances').select('product_id,lot_number,expiry_date,location_id,balance',{count:'exact'}).eq('warehouse_id',warehouse.id).gt('balance',0).order('expiry_date').limit(1000),
-    client.from('ci_vendor_metrics').select('receipt_count,assessed_count,discrepancy_count,issue_count').eq('warehouse_id',warehouse.id).eq('fiscal_year',fiscalYear(`${month}-01`)).limit(100),
-    client.from('ci_locations').select('id,code').eq('warehouse_id',warehouse.id).limit(200),
+    client.from('ci_vendor_metrics').select('receipt_count,assessed_count,discrepancy_count,issue_count',{count:'exact'}).eq('warehouse_id',warehouse.id).eq('fiscal_year',fiscalYear(`${month}-01`)).limit(100),
+    client.from('ci_locations').select('id,code',{count:'exact'}).eq('warehouse_id',warehouse.id).limit(200),
     client.from('ci_products').select('id',{count:'exact',head:true}).eq('warehouse_id',warehouse.id),
-    client.from('ci_products').select('id,base_stock_unit').eq('warehouse_id',warehouse.id).limit(500),
+    client.from('ci_products').select('id,base_stock_unit',{count:'exact'}).eq('warehouse_id',warehouse.id).limit(500),
   ]);
   const error = report.error??reorder.error??expiry.error??vendors.error??locations.error??productCount.error??unitRows.error;
   if (error) return <p className="error" role="alert">อ่านรายงานไม่สำเร็จ: {logUserMessage('monthly-report', error)}</p>;
   const rows = (report.data??[]) as MonthlyRow[];
-  if (rows.length!==(productCount.count??0) || (productCount.count??0)>500 || (expiry.count??0)>1000) return <p className="error" role="alert">ข้อมูลรายงานเกินขอบเขตการแสดงผล · ไม่แสดงยอดรวมที่อาจไม่ครบ</p>;
+  if (rows.length!==(productCount.count??0) || (productCount.count??0)>500 || (expiry.count??0)>1000 || (reorder.count??0)>500 || (vendors.count??0)>100 || (locations.count??0)>200 || (unitRows.count??0)>500) return <p className="error" role="alert">ข้อมูลรายงานเกินขอบเขตการแสดงผล · ไม่แสดงยอดรวมที่อาจไม่ครบ</p>;
   const {totals,invalidProductCodes} = reconcileMonthlyRows(rows);
   const reorders = (reorder.data??[]).filter(r=>['stockout','below ROP'].includes(stockStatus(Number(r.usable_stock),r.rop==null?null:Number(r.rop))));
   const expiring = (expiry.data??[]).filter(r=>expiryBucket(r.expiry_date)!=='>90');

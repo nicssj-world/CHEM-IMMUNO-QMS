@@ -92,3 +92,11 @@ test('common batch trust rejects malformed GS1 without discarding clean batch', 
   assert.deepEqual(scanBatchFields(parseBarcode('(01)00012345678905(17)271231(10)LOT-A')), {lot:'LOT-A',expiry:'2027-12-31',requiresReview:false});
   assert.deepEqual(scanBatchFields(parseBarcode(']d201000123456789051799999910LOT')), {lot:'',expiry:'',requiresReview:true});
 });
+ 
+test('batch trust keeps validated HIBC LOT/expiry despite unrelated supplement warning', () => {
+  const parsed = parseBarcode('+A99912349/$10X3/16D20111231/14D20200131/Q500Z', 'DATA_MATRIX');
+  assert.deepEqual(scanBatchFields({...parsed, warnings:['Unsupported HIBC supplemental field: X']}),
+    {lot:'10X3',expiry:'2020-01-31',requiresReview:false});
+  assert.deepEqual(scanBatchFields({...parsed, warnings:['Invalid HIBC 16D manufacture date']}),
+    {lot:'10X3',expiry:'2020-01-31',requiresReview:false});
+});

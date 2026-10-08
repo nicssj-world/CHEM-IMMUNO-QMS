@@ -172,6 +172,12 @@ export function barcodeIdentifierCandidates(parsed: ParsedBarcode): string[] {
 
 /** Common conservative decoded-batch trust rule for receiving and issue. */
 export function scanBatchFields(parsed: ParsedBarcode): { lot: string; expiry: string; requiresReview: boolean } {
-  if (parsed.warnings.length) return { lot: '', expiry: '', requiresReview: true };
+  // A malformed GS1 element, checksum or expiry may compromise the batch identity.
+  // Warnings about an unrelated HIBC supplement / manufacture date do not.
+  const significantWarnings = parsed.warnings.filter(warning =>
+    !warning.startsWith('Unsupported HIBC supplemental field: ') &&
+    warning !== 'Invalid HIBC 16D manufacture date'
+  );
+  if (significantWarnings.length) return { lot: '', expiry: '', requiresReview: true };
   return { lot: parsed.lot ?? '', expiry: parsed.expiry ?? '', requiresReview: !parsed.lot || !parsed.expiry };
 }
