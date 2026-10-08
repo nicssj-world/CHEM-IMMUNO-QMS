@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-      - fix/chem-scanner-reliability-20261008
+      - 'fix/**'
   pull_request:
 jobs:
   verify:
