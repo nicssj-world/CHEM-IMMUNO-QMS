@@ -25,7 +25,7 @@ function FeedbackCard({ feedback, className = '' }: { feedback: ScanFeedback; cl
  */
 export function BarcodeScanner({ onScan, continuous = false, dock = false, feedback, summary, formats, autoStart = false }: { onScan: (raw: string, symbology: string) => Promise<void> | void; continuous?: boolean; dock?: boolean; feedback?: ScanFeedback | null; summary?: React.ReactNode; formats?: Array<'QR_CODE' | 'DATA_MATRIX' | 'CODE_128'>; autoStart?: boolean }) {
   const isQr = formats?.length === 1 && formats[0] === 'QR_CODE';
-  const codeLabel = isQr ? 'QR' : formats?.includes('DATA_MATRIX') || !formats ? 'Data Matrix / Barcode' : 'Barcode';
+  const codeLabel = isQr ? 'QR' : 'Barcode';
   const video = useRef<HTMLVideoElement>(null);
   const controls = useRef<IScannerControls | null>(null);
   const last = useRef<{ raw: string; at: number } | null>(null);
@@ -112,6 +112,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
     </div>
     <p className="sr-only" aria-live="polite">{feedback ? `${feedback.title}${feedback.detail ? ` · ${feedback.detail}` : ''}` : ''}</p>
     <p className="muted text-sm" role="status">{status}</p>
+    {!isQr && <p className="muted text-xs">รองรับ GS1 Data Matrix และ Code 128 · ใช้กล้องอ่านข้อมูล LOT/Expiry อัตโนมัติ</p>}
     <form className="flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); void accept(manual, 'manual'); setManual(''); manualInput.current?.focus(); }}><label className="field flex-1 min-w-48">พิมพ์หรือวาง {codeLabel}<input ref={manualInput} className="input" value={manual} onChange={event => setManual(event.target.value)} autoCapitalize="off" autoComplete="off"/></label><button className="button secondary self-end" type="submit">ตรวจ {codeLabel}</button></form>
   </section>;
 }
