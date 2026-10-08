@@ -52,7 +52,7 @@ test('roles are per warehouse: a supervisor in one warehouse gets supervisor tab
 
 test('an admin of one warehouse cannot see the both-warehouse admin pages; an admin of both can', () => {
   assert.deepEqual(tabsOf(adminChe).admin, ['/scan/review']);
-  assert.deepEqual(tabsOf(adminBoth).admin, ['/scan/review', '/import', '/admin/users']);
+  assert.deepEqual(tabsOf(adminBoth).admin, ['/scan/review', '/import', '/import/incremental', '/admin/users']);
 });
 
 test('the desktop sidebar has five workspaces plus the Scan quick action', () => {
@@ -95,7 +95,7 @@ test('navigation does not relax any authorization: every tab keeps its previous 
   const previous: Record<string, string | undefined> = {
     '/': undefined, '/attention': undefined, '/receive': undefined, '/issue': 'work', '/transfer': 'work', '/counts': 'work', '/adjust': 'supervise', '/dispose': 'supervise',
     '/products': undefined, '/stock': undefined, '/reorder': undefined, '/vendors': undefined, '/reports/monthly': undefined, '/movements': undefined,
-    '/scan/review': 'supervise', '/locations': 'supervise', '/import': 'adminBoth', '/audit': 'supervise', '/admin/users': 'adminBoth',
+    '/scan/review': 'supervise', '/locations': 'supervise', '/import': 'adminBoth', '/import/incremental': 'adminBoth', '/audit': 'supervise', '/admin/users': 'adminBoth',
   };
   for (const tab of workspaces.flatMap(workspace => workspace.tabs)) {
     if (tab.href === '/locations') { assert.equal(tab.need, undefined, 'the Locations tab is now visible to every role that can read a warehouse (navigation only)'); continue; }
@@ -200,7 +200,7 @@ test('every category still carries its full set of visible links (rendering coll
     stock: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
     operations: ['/receive', '/issue', '/transfer', '/counts', '/adjust', '/dispose'],
     reports: ['/reports/monthly', '/movements', '/audit'],
-    system: ['/scan/review', '/import', '/admin/users'],
+    system: ['/scan/review', '/import', '/import/incremental', '/admin/users'],
   });
   for (const key of ['home', 'stock', 'operations', 'reports', 'system']) assert.equal(category(adminBoth, key).groups.length, 1, `${key} groups exactly one workspace`);
 });
