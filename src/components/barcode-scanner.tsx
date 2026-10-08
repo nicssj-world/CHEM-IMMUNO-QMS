@@ -25,7 +25,7 @@ function FeedbackCard({ feedback, className = '' }: { feedback: ScanFeedback; cl
  */
 export function BarcodeScanner({ onScan, continuous = false, dock = false, feedback, summary, formats, autoStart = false }: { onScan: (raw: string, symbology: string) => Promise<void> | void; continuous?: boolean; dock?: boolean; feedback?: ScanFeedback | null; summary?: React.ReactNode; formats?: Array<'QR_CODE' | 'DATA_MATRIX' | 'CODE_128'>; autoStart?: boolean }) {
   const isQr = formats?.length === 1 && formats[0] === 'QR_CODE';
-  const codeLabel = isQr ? 'QR' : 'Barcode';
+  const codeLabel = isQr ? 'QR' : formats?.includes('DATA_MATRIX') || !formats ? 'Data Matrix / Barcode' : 'Barcode';
   const video = useRef<HTMLVideoElement>(null);
   const controls = useRef<IScannerControls | null>(null);
   const last = useRef<{ raw: string; at: number } | null>(null);
@@ -75,7 +75,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
       hints.set(DecodeHintType.POSSIBLE_FORMATS, formats ? formats.map(format => BarcodeFormat[format]) : [BarcodeFormat.DATA_MATRIX, BarcodeFormat.CODE_128]);
       hints.set(DecodeHintType.TRY_HARDER, true);
       const reader = new BrowserMultiFormatReader(hints);
-      controls.current = await reader.decodeFromConstraints({ audio: false, video: { facingMode: { ideal: 'environment' } } }, video.current!, (result) => {
+      controls.current = await reader.decodeFromConstraints({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } }, video.current!, (result) => {
         if (result) void accept(result.getText(), BarcodeFormat[result.getBarcodeFormat()] ?? 'camera', true);
       });
       setStatus(continuous ? `เล็ง ${codeLabel} ทีละชิ้น · กล้องเปิดค้างไว้ต่อเนื่อง` : `เล็ง ${codeLabel} ให้อยู่ในกรอบ`);
@@ -99,7 +99,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
     <div className={`grid gap-2 ${dock && active ? 'scan-dock' : ''}`}>
       {!active && <div className="flex flex-wrap gap-2"><button type="button" className="button min-h-12" onClick={() => void start()}>{continuous ? 'เปิดกล้องสแกนต่อเนื่อง' : isQr ? 'สแกน QR / เปิดกล้อง' : 'สแกนอีกครั้ง / เปิดกล้อง'}</button></div>}
       <div className={`relative w-full max-w-lg overflow-hidden rounded-xl bg-slate-900 ${active ? '' : 'hidden'}`}>
-        <video ref={video} muted playsInline className={`block w-full object-cover ${expanded ? 'h-[min(60dvh,520px)]' : 'h-[clamp(150px,26dvh,220px)]'}`} aria-label={`ภาพจากกล้องเพื่อสแกน ${codeLabel}`}/>
+        <video ref={video} muted playsInline className={`block w-full object-cover ${expanded ? 'h-[min(70dvh,600px)]' : 'h-[clamp(260px,42dvh,360px)]'}`} aria-label={`ภาพจากกล้องเพื่อสแกน ${codeLabel}`}/>
         <div aria-hidden className="pointer-events-none absolute inset-0 m-auto aspect-square h-[62%] rounded-xl border-2 border-white/85 shadow-[0_0_0_9999px_rgba(0,0,0,.28)]" />
         {feedback ? <FeedbackCard key={feedback.id} feedback={feedback} className="scan-toast absolute inset-x-2 top-2" /> : <p aria-hidden className="absolute left-3 top-2 rounded-full bg-black/55 px-2.5 py-1 text-xs text-white">เล็ง {codeLabel} ในกรอบ</p>}
         <div className="absolute bottom-2 right-2 flex gap-2">

@@ -153,3 +153,19 @@ export function parseBarcode(raw: string, symbology = 'manual'): ParsedBarcode {
   else result.warnings.push('Unrecognized barcode standard; use manual Product search');
   return result;
 }
+
+/** Exact Product Master keys from an optically decoded symbol. Never OCR or truncate digits. */
+export function barcodeIdentifierCandidates(parsed: ParsedBarcode): string[] {
+  const values = new Set<string>();
+  // GS1 Data Matrix carries Roche REF in AI 240. Preserve leading zeroes.
+  if (parsed.additionalProductId) values.add(parsed.additionalProductId);
+  if (parsed.gtin) {
+    values.add(parsed.gtin);
+    values.add(`01${parsed.gtin}`);
+  }
+  if (parsed.primary) values.add(parsed.primary);
+  if (parsed.pcn) values.add(parsed.pcn);
+  // GS1/HIBC raw payloads also contain LOT and dates; never match them as product IDs.
+  if (parsed.standard === 'UNKNOWN' && parsed.raw.trim()) values.add(parsed.raw.trim());
+  return [...values];
+}

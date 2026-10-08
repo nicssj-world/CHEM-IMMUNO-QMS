@@ -1,6 +1,6 @@
 'use server';
 
-import { parseBarcode, type ParsedBarcode } from '@/lib/barcode';
+import { barcodeIdentifierCandidates, parseBarcode, type ParsedBarcode } from '@/lib/barcode';
 import { requireAccess, canMutate, canSupervise } from '@/lib/auth';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
@@ -11,22 +11,11 @@ export type ScanResolution = { parsed: ParsedBarcode; locationQr?: { path: strin
 
 /** Approved identifier matches for a scan as product id -> warehouse id. */
 async function matchApprovedIdentifiers(client: SupabaseClient, parsed: ParsedBarcode, raw: string) {
-  const values = new Set<string>();
-  if (parsed.gtin) {
-    values.add(parsed.gtin);
-    // Some manually-entered GTINs include the GS1 AI 01 prefix in the stored value.
-    values.add(`01${parsed.gtin}`);
-  }
-  if (parsed.primary) values.add(parsed.primary);
-  if (parsed.pcn) values.add(parsed.pcn);
-  if (parsed.additionalProductId) values.add(parsed.additionalProductId);
-  // A standalone barcode can be an identifier of any registered kind. GS1 and
-  // HIBC payloads are structured, so their LOT/expiry/serial fields never enter this lookup.
-  if (parsed.standard === 'UNKNOWN' && raw.trim()) values.add(raw.trim());
-  if (!values.size) return new Map<string, number>();
+  const values = barcodeIdentifierCandidates(parsed);
+  if (!values.length) return new Map<string, number>();
   const { data, error } = await client.from('ci_product_identifiers')
     .select('product_id,warehouse_id')
-    .in('value', [...values])
+    .in('value', values)
     .eq('approved', true);
   if (error) throw new Error(logUserMessage('scanner', error));
   const ids = new Map<string, number>();
@@ -58,7 +47,7 @@ export async function resolveScan(raw: string, symbology: string, warehouseId: n
         else result.message = 'น้ำยาจาก Barcode นี้ไม่อยู่ใน Invoice นี้';
       }
     }
-  } else result.message = ids.size ? 'Barcode ตรงกับหลายน้ำยา · ต้องให้หัวหน้างานตรวจสอบ' : 'ไม่พบน้ำยาที่ตรงกับ Barcode';
+  } else result.message = ids.size ? 'Barcode ตรงกับหลายน้ำยา · ต้องให้หัวหน้างานตรวจสอบ' : parsed.additionalProductId ? `ไม่พบ REF (240) ${parsed.additionalProductId} ใน Product Master · ตรวจรหัสสินค้า` : 'ไม่พบน้ำยาที่ตรงกับ Barcode';
   const { data: scanId, error: scanError } = await client.rpc('ci_record_scan', { p_data: {
     warehouse_id: warehouseId, invoice_id: invoiceId ?? null, invoice_line_id: result.invoiceLineId ?? null,
     raw_payload: raw, symbology, parsed_fields: parsed, parse_warnings: parsed.warnings,
@@ -140,7 +129,7 @@ export async function resolveProductScan(raw: string, symbology: string): Promis
       const { data: product } = await client.from('ci_products').select('id,product_code,display_name,warehouse_id').eq('id', productId).maybeSingle();
       if (product) result.product = { id: product.id, code: product.product_code, name: product.display_name, warehouseId: Number(product.warehouse_id) };
     }
-  } else result.message = ids.size ? 'Barcode ตรงกับหลายน้ำยา · ต้องให้หัวหน้างานตรวจสอบ' : 'ไม่พบน้ำยาที่ตรงกับ Barcode · เลือกน้ำยาเอง';
+  } else result.message = ids.size ? 'Barcode ตรงกับหลายน้ำยา · ต้องให้หัวหน้างานตรวจสอบ' : parsed.additionalProductId ? `ไม่พบ REF (240) ${parsed.additionalProductId} ใน Product Master · เลือกน้ำยาเอง` : 'ไม่พบน้ำยาที่ตรงกับ Barcode · เลือกน้ำยาเอง';
   const { error } = await client.rpc('ci_record_scan', { p_data: {
     warehouse_id: result.product?.warehouseId ?? writable[0], invoice_id: null, invoice_line_id: null,
     raw_payload: raw, symbology, parsed_fields: parsed, parse_warnings: parsed.warnings,
@@ -174,7 +163,7 @@ export async function resolveAdjustmentProductScan(raw: string, symbology: strin
       if (product) result.product = { id: product.id, code: product.product_code, name: product.display_name, warehouseId: Number(product.warehouse_id) };
       else result.message = 'ไม่พบน้ำยาที่เปิดใช้งานในคลังนี้';
     }
-  } else result.message = ids.size ? 'Barcode ตรงกับหลายน้ำยา · ต้องให้หัวหน้างานตรวจสอบ' : 'ไม่พบน้ำยาที่ตรงกับ Barcode · เลือกน้ำยาเอง';
+  } else result.message = ids.size ? 'Barcode ตรงกับหลายน้ำยา · ต้องให้หัวหน้างานตรวจสอบ' : parsed.additionalProductId ? `ไม่พบ REF (240) ${parsed.additionalProductId} ใน Product Master · เลือกน้ำยาเอง` : 'ไม่พบน้ำยาที่ตรงกับ Barcode · เลือกน้ำยาเอง';
   const { error } = await client.rpc('ci_record_scan', { p_data: {
     warehouse_id: warehouseId, invoice_id: null, invoice_line_id: null,
     raw_payload: raw, symbology, parsed_fields: parsed, parse_warnings: parsed.warnings,

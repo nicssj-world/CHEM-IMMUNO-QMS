@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseBarcode } from '../../src/lib/barcode';
+import { barcodeIdentifierCandidates, parseBarcode } from '../../src/lib/barcode';
 
 test('GS1-128 retains GTIN leading zero, LOT, expiry, serial and AI 240 semantics', () => {
   const raw = ']C101000123456789051725123110LOT-A\x1d21SER-7\x1d240EXTRA';
@@ -66,4 +66,24 @@ test('malformed HIBC remains reviewable', () => {
   assert.ok(parsed.warnings.length > 0);
   assert.equal(parsed.standard, 'HIBC');
   assert.equal(parsed.expiry, undefined);
+});
+
+test('Roche reagent optical Data Matrix bytes parse to exact REF/GTIN/LOT/expiry', () => {
+  // Decoded directly from the matrix in two actual stock photos (not printed AI text).
+  const samples = [
+    { raw: '010087519700639110N29106\x1d172710311126032424009040765190', gtin: '00875197006391', ref: '09040765190', lot: 'N29106', expiry: '2027-10-31', made: '2026-03-24' },
+    { raw: '01076133361215351094146701\x1d1727053124008058679190\x1d11251229', gtin: '07613336121535', ref: '08058679190', lot: '94146701', expiry: '2027-05-31', made: '2025-12-29' },
+  ];
+  for (const item of samples) {
+    const parsed = parseBarcode(item.raw, 'DATA_MATRIX');
+    assert.equal(parsed.standard, 'GS1');
+    assert.deepEqual(parsed.warnings, []);
+    assert.equal(parsed.gtin, item.gtin);
+    assert.equal(parsed.additionalProductId, item.ref);
+    assert.equal(parsed.lot, item.lot);
+    assert.equal(parsed.expiry, item.expiry);
+    assert.equal(parsed.productionDate, item.made);
+    assert.ok(barcodeIdentifierCandidates(parsed).includes(item.ref));
+    assert.ok(barcodeIdentifierCandidates(parsed).includes(item.gtin));
+  }
 });
