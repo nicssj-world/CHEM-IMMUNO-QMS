@@ -1,0 +1,22 @@
+name: CHEM-IMMUNO quality gates
+on:
+  push:
+    branches:
+      - main
+      - fix/chem-scanner-reliability-20261008
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:unit
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
