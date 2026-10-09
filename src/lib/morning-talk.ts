@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 export const TALK_SCOPES = ['ALL', 'CHE', 'IMM'] as const;
 export type TalkScope = (typeof TALK_SCOPES)[number];
-export const scopeLabels: Record<TalkScope, string> = { ALL: 'ทั้งสองคลัง', CHE: 'Clinical Chemistry', IMM: 'Immunology' };
+export const scopeLabels: Record<TalkScope, string> = { ALL: 'คลังน้ำยา CHEM-IMMUNO', CHE: 'Clinical Chemistry (เดิม)', IMM: 'Immunology (เดิม)' };
 export function scopeLabel(scope: string | null | undefined) { return scopeLabels[scope as TalkScope] ?? scope ?? '—'; }
 export function isTalkScope(value: unknown): value is TalkScope { return typeof value === 'string' && (TALK_SCOPES as readonly string[]).includes(value); }
 
