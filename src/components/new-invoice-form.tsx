@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ChevronDown, Minus, Plus, ScanLine, X } from 'lucide-react';
 import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
 import { IntegerQuantityInput } from './integer-quantity-input';
+import { InvoiceReagentPicker } from './invoice-reagent-picker';
 import { SubmitButton } from './submit-button';
 import { resolveProductScan } from '@/app/actions/scanner';
 import { startInvoice } from '@/app/actions/inventory';
@@ -190,7 +191,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
             </div>
             {line.open && <div className="grid gap-3 border-t border-line p-3">
               <div className="grid sm:grid-cols-[1fr_120px] gap-3">
-                <label className="field">น้ำยา<select form={FORM_ID} className="input" value={line.productId} onChange={e => patch(line.key, { productId: e.target.value })} required><option value="">เลือกน้ำยา</option>{products.map(p => <option key={p.id} value={p.id}>{p.product_code} · {p.display_name}</option>)}</select></label>
+                <InvoiceReagentPicker products={products} value={line.productId} onChange={productId => patch(line.key, { productId })} />
                 <label className="field">จำนวน<IntegerQuantityInput form={FORM_ID} className="input" min="1" value={line.quantity} onChange={e => patch(line.key, { quantity: e.target.value })} required /></label>
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
