@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
@@ -10,9 +10,10 @@ import { InvoiceReagentPicker } from './invoice-reagent-picker';
 import { IntegerQuantityInput } from './integer-quantity-input';
 import { ReceiptAssessmentFields } from './receipt-assessment-fields';
 import { assessmentError, type AssessmentInput } from '@/lib/receipt-assessment';
-import { resolveProductScan } from '@/app/actions/scanner';
+import { resolveProductScan, checkLotExpiryConflict, proposeScanMapping, type ProductScan } from '@/app/actions/scanner';
+import { preselectLocation } from '@/lib/receive-location';
 import { createReceivingWizardDraft, saveReceivingWizardDraft, finalizeReceivingWizard } from '@/app/actions/receiving-wizard';
-import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment,
+import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment, appendWizardScan,
   type WizardDraft, type WizardHeader, type WizardLine, type WizardLot, type WizardLocation, type WizardProduct } from '@/lib/receiving-wizard';
 import { scanBatchFields } from '@/lib/barcode';
 import { userMessage } from '@/lib/messages';
@@ -20,6 +21,13 @@ import { userMessage } from '@/lib/messages';
 type Vendor = { id: string; name: string };
 type RecentInvoice = {id:string; invoice_number:string;invoice_date:string;status:string;vendor_id:string};
 type RecentDraft = {id:string;invoice_number:string;invoice_date:string;vendor_id:string;step:number;updated_at:string};
+type ScanReview = {raw:string;parsed:ProductScan['parsed'];productId:string;lot:string;expiry:string;quantity:string;locationId:string;};
+const scanFailureMessage = {
+  invalid:'กรุณาตรวจ LOT วันหมดอายุ จำนวน และตำแหน่งให้ครบ',
+  capacity:'จำนวนรับจริงเกินจำนวนตาม Invoice · ต้องตรวจหรือแก้จำนวนตามเอกสารเอง',
+  'lot-expiry-conflict':'LOT เดียวกันมีวันหมดอายุไม่ตรงกับร่างเดิม',
+  review:'มี LOT ที่กรอกค้างไว้ · กรุณาตรวจและบันทึกให้ครบก่อนสแกนเพิ่ม',
+} as const;
 
 const TITLES=['ข้อมูล Invoice','รับเข้าน้ำยา','ตรวจสอบข้อมูล','ประเมินและยืนยัน'];
 const initialHeader={vendorId:'',invoiceNumber:'',invoiceDate:'',poNumber:''};
@@ -28,9 +36,10 @@ const makeLine=(productId:string,locationId=''):WizardLine=>({
   id:crypto.randomUUID(),productId,orderedQuantity:'1',packages:[makeLot(locationId)],
 });
 
-export function ReceivingWizard({vendors,products,locations,initialDraft,recentInvoices,recentDrafts}:{
+export function ReceivingWizard({vendors,products,locations,initialDraft,recentInvoices,recentDrafts,recentLocationByProduct={},canAddVendor=false,locationManageHref}:{
   vendors:Vendor[];products:WizardProduct[];locations:WizardLocation[];
   initialDraft?:WizardDraft|null;recentInvoices:RecentInvoice[];recentDrafts:RecentDraft[];
+  recentLocationByProduct?:Record<string,string>;canAddVendor?:boolean;locationManageHref?:string;
 }) {
   const router=useRouter();
   const [step,setStep]=useState(initialDraft ? Math.min(4,Math.max(2,initialDraft.step)) : 1);
@@ -39,6 +48,12 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     ? {vendorId:initialDraft.vendor_id,invoiceNumber:initialDraft.invoice_number,invoiceDate:initialDraft.invoice_date,poNumber:initialDraft.po_number??''}
     : initialHeader);
   const [lines,setLines]=useState<WizardLine[]>(initialDraft?.lines ?? []);
+  const linesRef=useRef(lines);
+  function setWizardLines(next:WizardLine[]|((old:WizardLine[])=>WizardLine[])) {
+    const updated=typeof next==='function'?next(linesRef.current):next;
+    linesRef.current=updated;
+    setLines(updated);
+  }
   const [assessment,setAssessment]=useState<AssessmentInput>(restoreWizardAssessment(initialDraft?.assessment));
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
@@ -48,6 +63,15 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const [invoiceFeedback,setInvoiceFeedback]=useState<ScanFeedback|null>(null);
   const invoiceScanSequence=useRef(0);
   const invoiceNumberInput=useRef<HTMLInputElement>(null);
+  const [scanFeedback,setScanFeedback]=useState<ScanFeedback|null>(null);
+  const scanFeedbackId=useRef(0);
+  const [scanReview,setScanReview]=useState<ScanReview|null>(null);
+  const [locationPath,setLocationPath]=useState<string|null>(null);
+  const [sessionLocationId,setSessionLocationId]=useState('');
+  const [scanBusy,setScanBusy]=useState(false);
+  const savedQueue=useRef<Promise<unknown>>(Promise.resolve());
+  const sayScan=(tone:ScanFeedback['tone'],title:string,detail?:string)=>
+    setScanFeedback({id:++scanFeedbackId.current,tone,title,detail});
   const productsById=useMemo(()=>new Map(products.map(p=>[p.id,p])),[products]);
   const locationsById=useMemo(()=>new Map(locations.map(p=>[p.id,p])),[locations]);
   const vendorsById=useMemo(()=>new Map(vendors.map(p=>[p.id,p])),[vendors]);
@@ -69,7 +93,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   }
 
   function alterLine(id:string,update:(line:WizardLine)=>WizardLine) {
-    setLines(current=>current.map(line=>line.id===id?update(line):line));
+    setWizardLines(current=>current.map(line=>line.id===id?update(line):line));
   }
   function alterLot(lineId:string,lotId:string,change:Partial<WizardLot>) {
     alterLine(lineId,line=>({...line,packages:line.packages.map(pkg=>pkg.id===lotId?{...pkg,...change}:pkg)}));
@@ -83,36 +107,96 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     if(lines.length>=250){setError('เพิ่มน้ำยาได้ไม่เกิน 250 รายการ');return;}
     const product=productsById.get(productId);
     if(!product)return;
-    setLines(old=>[...old,makeLine(productId,product.default_location_id && locationsById.has(product.default_location_id)?product.default_location_id:'')]);
+    setWizardLines(old=>[...old,makeLine(productId,suggestedLocation(productId))]);
     setNotice('');
     setError('');
   }
 
+  function suggestedLocation(productId:string):string {
+    const product=productsById.get(productId);
+    if(!product)return '';
+    if(sessionLocationId && locationsById.has(sessionLocationId))return sessionLocationId;
+    return preselectLocation(product.default_location_id,product.warehouse_id,locations,recentLocationByProduct[productId]);
+  }
+  async function addScannedPackage(candidate:ScanReview):Promise<boolean> {
+    if(!candidate.productId||!productsById.has(candidate.productId)){
+      sayScan('warn','ยังไม่ได้เลือกน้ำยา','เลือกน้ำยาจากทะเบียนก่อน');return false;
+    }
+    const merged=appendWizardScan(linesRef.current,candidate,()=>crypto.randomUUID());
+    if(!merged.ok) {
+      sayScan('warn',merged.reason==='capacity'?'ยอดเกิน Invoice':'ตรวจรายละเอียด',scanFailureMessage[merged.reason]);
+      setError(scanFailureMessage[merged.reason]);
+      return false;
+    }
+    if(await checkLotExpiryConflict(candidate.productId,candidate.lot,candidate.expiry)) {
+      setError('LOT นี้มีวันหมดอายุไม่ตรงกับ Stock เดิม');
+      sayScan('warn','ตรวจสอบ LOT','วันหมดอายุขัดแย้งกับ Stock เดิม');
+      return false;
+    }
+    setWizardLines(merged.lines);
+    if(candidate.locationId)setSessionLocationId(candidate.locationId);
+    setError('');
+    setNotice('เพิ่มผลสแกนลงร่างแล้ว · ยังไม่เพิ่ม Stock');
+    setScanReview(null);
+    sayScan('ok',merged.merged?'นับเพิ่ม 1 แพ็กเกจ':'เพิ่ม LOT ใหม่',
+      `${productsById.get(candidate.productId)?.product_code} · LOT ${candidate.lot}`);
+    return true;
+  }
+
   async function onScan(raw:string,symbology:string) {
+    if(scanBusy||pending)return;
+    setScanBusy(true);
+    setLocationPath(null);
+    setError('');
     try {
       const scan=await resolveProductScan(raw,symbology);
-      const product=scan.product?.id ? productsById.get(scan.product.id) : null;
-      if(!product){setError(scan.message??'ไม่พบน้ำยาที่ตรงกับ Barcode ในทะเบียนที่รับเข้าได้');return;}
+      if(scan.locationQr) {
+        setScanReview(null);
+        setLocationPath(scan.locationQr.path);
+        sayScan('warn','QR ตำแหน่งจัดเก็บ','นี่คือ QR Location ไม่ใช่ Barcode น้ำยา');
+        return;
+      }
+      const product=scan.product?.id?productsById.get(scan.product.id):null;
       const batch=scanBatchFields(scan.parsed);
-      const knownLot=batch.lot;
-      const expiry=batch.expiry;
-      setLines(old=>{
-        const existing=old.find(line=>line.productId===product.id);
-        const current=existing ?? makeLine(product.id,product.default_location_id && locationsById.has(product.default_location_id)?product.default_location_id:'');
-        const matched=current.packages.find(pkg=>knownLot && expiry && pkg.lot===knownLot && pkg.expiry===expiry);
-        const nextPackages=matched
-          ? current.packages.map(pkg=>pkg.id===matched.id?{...pkg,quantity:String(Number(pkg.quantity)+1)}:pkg)
-          : current.packages.length===1 && !current.packages[0].lot && !current.packages[0].expiry
-            ? [{...current.packages[0],lot:knownLot,expiry}]
-            : [...current.packages,{...makeLot(product.default_location_id && locationsById.has(product.default_location_id)?product.default_location_id:''),lot:knownLot,expiry}];
-        const received=nextPackages.reduce((total,pkg)=>total+(Number(pkg.quantity)||0),0);
-        const updated={...current,packages:nextPackages,orderedQuantity:String(Math.max(Number(current.orderedQuantity)||0,received))};
-        return existing ? old.map(line=>line.id===existing.id?updated:line) : [...old,updated];
-      });
-      setError('');
-      setNotice(batch.requiresReview?'สแกนแล้ว · กรุณาตรวจและกรอก LOT/วันหมดอายุให้ครบ':'สแกนแล้ว · เพิ่มจำนวนรับเข้าในร่าง (ยังไม่เพิ่ม Stock)');
+      const candidate:ScanReview={
+        raw,parsed:scan.parsed,productId:product?.id??'',
+        lot:batch.lot,expiry:batch.expiry,quantity:'1',
+        locationId:product?suggestedLocation(product.id):'',
+      };
+      const needReview=!product || batch.requiresReview || !batch.lot || !batch.expiry || !candidate.locationId;
+      if(needReview) {
+        setScanReview(candidate);
+        const detail=scan.message??(batch.requiresReview?'Barcode มีคำเตือน · กรุณายืนยันข้อมูลก่อนเพิ่ม':'ตรวจ LOT วันหมดอายุและตำแหน่งก่อนเพิ่ม');
+        setNotice(detail);
+        sayScan('warn','ตรวจรายละเอียด',detail);
+        return;
+      }
+      // Same safe merge, quantity and expiry guards as the original ReceiveWorkbench.
+      const ok=await addScannedPackage(candidate);
+      if(!ok)setScanReview(candidate);
     } catch(cause) {
-      setError(userMessage(cause instanceof Error?cause.message:null,'สแกนไม่สำเร็จ'));
+      const message=userMessage(cause instanceof Error?cause.message:null,'สแกนไม่สำเร็จ');
+      setError(message);
+      sayScan('error','สแกนไม่สำเร็จ',message);
+    } finally {setScanBusy(false);}
+  }
+  async function addReviewedScan() {
+    if(!scanReview)return;
+    setScanBusy(true);
+    try {await addScannedPackage(scanReview);}
+    catch(cause){const msg=userMessage(cause instanceof Error?cause.message:null,'ตรวจ LOT ไม่สำเร็จ');setError(msg);sayScan('error','ตรวจ LOT ไม่สำเร็จ',msg);}
+    finally{setScanBusy(false);}
+  }
+  async function proposeMapping() {
+    if(!scanReview?.productId)return;
+    const parsed=scanReview.parsed;
+    const kind=parsed.gtin?'GTIN':parsed.primary?'HIBC_PRIMARY':parsed.additionalProductId?'GS1_AI240':'OTHER';
+    const value=parsed.gtin??parsed.primary??parsed.additionalProductId??parsed.raw.trim();
+    try {
+      await proposeScanMapping(scanReview.productId,kind,value,scanReview.raw);
+      setNotice('ส่งข้อเสนอการจับคู่ Barcode แล้ว · รอ Supervisor/Admin อนุมัติ');
+    } catch(cause) {
+      setError(userMessage(cause instanceof Error?cause.message:null,'เสนอการจับคู่ไม่สำเร็จ'));
     }
   }
 
@@ -252,7 +336,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
             <div className="min-w-0"><strong>{index+1}. {product?.product_code??'น้ำยา'}</strong>
               <p className="muted text-sm break-words">{product?.display_name??'—'}</p></div>
             <button className="button secondary text-[#a83442] shrink-0" disabled={pending} type="button"
-              onClick={()=>setLines(old=>old.filter(item=>item.id!==line.id))}>ลบ</button>
+              onClick={()=>setWizardLines(old=>old.filter(item=>item.id!==line.id))}>ลบ</button>
           </div>
           <label className="field max-w-xs"><span>จำนวนตาม Invoice <span className="text-[#b42318]">*</span></span>
             <IntegerQuantityInput className="input" min="1" value={line.orderedQuantity}
