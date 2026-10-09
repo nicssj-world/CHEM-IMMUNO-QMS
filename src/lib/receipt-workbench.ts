@@ -35,6 +35,35 @@ export function appendReceiptPackage(
   };
 }
 
+/** Detailed draft errors keyed by package id. Never changes stock or confirmation rules. */
+export function receiptPackageIssues(packages: readonly ReceiptPackage[], limits: readonly ReceiptLimit[]): { id: string; message: string }[] {
+  const issues: { id: string; message: string }[] = [];
+  const used = new Map<string, number>();
+  const expiryByLot = new Map<string, string>();
+  for (const item of packages) {
+    const qty = Number(item.quantity);
+    let message = '';
+    const limit = limits.find(line => line.invoice_line_id === item.invoiceLineId);
+    if (!item.invoiceLineId || !limit) message = 'น้ำยาไม่ตรงกับ Invoice';
+    else if (!item.lot.trim()) message = 'ยังไม่ระบุ LOT';
+    else if (!item.expiry) message = 'ยังไม่ระบุวันหมดอายุ';
+    else if (!item.locationId) message = 'ยังไม่เลือกตำแหน่งจัดเก็บ';
+    else if (!Number.isSafeInteger(qty) || qty <= 0) message = 'จำนวนต้องเป็นจำนวนเต็มมากกว่า 0';
+    if (limit && Number.isSafeInteger(qty) && qty > 0) {
+      const next = (used.get(item.invoiceLineId) ?? 0) + qty;
+      used.set(item.invoiceLineId, next);
+      if (!message && next > Number(limit.remaining_quantity)) message = 'จำนวนรวมของน้ำยานี้เกินยอดค้างรับ';
+    }
+    if (item.invoiceLineId && item.lot.trim()) {
+      const key = JSON.stringify([item.invoiceLineId, item.lot.trim()]);
+      if (!message && expiryByLot.has(key) && expiryByLot.get(key) !== item.expiry) message = 'LOT เดียวกันมีวันหมดอายุไม่ตรงกัน';
+      if (!expiryByLot.has(key)) expiryByLot.set(key, item.expiry);
+    }
+    if (message) issues.push({ id: item.id, message });
+  }
+  return issues;
+}
+
 export function validateReceiptPackages(packages: readonly ReceiptPackage[], limits: readonly ReceiptLimit[]): string | null {
   if (!packages.length) return 'กรุณาเพิ่มรายการรับเข้าอย่างน้อยหนึ่งรายการ';
   const used = new Map<string, number>();

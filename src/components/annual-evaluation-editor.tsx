@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Download, RefreshCw } from 'lucide-react';
-import { createAnnualEvaluationDraft, finalizeAnnualEvaluation, refreshAnnualEvaluationDraft, saveAnnualEvaluationDraft, type DraftInput } from '@/app/actions/evaluation';
+import { createAnnualEvaluationDraft, finalizeAnnualEvaluation, refreshAnnualEvaluationDraft, saveAnnualEvaluationDraft, createUnifiedAnnualEvaluationDraft, finalizeUnifiedAnnualEvaluation, refreshUnifiedAnnualEvaluationDraft, saveUnifiedAnnualEvaluationDraft, type DraftInput } from '@/app/actions/evaluation';
 import { formatDateBE, formatDateTimeBE } from '@/lib/format';
 import { RESULT_LABELS, criterionLabel, draftInputError, finalizeReadiness, type AnnualRevision, type Signer } from '@/lib/vendor-evaluation';
 
@@ -11,7 +11,7 @@ const number = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 });
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? 'N/A' : `${number.format(Number(v))}%`);
 
 // Layout and behaviour follow LABCBH-Stock AnnualEvaluationEditor: evidence, four judgment fields, three signers, refresh / save / finalize.
-export function AnnualEvaluationEditor({ revision, signers, canManage, policyApproved, vendorId }: { revision: AnnualRevision; signers: Signer[]; canManage: boolean; policyApproved: boolean; vendorId: string }) {
+export function AnnualEvaluationEditor({ revision, signers, canManage, policyApproved, vendorId, unified = false }: { revision: AnnualRevision; signers: Signer[]; canManage: boolean; policyApproved: boolean; vendorId: string; unified?: boolean }) {
   const router = useRouter();
   const isFinal = revision.status === 'final';
   const frozen = revision.frozen_snapshot;
@@ -35,20 +35,20 @@ export function AnnualEvaluationEditor({ revision, signers, canManage, policyApp
       setMessage(done); after?.(); router.refresh();
     });
   }
-  const save = () => { const bad = draftInputError(draft); if (bad) { setError(bad); return; } run(() => saveAnnualEvaluationDraft(revision.id, draft), 'บันทึกฉบับร่างแล้ว'); };
-  const refresh = () => run(() => refreshAnnualEvaluationDraft(revision.id), 'รีเฟรชหลักฐานแล้ว · ตรวจตัวเลขอีกครั้งก่อนสิ้นสุดรายงาน');
+  const save = () => { const bad = draftInputError(draft); if (bad) { setError(bad); return; } run(() => unified ? saveUnifiedAnnualEvaluationDraft(revision.id,draft) : saveAnnualEvaluationDraft(revision.id,draft), 'บันทึกฉบับร่างแล้ว'); };
+  const refresh = () => run(() => unified ? refreshUnifiedAnnualEvaluationDraft(revision.id) : refreshAnnualEvaluationDraft(revision.id), 'รีเฟรชหลักฐานแล้ว · ตรวจตัวเลขอีกครั้งก่อนสิ้นสุดรายงาน');
   const finalize = () => {
     const bad = draftInputError(draft); if (bad) { setError(bad); setConfirming(false); return; }
     setError(null); setMessage(null);
     startTransition(async () => {
-      const result = await finalizeAnnualEvaluation(revision.id, draft);
+      const result = unified ? await finalizeUnifiedAnnualEvaluation(revision.id,draft) : await finalizeAnnualEvaluation(revision.id, draft);
       if (!result.ok) { setError(result.message); setConfirming(false); return; }
       setConfirming(false); setMessage(`สิ้นสุดรายงานแล้ว · เลขที่ ${result.data}`); router.refresh();
     });
   }
   const newRevision = () => run(async () => {
-    const created = await createAnnualEvaluationDraft(vendorId, revision.warehouse_id, revision.ci_vendor_annual_evaluations.fiscal_year);
-    if (created.ok) router.push(`/vendors/${vendorId}/evaluations/${created.data}`);
+    const created = unified ? await createUnifiedAnnualEvaluationDraft(vendorId, revision.ci_vendor_annual_evaluations.fiscal_year) : await createAnnualEvaluationDraft(vendorId, revision.warehouse_id, revision.ci_vendor_annual_evaluations.fiscal_year);
+    if (created.ok) router.push(unified ? `/vendors/${vendorId}/unified-evaluations/${created.data}` : `/vendors/${vendorId}/evaluations/${created.data}`);
     return created;
   }, 'สร้างฉบับร่างใหม่แล้ว');
 
@@ -63,7 +63,7 @@ export function AnnualEvaluationEditor({ revision, signers, canManage, policyApp
       <p className="muted text-sm">{isFinal ? `ตรึงข้อมูลเมื่อ ${formatDateTimeBE(revision.finalized_at)} · นโยบาย ${revision.ci_vendor_evaluation_policies.version}` : `นโยบายที่ใช้: ${revision.ci_vendor_evaluation_policies.version} · หลักฐานเมื่อ ${formatDateTimeBE(evidence.capturedAt)}`}</p>
       {!isFinal && !policyApproved && <p className="notice" role="status">นโยบาย {revision.ci_vendor_evaluation_policies.version} ยังเป็นข้อเสนอ · บันทึกฉบับร่างได้ แต่ยังสิ้นสุดรายงานและแสดงคะแนนอย่างเป็นทางการไม่ได้จนกว่าผู้ดูแลระบบจะอนุมัตินโยบาย</p>}
       {isFinal && frozen && <div className={`assess-decision ${frozen.result === 'fail' ? 'is-conditional' : ''}`} role="status"><span className="muted text-xs">คะแนนถ่วงน้ำหนัก (เกณฑ์ผ่าน {pct(frozen.policy.passThreshold)})</span><strong className="text-3xl">{number.format(frozen.score)} / 100 · {RESULT_LABELS[frozen.result]}</strong></div>}
-      {isFinal && <div className="flex flex-wrap gap-2"><a className="button" href={`/api/vendors/${vendorId}/evaluations/${revision.id}/pdf`} target="_blank" rel="noopener noreferrer"><Download size={16} aria-hidden />ดาวน์โหลดรายงาน PDF</a>{canManage && <button type="button" className="button secondary" disabled={pending} onClick={newRevision}>สร้างฉบับร่างใหม่ (แก้ไขรายงาน)</button>}</div>}
+      {isFinal && <div className="flex flex-wrap gap-2"><a className="button" href={unified ? `/api/vendors/${vendorId}/unified-evaluations/${revision.id}/pdf` : `/api/vendors/${vendorId}/evaluations/${revision.id}/pdf`} target="_blank" rel="noopener noreferrer"><Download size={16} aria-hidden />ดาวน์โหลดรายงาน PDF</a>{canManage && <button type="button" className="button secondary" disabled={pending} onClick={newRevision}>สร้างฉบับร่างใหม่ (แก้ไขรายงาน)</button>}</div>}
     </section>
 
     <section className="surface overflow-hidden" aria-labelledby="ae-evidence">

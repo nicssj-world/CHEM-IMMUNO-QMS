@@ -4,12 +4,12 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BarcodeScanner } from './barcode-scanner';
-import { resolveScan } from '@/app/actions/scanner';
+import { resolveProductScan } from '@/app/actions/scanner';
 import { userMessage } from '@/lib/messages';
 import { scanBatchFields } from '@/lib/barcode';
 
 /** Scanning only picks the Product (and LOT); the quantity and confirmation still happen in the issue form. */
-export function IssueScan({ warehouseId, warehouseCode }: { warehouseId: number; warehouseCode: string }) {
+export function IssueScan() {
   const router = useRouter();
   const [message, setMessage] = useState('');
   const [failed, setFailed] = useState(false);
@@ -20,18 +20,18 @@ export function IssueScan({ warehouseId, warehouseCode }: { warehouseId: number;
     setLocationPath(null);
     setMessage('กำลังตรวจ Barcode…');
     try {
-      const result = await resolveScan(raw, symbology, warehouseId);
+      const result = await resolveProductScan(raw, symbology);
       if (result.locationQr) { setFailed(true); setLocationPath(result.locationQr.path); setMessage(result.message ?? ''); return; }
-      if (!result.productId) {
+      if (!result.product) {
         setFailed(true);
-        setMessage(result.otherWarehouse ? 'Barcode นี้เป็นของอีกคลัง · สลับคลังด้านบนก่อนเบิก' : result.message ?? 'ไม่พบน้ำยาที่ตรงกับ Barcode · เลือกน้ำยาเอง');
+        setMessage(result.message ?? 'ไม่พบน้ำยาที่ตรงกับ Barcode · เลือกน้ำยาเอง');
         return;
       }
       // A Barcode with parse warnings can carry a wrong LOT, so only trust it when clean.
       const lot = scanBatchFields(result.parsed).lot;
-      const query = new URLSearchParams({ warehouse: warehouseCode, product: result.productId });
+      const query = new URLSearchParams({ product: result.product.id });
       if (lot) query.set('lot', lot);
-      setMessage(`พบ ${result.productCode ?? 'น้ำยา'}${lot ? ` · LOT ${lot}` : ' · Barcode ไม่มี LOT ให้เลือก LOT เอง'}`);
+      setMessage(`พบ ${result.product.code}${lot ? ` · LOT ${lot}` : ' · Barcode ไม่มี LOT ให้เลือก LOT เอง'}`);
       router.push(`/issue?${query}`);
     } catch (error) {
       setFailed(true);

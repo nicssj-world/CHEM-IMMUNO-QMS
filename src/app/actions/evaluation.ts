@@ -86,3 +86,39 @@ export async function listSigners(): Promise<EvalResult<{ id: string; name: stri
   if (error) return { ok: false, message: logUserMessage('listSigners', error) };
   return { ok: true, data: (data ?? []) as { id: string; name: string; position: string; hasSignature: boolean }[] };
 }
+
+/** Official combined annual report across both immutable CHE and IMM ledgers. */
+export async function createUnifiedAnnualEvaluationDraft(vendorId: string, fiscalYear: number): Promise<EvalResult<string>> {
+  const supabase = await client();
+  const { data, error } = await supabase.rpc('ci_create_unified_vendor_report', { p_vendor: vendorId, p_fy: fiscalYear });
+  if (error || !data) return { ok: false, message: logUserMessage('createAnnualDraft', error, 'สร้างรายงานรวมไม่สำเร็จ') };
+  revalidatePath(`/vendors/${vendorId}`);
+  return { ok: true, data: data as string };
+}
+
+export async function saveUnifiedAnnualEvaluationDraft(revisionId: string, input: DraftInput): Promise<EvalResult> {
+  const supabase = await client();
+  const { error } = await supabase.rpc('ci_save_unified_vendor_report', { p_id: revisionId, p_data: {
+    summary: input.summary, strengths: input.strengths, risksConcerns: input.risksConcerns,
+    recommendations: input.recommendations, evaluatorId: input.evaluatorId || null,
+    reviewerId: input.reviewerId || null, approverId: input.approverId || null,
+  } });
+  if (error) return { ok: false, message: logUserMessage('savePolicy', error, 'บันทึกรายงานรวมไม่สำเร็จ') };
+  return { ok: true, data: null };
+}
+
+export async function refreshUnifiedAnnualEvaluationDraft(revisionId: string): Promise<EvalResult> {
+  const supabase = await client();
+  const { error } = await supabase.rpc('ci_refresh_unified_vendor_report', { p_id: revisionId });
+  if (error) return { ok: false, message: logUserMessage('refreshAnnualDraft', error, 'รีเฟรชหลักฐานรวมไม่สำเร็จ') };
+  return { ok: true, data: null };
+}
+
+export async function finalizeUnifiedAnnualEvaluation(revisionId: string, input: DraftInput): Promise<EvalResult<string>> {
+  const saved = await saveUnifiedAnnualEvaluationDraft(revisionId, input);
+  if (!saved.ok) return saved;
+  const supabase = await client();
+  const { data, error } = await supabase.rpc('ci_finalize_unified_vendor_report', { p_id: revisionId });
+  if (error || !data) return { ok: false, message: logUserMessage('finalizeAnnual', error, 'รับรองรายงานรวมไม่สำเร็จ') };
+  return { ok: true, data: data as string };
+}

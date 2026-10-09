@@ -6,21 +6,22 @@ import type { PickerProduct } from '@/components/product-picker';
  * LOT × location rows for one product (or, with `expiredBefore`, every expired row) plus the product list for the picker.
  * Loading per product keeps the list complete: a warehouse-wide dropdown had to cap rows and silently dropped the newest LOTs.
  */
-export async function getStockOptions(warehouseId: string, { includeZero = false, productId, expiredBefore }: { includeZero?: boolean; productId?: string; expiredBefore?: string } = {}): Promise<{ options: StockOption[]; locations: LocationOption[]; products: PickerProduct[]; error: string | null }> {
+export async function getStockOptions(warehouseIds: string | readonly number[], { includeZero = false, productId, expiredBefore }: { includeZero?: boolean; productId?: string; expiredBefore?: string } = {}): Promise<{ options: StockOption[]; locations: LocationOption[]; products: (PickerProduct & { warehouse_id: number })[]; error: string | null }> {
+  const scopeIds = Array.isArray(warehouseIds) ? [...warehouseIds] : [Number(warehouseIds)];
   const client = await createClient();
   if (!client) return { options: [], locations: [], products: [], error: 'ยังไม่ได้ตั้งค่า Supabase' };
   const loadRows = Boolean(productId || expiredBefore);
-  let balances = client.from('ci_stock_balances').select('lot_id,lot_number,expiry_date,location_id,product_id,balance').eq('warehouse_id',warehouseId);
+  let balances = client.from('ci_stock_balances').select('lot_id,lot_number,expiry_date,location_id,product_id,balance').in('warehouse_id',scopeIds);
   balances = includeZero ? balances.gte('balance',0) : balances.gt('balance',0);
   if (productId) balances = balances.eq('product_id',productId);
   if (expiredBefore) balances = balances.lt('expiry_date',expiredBefore);
   const [balanceResult, productResult, locationResult] = await Promise.all([
     loadRows ? balances.order('expiry_date').order('lot_number').limit(1000) : Promise.resolve({ data: [], error: null }),
-    client.from('ci_products').select('id,product_code,display_name').eq('warehouse_id',warehouseId).eq('active',true).order('product_code').limit(1000),
+    client.from('ci_products').select('id,product_code,display_name,warehouse_id').in('warehouse_id',scopeIds).eq('active',true).order('product_code').limit(1000),
     client.from('ci_locations').select('id,code,name,parent_location_id').eq('active',true).order('code'),
   ]);
   const error = balanceResult.error?.message ?? productResult.error?.message ?? locationResult.error?.message ?? null;
-  const products = (productResult.data ?? []) as PickerProduct[];
+  const products = (productResult.data ?? []) as (PickerProduct & { warehouse_id: number })[];
   const productMap = new Map(products.map(p => [p.id,p]));
   // A shelf reads as "parent › code" so identical shelf names in different fridges stay distinguishable; selection still uses the id.
   const locationRows = (locationResult.data ?? []) as (LocationOption & { parent_location_id: string | null })[];

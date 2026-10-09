@@ -96,7 +96,8 @@ export function activeWorkspace(pathname: string, source: readonly Workspace[] =
 
 /** Tabs keep the selected warehouse and drop every other query parameter, so a stale search or filter never follows the user. */
 export function tabHref(href: string, warehouse: string | null | undefined) {
-  return warehouse === 'CHE' || warehouse === 'IMM' ? `${href}?warehouse=${warehouse}` : href;
+  void warehouse; // Never propagate a legacy scope into the unified UI.
+  return href;
 }
 
 // ---------------------------------------------------------------------------

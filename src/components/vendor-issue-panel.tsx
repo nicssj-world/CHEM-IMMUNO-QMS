@@ -24,8 +24,8 @@ const tone: Record<string, string> = { open: 'is-open', resolved: 'is-resolved',
  * LABCBH-Stock VendorIssuePanel: list, act (resolve / attach evidence / cancel) and open manual issues.
  * The workbench offers only what the database accepts: resolving needs an open issue, cancelling one not yet cancelled.
  */
-export function VendorIssuePanel({ issues, attachments, vendorId, warehouseId, invoices, canOpen, canResolve, canCancel, emptyText = 'ยังไม่มีปัญหาผู้ขาย' }: {
-  issues: VendorIssue[]; attachments: IssueAttachment[]; vendorId: string; warehouseId: number; invoices: { id: string; invoice_number: string }[];
+export function VendorIssuePanel({ issues, attachments, vendorId, warehouseId, scopeOptions = [], invoices, canOpen, canResolve, canCancel, emptyText = 'ยังไม่มีปัญหาผู้ขาย' }: {
+  issues: VendorIssue[]; attachments: IssueAttachment[]; vendorId: string; warehouseId: number; scopeOptions?: { id: number; label: string }[]; invoices: { id: string; invoice_number: string }[];
   canOpen: boolean; canResolve: boolean; canCancel: boolean; emptyText?: string;
 }) {
   const router = useRouter();
@@ -37,6 +37,7 @@ export function VendorIssuePanel({ issues, attachments, vendorId, warehouseId, i
   const [type, setType] = useState<string>('other');
   const [description, setDescription] = useState('');
   const [invoiceId, setInvoiceId] = useState('');
+  const [manualScopeId, setManualScopeId] = useState(warehouseId);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -55,7 +56,7 @@ export function VendorIssuePanel({ issues, attachments, vendorId, warehouseId, i
     });
   }
   const submitResolve = (event: FormEvent) => { event.preventDefault(); if (selected) run(() => resolveVendorIssueAction(selected.id, action, note), () => { setSelectedId(null); setNote(''); setMessage('บันทึกการแก้ไขแล้ว'); }); };
-  const submitManual = (event: FormEvent) => { event.preventDefault(); run(() => openVendorIssue({ vendorId, warehouseId, issueType: type, description, invoiceId: invoiceId || null }), () => { setDescription(''); setMessage('บันทึกปัญหาแล้ว'); }); };
+  const submitManual = (event: FormEvent) => { event.preventDefault(); run(() => openVendorIssue({ vendorId, warehouseId: manualScopeId, issueType: type, description, invoiceId: invoiceId || null }), () => { setDescription(''); setMessage('บันทึกปัญหาแล้ว'); }); };
   const submitCancel = () => { if (selected) run(() => cancelVendorIssueAction(selected.id, cancelReason, cancelNote), () => { setSelectedId(null); setCancelNote(''); setMessage('ยกเลิกปัญหาแล้ว'); }); };
 
   function upload() {
@@ -119,6 +120,7 @@ export function VendorIssuePanel({ issues, attachments, vendorId, warehouseId, i
       <div className="grid sm:grid-cols-2 gap-3">
         <label className="field">ประเภทปัญหา<select className="input" value={type} onChange={e => setType(e.target.value)}>{VENDOR_ISSUE_TYPES.map(t => <option key={t} value={t}>{ISSUE_TYPE_LABELS[t]}</option>)}</select></label>
         <label className="field">Invoice (ถ้ามี)<select className="input" value={invoiceId} onChange={e => setInvoiceId(e.target.value)}><option value="">ไม่ระบุ</option>{invoices.map(i => <option key={i.id} value={i.id}>{i.invoice_number}</option>)}</select></label>
+        {scopeOptions.length > 1 && <label className="field">กลุ่มรหัสน้ำยาที่เกี่ยวข้อง<select className="input" value={manualScopeId} onChange={e => setManualScopeId(Number(e.target.value))}>{scopeOptions.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
       </div>
       <label className="field">รายละเอียด<textarea className="input min-h-20" required value={description} onChange={e => setDescription(e.target.value)} maxLength={2000} /></label>
       <div><button type="submit" className="button secondary" disabled={pending || !description.trim()}>เปิดปัญหา</button></div></form>}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { appendReceiptPackage, validateReceiptPackages, type ReceiptPackage } from '../../src/lib/receipt-workbench';
+import { appendReceiptPackage, receiptPackageIssues, validateReceiptPackages, type ReceiptPackage } from '../../src/lib/receipt-workbench';
 import { readWorkbenchDraft, saveWorkbenchDraft, clearWorkbenchDraft, workbenchDraftKey } from '../../src/lib/receive-workbench-draft';
 
 const item = (id:string,lot:string,qty='1',locationId='locA',invoiceLineId='lineA',expiry='2027-12-31'):ReceiptPackage =>
@@ -67,4 +67,12 @@ test('local auto-save is scoped to user and invoice and can be cleared after suc
     if(previous===undefined)delete (globalThis as {localStorage?:Storage}).localStorage;
     else Object.defineProperty(globalThis,'localStorage',{value:previous,configurable:true});
   }
+});
+
+test('receipt review identifies invalid LOT rows without blocking unrelated draft edits', () => {
+  const packages = [item('valid','LOT-A','1'),item('location','LOT-B','1',''),item('capacity','LOT-C','8')];
+  assert.deepEqual(receiptPackageIssues(packages, limits), [
+    {id:'location',message:'ยังไม่เลือกตำแหน่งจัดเก็บ'},
+    {id:'capacity',message:'จำนวนรวมของน้ำยานี้เกินยอดค้างรับ'},
+  ]);
 });

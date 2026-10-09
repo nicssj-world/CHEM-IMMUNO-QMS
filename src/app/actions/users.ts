@@ -21,13 +21,14 @@ export async function provisionUser(form: FormData) {
   const ephisId = normalizeEphisId(String(form.get('ephis_id') ?? ''));
   const displayName = String(form.get('display_name') ?? '').trim();
   const role = String(form.get('role') ?? '');
-  const warehouseIds = [...new Set(form.getAll('warehouse_ids').map(value => Number(value)))];
+  // One unified user role is mirrored to both legacy ledgers for RLS compatibility.
+  const warehouseIds = [1,2];
   const active = form.get('active') === 'on';
   const password = String(form.get('initial_password') ?? '');
   if (!ephisId || displayName.length < 1 || displayName.length > 120 ||
       !['admin','supervisor','staff','viewer'].includes(role) ||
-      warehouseIds.some(id => id !== 1 && id !== 2) || (active && warehouseIds.length === 0)) {
-    fail('ตรวจสอบ Ephis ID, ชื่อ, บทบาท และคลังที่เลือก');
+      false) {
+    fail('ตรวจสอบ Ephis ID, ชื่อ และบทบาท');
   }
 
   const authClient = await createClient();

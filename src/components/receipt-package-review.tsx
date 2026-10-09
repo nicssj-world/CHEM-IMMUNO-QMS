@@ -8,9 +8,10 @@ type Product = { id: string; product_code: string; display_name: string };
 type Location = { id: string; code: string; name: string; warehouse_id: number; parent_code?: string | null };
 
 export function ReceiptPackageReview({
-  packages, lines, products, locations, onChange, onRemove, onAddLot,
+  packages, invalidIds = [], lines, products, locations, onChange, onRemove, onAddLot,
 }: {
   packages: ReceiptPackage[];
+  invalidIds?: string[];
   lines: InvoiceLine[];
   products: Product[];
   locations: Location[];
@@ -47,7 +48,7 @@ export function ReceiptPackageReview({
         <div className="md:hidden divide-y divide-[var(--line)]">
           {group.map(item => {
             const location = locationById.get(item.locationId);
-            return <details key={item.id} className="group">
+            return <details key={item.id} id={'ci-receipt-' + item.id} open={invalidIds.includes(item.id)} className="group">
               <summary className="cursor-pointer list-none p-3 min-h-16 flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-sm break-all">LOT {item.lot || 'ยังไม่ระบุ'}</p>
@@ -93,7 +94,7 @@ export function ReceiptPackageReview({
               <th className="px-3 py-2 font-semibold w-[64px]">ลบ</th>
             </tr></thead>
             <tbody className="divide-y divide-[var(--line)]">
-              {group.map(item => <tr key={item.id}>
+              {group.map(item => <tr key={item.id} id={'ci-receipt-' + item.id} className={invalidIds.includes(item.id) ? 'bg-red-50' : undefined}>
                 <td className="p-2 pl-3"><input className="input min-w-[120px]" aria-label="เลข LOT" value={item.lot} onChange={e=>onChange(item.id,{lot:e.target.value})} /></td>
                 <td className="p-2"><IntegerQuantityInput className="input w-full" aria-label="จำนวนรับเข้า" min="1" value={item.quantity} onChange={e=>onChange(item.id,{quantity:e.target.value})} /></td>
                 <td className="p-2"><input className="input w-full" aria-label="วันหมดอายุ" type="date" value={item.expiry} onChange={e=>onChange(item.id,{expiry:e.target.value})} /></td>
