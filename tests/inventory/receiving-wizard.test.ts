@@ -6,7 +6,7 @@ const products=[
   {id:'p1',warehouse_id:1,product_code:'CHE-001',display_name:'Glucose',default_location_id:null},
   {id:'p2',warehouse_id:2,product_code:'IMM-001',display_name:'TSH',default_location_id:null}
 ];
-const locations=[{id:'l1',code:'R01',name:'Refrigerator'}];
+const locations=[{id:'l1',warehouse_id:1,code:'R01',name:'Refrigerator'}];
 const pkg=(id:string,quantity:string,lot:string,expiry='2027-12-31')=>({id,quantity,lot,expiry,locationId:'l1'});
 const line=(orderedQuantity='10'):WizardLine=>({id:'row1',productId:'p1',orderedQuantity,packages:[pkg('a','4','LOT-A'),pkg('b','3','LOT-B')]});
 
