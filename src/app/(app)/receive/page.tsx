@@ -80,7 +80,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const supervisedCodes = access.warehouses.filter(w => canSupervise(w.role)).map(w => w.code);
   // Warehouses on this invoice that have no storage location yet: packages cannot be put away until one exists.
   const invoiceWarehouses = [...new Set(lines.map(l => Number(l.warehouse_id)))];
-  const missingLocations = access.warehouses.filter(w => invoiceWarehouses.includes(Number(w.id)) && !locations.some(l => Number(l.warehouse_id) === Number(w.id)));
+  const missingLocations = access.warehouses.filter(w => invoiceWarehouses.includes(Number(w.id)) && locations.length === 0);
   const back = (path: string) => encodeURIComponent(path);
   // Quality record for this invoice: receipt events with their assessments, and the vendor issues raised against it.
   const { events: receiptEvents, error: receiptEventsError } = invoice && client
@@ -130,10 +130,10 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const supervisesAny = access.warehouses.some(w => canSupervise(w.role));
   return (
     <main className="grid gap-6 max-w-[1100px]">
-      <div><p className="eyebrow mb-2">Receiving</p><h1 className="page-title">รับน้ำยาเข้าคลัง</h1><p className="muted mt-2 text-sm">Invoice หนึ่งฉบับมีน้ำยาได้ทั้งสองคลัง · รับบางส่วนได้หลายครั้ง</p></div>
+      <div><p className="eyebrow mb-2">Receiving</p><h1 className="page-title">รับน้ำยาเข้าคลัง</h1><p className="muted mt-2 text-sm">Invoice หนึ่งฉบับรับน้ำยา CHE และ IMM ร่วมกันได้ · รับบางส่วนได้หลายครั้ง</p></div>
       {params.error && <p className="error" role="alert">{params.error}</p>}
       {params.saved && <p className="notice" role="status">{savedNotice(params.saved, 'บันทึกสำเร็จ')}</p>}
-      {(lineError || attachmentError) && <p className="error" role="alert">อ่าน Invoice ไม่สำเร็จ: {logUserMessage('receive', lineError || attachmentError)}</p>}
+      {(lineError || attachmentError || locationsResult.error) && <p className="error" role="alert">อ่าน Invoice หรือตำแหน่งจัดเก็บไม่สำเร็จ: {logUserMessage('receive', lineError || attachmentError || locationsResult.error)}</p>}
       {invoice ? <section className="grid gap-5">
         <div className="surface p-5 flex flex-wrap justify-between items-center gap-3">
           <div><p className="eyebrow">Invoice {invoice.invoice_number}</p><h2 className="font-extrabold text-xl">ตรวจและรับน้ำยา</h2><p className="muted text-sm">{invoice.invoice_date} · {vendors.find(v => v.id === invoice.vendor_id)?.name ?? 'ผู้ขาย'}</p></div>

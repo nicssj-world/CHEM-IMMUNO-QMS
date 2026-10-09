@@ -100,7 +100,7 @@ export function ReceiptEditForm({ receiptId, warehouseId, eventNumber, invoice, 
             <div className="grid sm:grid-cols-2 gap-3">
               <label className="field">จำนวน<IntegerQuantityInput className="input" min="1" value={line.quantity} onChange={event => setDraft(current => current.map(item => item.key === line.key ? { ...item, quantity: Number(event.target.value) } : item))} required /></label>
               <label className="field">ตำแหน่ง<select className="input" value={line.location_id} onChange={event => setDraft(current => current.map(item => item.key === line.key ? { ...item, location_id: event.target.value } : item))} required>
-                <option value="">เลือกตำแหน่ง</option>{locations.filter(item => item.warehouse_id === warehouseId).map(item => <option key={item.id} value={item.id}>{item.parent_code ? `${item.parent_code} › ` : ''}{item.code} · {item.name}</option>)}
+                <option value="">เลือกตำแหน่ง</option>{locations.map(item => <option key={item.id} value={item.id}>{item.parent_code ? `${item.parent_code} › ` : ''}{item.code} · {item.name}</option>)}
               </select></label>
               <label className="field">LOT<input className="input" autoCapitalize="characters" autoCorrect="off" value={line.lot_number} onChange={event => setDraft(current => current.map(item => item.key === line.key ? { ...item, lot_number: event.target.value } : item))} required /></label>
               <label className="field">วันหมดอายุตามกล่อง<input className="input" type="date" value={line.expiry_date} onChange={event => setDraft(current => current.map(item => item.key === line.key ? { ...item, expiry_date: event.target.value } : item))} required /></label>

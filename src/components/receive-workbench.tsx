@@ -14,7 +14,7 @@ import { SubmitButton } from './submit-button';
 import { ReceiptAssessmentFields } from './receipt-assessment-fields';
 import { DEFAULT_ASSESSMENT, assessmentError, type AssessmentInput } from '@/lib/receipt-assessment';
 import { preselectLocation } from '@/lib/receive-location';
-import { appendReceiptPackage, validateReceiptPackages, type ReceiptPackage } from '@/lib/receipt-workbench';
+import { appendReceiptPackage, receiptPackageIssues, validateReceiptPackages, type ReceiptPackage } from '@/lib/receipt-workbench';
 import { clearWorkbenchDraft, readWorkbenchDraft, saveWorkbenchDraft } from '@/lib/receive-workbench-draft';
 import { scanBatchFields } from '@/lib/barcode';
 
@@ -155,6 +155,7 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
   },[draftRestored,invoiceId,userId,packages,draftKey]);
 
   const packageError = validateReceiptPackages(packages,lines);
+  const packageIssues = receiptPackageIssues(packages,lines);
   const totalUnits = packages.reduce((sum,item)=>sum+(Number(item.quantity)||0),0);
   function suggestedLocation(productId: string, warehouse: number): string {
     const latest = [...packagesRef.current].reverse().find(item => lineById.get(item.invoiceLineId)?.product_id===productId);
@@ -346,7 +347,17 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
       </div>
       {draftStorageWarning && <p role="alert" className="error">อุปกรณ์นี้ไม่อนุญาตให้บันทึกร่างอัตโนมัติ · โปรดอย่าออกจากหน้าก่อนยืนยัน</p>}
       {!draftStorageWarning && packages.length>0 && <p role="status" className="muted text-xs">บันทึกร่างอัตโนมัติบนอุปกรณ์นี้ · ผู้ใช้คนเดิมกลับมาทำต่อได้ · ไม่ซิงก์ข้ามเครื่อง</p>}
-      <ReceiptPackageReview packages={packages} lines={lines} products={products} locations={locations}
+      {packageIssues.length > 0 && <section role="alert" className="error grid gap-2" aria-label="รายการรับเข้าที่ต้องแก้ไข">
+        <strong>มี {packageIssues.length} LOT/ตำแหน่งที่ต้องแก้ก่อนยืนยัน</strong>
+        {packageIssues.map(issue => {
+          const item = packages.find(row => row.id === issue.id);
+          const productId = lines.find(line => line.invoice_line_id === item?.invoiceLineId)?.product_id;
+          return <button key={issue.id} type="button" className="text-left underline underline-offset-2 min-h-10" onClick={() => document.getElementById('ci-receipt-' + issue.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+            {productById.get(productId ?? '')?.product_code ?? 'รายการน้ำยา'} · LOT {item?.lot || '(ยังไม่ระบุ)'}: {issue.message}
+          </button>;
+        })}
+      </section>}
+      <ReceiptPackageReview packages={packages} invalidIds={packageIssues.map(issue => issue.id)} lines={lines} products={products} locations={locations}
         onChange={(id,change)=>setPack(packagesRef.current.map(item=>item.id===id?{...item,...change}:item))}
         onRemove={id=>setPack(packagesRef.current.filter(item=>item.id!==id))}
         onAddLot={showAddLot}/>
