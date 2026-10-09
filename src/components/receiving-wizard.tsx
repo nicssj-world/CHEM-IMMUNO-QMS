@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
+import { BarcodeScanner } from './barcode-scanner';
 import { InvoiceReagentPicker } from './invoice-reagent-picker';
 import { IntegerQuantityInput } from './integer-quantity-input';
 import { ReceiptAssessmentFields } from './receipt-assessment-fields';
@@ -25,7 +25,6 @@ const makeLot=(locationId=''):WizardLot=>({id:crypto.randomUUID(),quantity:'1',l
 const makeLine=(productId:string,locationId=''):WizardLine=>({
   id:crypto.randomUUID(),productId,orderedQuantity:'1',packages:[makeLot(locationId)],
 });
-const empty=(value:string)=>value.trim()==='';
 
 export function ReceivingWizard({vendors,products,locations,initialDraft,recentInvoices,recentDrafts}:{
   vendors:Vendor[];products:WizardProduct[];locations:WizardLocation[];
@@ -42,7 +41,6 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
   const [pending,startTransition]=useTransition();
-  const [scanFeedback,setScanFeedback]=useState<ScanFeedback|null>(null);
   const productsById=useMemo(()=>new Map(products.map(p=>[p.id,p])),[products]);
   const locationsById=useMemo(()=>new Map(locations.map(p=>[p.id,p])),[locations]);
   const vendorsById=useMemo(()=>new Map(vendors.map(p=>[p.id,p])),[vendors]);
@@ -183,7 +181,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       <div className="rounded-lg bg-surface-2 p-3 text-sm"><strong>Invoice {header.invoiceNumber}</strong> · {vendorsById.get(header.vendorId)?.name??'—'}</div>
       <div className="grid gap-3 rounded-xl border border-line p-3">
         <h3 className="font-bold">เพิ่มน้ำยาจาก Barcode</h3>
-        <BarcodeScanner onScan={onScan} dock continuous feedback={scanFeedback} summary={<span className="text-sm font-semibold">ร่าง {totals.lots} LOT · {totals.received} หน่วย</span>}/>
+        <BarcodeScanner onScan={onScan} dock continuous summary={<span className="text-sm font-semibold">ร่าง {totals.lots} LOT · {totals.received} หน่วย</span>}/>
         <h3 className="font-bold">หรือเพิ่มน้ำยาด้วยตนเอง</h3>
         <InvoiceReagentPicker products={products} value="" onChange={addProduct}/>
       </div>
