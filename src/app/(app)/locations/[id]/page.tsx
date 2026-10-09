@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Pencil, Printer } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { requireAccess, canSupervise } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
-import { rotateLocationQr, setLocationActive } from '@/app/actions/locations';
+import { setLocationActive } from '@/app/actions/locations';
 import { ConfirmForm } from '@/components/confirm-form';
 import { LocationTypeIcon } from '@/components/location-type-icon';
 import { PortalLink } from '@/components/portal-link';
@@ -56,7 +56,6 @@ export default async function LocationDetailPage({ params, searchParams }: { par
         <div className="min-w-0"><h1 className="page-title flex items-center gap-3"><LocationTypeIcon type={location.location_type} size={26} className="text-[var(--teal)] shrink-0" /><span className="break-words">{parent ? <><Link href={`/locations/${parent.id}${here}`}>{parent.code}</Link> › </> : null}{location.code}</span></h1><p className="mt-1 font-semibold">{location.name}</p></div>
         <div className="flex flex-wrap gap-2 print-hide">
           {canManage && <Link className="button secondary" href={`/locations/${id}/edit${here}`}><Pencil size={16} aria-hidden />แก้ไข</Link>}
-          {canManage && <Link className="button secondary" href={`/locations/qr?warehouse=${warehouse.code}&ids=${id}`}><Printer size={16} aria-hidden />พิมพ์ QR</Link>}
           <PortalLink url={location.portal_equipment_url} label={location.portal_equipment_label} />
           {parent?.portal_equipment_url && !location.portal_equipment_url ? <PortalLink url={parent.portal_equipment_url} label={parent.portal_equipment_label} context={`ของ ${parent.code}`} /> : null}
         </div>
@@ -95,12 +94,6 @@ export default async function LocationDetailPage({ params, searchParams }: { par
         <label className="field">{location.active ? 'เหตุผลที่ปิดการใช้งาน' : 'เหตุผลที่เปิดใช้งานอีกครั้ง'}<input className="input" name="reason" required maxLength={200} placeholder={location.active ? 'เช่น เลิกใช้ตู้นี้แล้ว' : 'เช่น นำกลับมาใช้'}/></label>
         <button className={`button ${location.active ? 'danger' : ''}`}>{location.active ? 'ปิดการใช้งาน' : 'เปิดใช้งานอีกครั้ง'}</button>
         {location.active && <p className="muted text-xs sm:col-span-2">ปิดได้เมื่อไม่มีน้ำยาคงเหลือและไม่มีตำแหน่งย่อยที่ยังใช้งานอยู่ · ประวัติเดิมทั้งหมดยังคงอยู่</p>}
-      </ConfirmForm>
-      <ConfirmForm action={rotateLocationQr} className="grid gap-3 sm:grid-cols-[1fr_auto] items-end border-t border-line pt-5" message={`เปลี่ยน QR ของ ${location.code}? ป้ายที่พิมพ์ไว้เดิมจะสแกนไม่ได้อีก`}>
-        <input type="hidden" name="id" value={id}/>
-        <label className="field">เหตุผลที่เปลี่ยน QR<input className="input" name="reason" required maxLength={200} placeholder="เช่น ป้ายชำรุด หรือถูกถ่ายรูปเผยแพร่"/></label>
-        <button className="button secondary">เปลี่ยน QR ใหม่</button>
-        <p className="muted text-xs sm:col-span-2">QR ใหม่มีผลทันที · ป้ายเดิมจะแสดงว่าไม่พบตำแหน่ง · ต้องพิมพ์ป้ายใหม่มาติดแทน</p>
       </ConfirmForm>
     </section>}
   </main>;
