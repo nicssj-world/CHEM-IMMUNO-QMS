@@ -32,7 +32,7 @@ export function appendWizardScan(
   makeId: () => string,
 ): {ok:true;lines:WizardLine[];merged:boolean} | {ok:false;reason:'invalid'|'capacity'|'lot-expiry-conflict'|'review'} {
   const line=lines.find(l=>l.productId===next.productId);
-  const ordered=line?.orderedQuantity ?? '1';
+  const ordered=line?.orderedQuantity ?? '';
   const packages=line?.packages ?? [];
   // Do not silently discard a partially edited/manual LOT or count it twice.
   const blank=packages.length===1 && !packages[0].lot && !packages[0].expiry && packages[0].quantity==='1';
@@ -42,7 +42,7 @@ export function appendWizardScan(
   const result=appendReceiptPackage(existing,{
     id:makeId(),invoiceLineId:next.productId,lot:next.lot,expiry:next.expiry,
     locationId:next.locationId,quantity:next.quantity,raw:next.raw,
-  },[{invoice_line_id:next.productId,remaining_quantity:Number(ordered)}]);
+  },[{invoice_line_id:next.productId,remaining_quantity:ordered.trim()?Number(ordered):Number.MAX_SAFE_INTEGER}]);
   if(!result.ok) return result;
   const updated:WizardLine=line
     ? {...line,packages:result.packages.map(({invoiceLineId:unused,...p})=>{void unused;return p;})}
@@ -93,8 +93,8 @@ export function wizardLineError(lines: readonly WizardLine[], products: readonly
 }
 export function wizardTotals(lines: readonly WizardLine[]) {
   const ordered = lines.reduce((sum,l)=>sum+(Number(l.orderedQuantity)||0),0);
-  const received = lines.reduce((sum,l)=>sum+l.packages.reduce((n,p)=>n+(Number(p.quantity)||0),0),0);
-  return {ordered,received,pending:Math.max(0,ordered-received),lots:lines.reduce((sum,l)=>sum+l.packages.length,0)};
+  const received = lines.reduce((sum,l)=>sum+l.packages.reduce((n,p)=>n+(p.lot.trim()&&p.expiry&&p.locationId?Number(p.quantity)||0:0),0),0);
+  return {ordered,received,pending:Math.max(0,ordered-received),lots:lines.reduce((sum,l)=>sum+l.packages.filter(p=>p.lot.trim()&&p.expiry&&p.locationId).length,0)};
 }
 export function remainingForLot(line: WizardLine, lotId: string) {
   return Math.max(0,Number(line.orderedQuantity) -
