@@ -149,9 +149,9 @@ test('longest-prefix and extra match prefixes decide between tabs (also for work
   assert.equal(activeTab('/y', source), null);
 });
 
-test('tab links keep only a valid warehouse selection and drop every other query parameter', () => {
-  assert.equal(tabHref('/stock', 'CHE'), '/stock?warehouse=CHE');
-  assert.equal(tabHref('/stock', 'IMM'), '/stock?warehouse=IMM');
+test('tab links stay on unified scope and ignore legacy warehouse parameters', () => {
+  assert.equal(tabHref('/stock', 'CHE'), '/stock');
+  assert.equal(tabHref('/stock', 'IMM'), '/stock');
   assert.equal(tabHref('/stock', 'XYZ'), '/stock');
   assert.equal(tabHref('/stock', 'CHE&q=stale'), '/stock');
   assert.equal(tabHref('/stock', null), '/stock');
