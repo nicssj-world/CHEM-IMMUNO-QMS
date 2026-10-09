@@ -9,6 +9,7 @@ import { ReceiptAssessmentCard } from '@/components/receipt-assessment-card';
 import { loadReceiptEvents } from '@/lib/receipt-events';
 import { VendorPerformance, type TrendPoint } from '@/components/vendor-performance';
 import { AnnualEvaluationPanel } from '@/components/annual-evaluation-panel';
+import { UnifiedAnnualEvaluationPanel } from '@/components/unified-annual-evaluation-panel';
 import { loadAnnualRevisions, type Snapshot } from '@/lib/vendor-evaluation';
 import { combineVendorSnapshots } from '@/lib/unified-vendor';
 import { bangkokToday, fiscalYearBE } from '@/lib/inventory-insights';
@@ -41,13 +42,14 @@ export default async function VendorDetailPage({ params, searchParams }: { param
   const requestedFy = Number.parseInt(query.fiscalYear ?? '', 10);
   const fy = requestedFy >= 2500 && requestedFy <= 3000 ? requestedFy : currentFy;
   const trendYears = [fy - 4, fy - 3, fy - 2, fy - 1, fy];
-  const [issueResult, invoiceResult, invoiceCountResult, auditResult, performanceByScope, annualByScope] = await Promise.all([
+  const [issueResult, invoiceResult, invoiceCountResult, auditResult, performanceByScope, annualByScope, unifiedAnnualResult] = await Promise.all([
     client.from('ci_vendor_issues').select(ISSUE_COLUMNS,{count:'exact'}).eq('vendor_id',id).in('warehouse_id',warehouseIds).order('created_at',{ascending:false}).limit(200),
     client.from('ci_invoices').select('id,invoice_number,invoice_date').eq('vendor_id',id).order('created_at',{ascending:false}).limit(1000),
     client.from('ci_invoices').select('id',{count:'exact',head:true}).eq('vendor_id',id),
     canManage ? client.from('ci_audit_logs').select('id,action,reason,created_at,actor_id').eq('entity_table','ci_vendors').eq('entity_id',id).order('created_at',{ascending:false}).limit(50) : Promise.resolve({data:[],error:null}),
     Promise.all(warehouseIds.map(warehouseId=>Promise.all(trendYears.map(year=>client.rpc('ci_vendor_performance',{p_vendor_id:id,p_warehouse_id:warehouseId,p_fiscal_year:year}))))),
     Promise.all(warehouseIds.map(warehouseId=>loadAnnualRevisions(client,id,warehouseId))),
+    client.from('ci_unified_vendor_reports').select('id,fiscal_year,revision_number,status,report_number,frozen_snapshot').eq('vendor_id',id).order('fiscal_year',{ascending:false}).order('revision_number',{ascending:false}).limit(100),
   ]);
   const issues = (issueResult.data ?? []) as VendorIssue[];
   const invoices = invoiceResult.data ?? [];
@@ -72,7 +74,7 @@ export default async function VendorDetailPage({ params, searchParams }: { param
   const actorIds = [...new Set(audit.map(a => a.actor_id).filter((a): a is string => Boolean(a)))];
   const { data: actorData } = actorIds.length ? await client.from('ci_user_profiles').select('user_id,display_name').in('user_id', actorIds) : { data: [] };
   const actors = new Map((actorData ?? []).map(a => [a.user_id as string, a.display_name as string]));
-  const loadError = [issueResult.error, invoiceResult.error, invoiceCountResult.error, auditResult.error,
+  const loadError = [issueResult.error, invoiceResult.error, invoiceCountResult.error, auditResult.error, unifiedAnnualResult.error,
     ...annualByScope.map(result=>result.error),...performanceByScope.flatMap(group=>group.map(result=>result.error)),
     !invoicesComplete?{message:'Invoice เกินขีดจำกัดของรายการสรุป'}:null,
     issues.length<(issueResult.count??0)?{message:'ปัญหาผู้ขายเกินขีดจำกัดของรายการสรุป'}:null,
@@ -106,6 +108,7 @@ export default async function VendorDetailPage({ params, searchParams }: { param
       <h2 id="vendor-performance" className="font-bold text-lg">ผลงานผู้ขายรวม · ปีงบประมาณ {fy}</h2>
       {snapshot && invoicesComplete && !loadError ? <VendorPerformance snapshot={snapshot} trend={trend} hrefForYear={year=>`/vendors/${id}?fiscalYear=${year}`} officialScore={null}/> : <p className="error" role="alert">ไม่สามารถสรุปผลงานผู้ขายได้ครบถ้วน</p>}
     </section>
+    {!unifiedAnnualResult.error && <UnifiedAnnualEvaluationPanel vendorId={id} fiscalYear={fy} revisions={(unifiedAnnualResult.data ?? []) as never[]} canManage={warehouses.length===2 && warehouses.every(item=>canSupervise(item.role))}/>} 
     <section className="surface p-5 grid gap-3" aria-labelledby="vendor-annual">
       <h2 id="vendor-annual" className="font-bold">เอกสารประเมินประจำปีเดิม</h2>
       <p className="muted text-sm">คงรายงานลงนามและคะแนนเดิมตามขอบเขตหลักฐาน ณ วันที่จัดทำ ไม่คำนวณคะแนนรวมจากการเฉลี่ยรายงานเก่า</p>
