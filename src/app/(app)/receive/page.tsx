@@ -83,8 +83,12 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const missingLocations = access.warehouses.filter(w => invoiceWarehouses.includes(Number(w.id)) && !locations.some(l => Number(l.warehouse_id) === Number(w.id)));
   const back = (path: string) => encodeURIComponent(path);
   // Quality record for this invoice: receipt events with their assessments, and the vendor issues raised against it.
-  const { events: receiptEvents } = invoice && client ? await loadReceiptEvents(client, { invoiceId: invoice.id }) : { events: [] };
-  const { data: receiptLineData } = receiptEvents.length && client ? await client.from('ci_receipt_lines').select('id,receipt_id,invoice_line_id,quantity,location_id,ci_stock_lots(lot_number,expiry_date)').in('receipt_id',receiptEvents.map(event => event.id)).limit(1000) : { data: [] };
+  const { events: receiptEvents, error: receiptEventsError } = invoice && client
+    ? await loadReceiptEvents(client, { invoiceId: invoice.id })
+    : { events: [], error: null };
+  const { data: receiptLineData, error: receiptLineError } = receiptEvents.length && client
+    ? await client.from('ci_receipt_lines').select('id,receipt_id,invoice_line_id,quantity,location_id,ci_stock_lots(lot_number,expiry_date)').in('receipt_id',receiptEvents.map(event => event.id)).limit(1000)
+    : { data: [], error: null };
   const receiptLinesByReceipt = new Map<string, { id: string; invoice_line_id: string; quantity: number; lot_number: string; expiry_date: string; location_id: string }[]>();
   for (const row of (receiptLineData ?? []) as unknown as ReceiptLineRow[]) {
     const lot = Array.isArray(row.ci_stock_lots) ? row.ci_stock_lots[0] : row.ci_stock_lots;
@@ -94,6 +98,27 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
       expiry_date: lot.expiry_date, location_id: row.location_id,
     }]);
   }
+  // Historical receipts must be readable even when a Product/Location is now inactive, and
+  // for warehouse viewers who cannot use the receiving workbench. RLS still scopes each read.
+  const historicalProductIds = [...new Set(lines.map(line => line.product_id))];
+  const historicalLocationIds = [...new Set(((receiptLineData ?? []) as unknown as ReceiptLineRow[]).map(line => line.location_id))];
+  const [historicalProductsResult, historicalLocationsResult] = client && invoice
+    ? await Promise.all([
+      historicalProductIds.length
+        ? client.from('ci_products').select('id,product_code,display_name').in('id', historicalProductIds).limit(1000)
+        : Promise.resolve({ data: [], error: null }),
+      historicalLocationIds.length
+        ? client.from('ci_locations').select('id,code,name').in('id', historicalLocationIds).limit(1000)
+        : Promise.resolve({ data: [], error: null }),
+    ])
+    : [{ data: [], error: null }, { data: [], error: null }];
+  const productNameById = new Map(
+    [...products, ...(historicalProductsResult.data ?? [])].map(product => [product.id, { code: product.product_code, name: product.display_name }]),
+  );
+  const locationNameById = new Map(
+    [...locations, ...(historicalLocationsResult.data ?? [])].map(location => [location.id, { code: location.code, name: location.name }]),
+  );
+  const productIdByInvoiceLine = new Map(lines.map(line => [line.invoice_line_id, line.product_id]));
   const { data: receiveTransactionData } = receiptEvents.length && client ? await client.from('ci_stock_transactions').select('id,receipt_id').eq('kind', 'receive').in('receipt_id', receiptEvents.map(event => event.id)) : { data: [] };
   const receiveTransactions = (receiveTransactionData ?? []) as { id: string; receipt_id: string }[];
   const { data: reversalData } = receiveTransactions.length && client ? await client.from('ci_stock_transactions').select('source_transaction_id').eq('kind', 'reversal').in('source_transaction_id', receiveTransactions.map(transaction => transaction.id)) : { data: [] };
@@ -129,12 +154,49 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
           <p className="notice">Invoice นี้ปิดแล้ว หรือบัญชีนี้ไม่มีสิทธิ์รับเข้า</p>
           {attachmentData?.map(item => <a key={item.id} href={'/attachments/' + item.id} target="_blank" rel="noopener noreferrer" className="button secondary">ดูเอกสารรับเข้า {item.uploaded_at}</a>)}
         </>}
+        {receiptEventsError && <p role="alert" className="error">ไม่สามารถโหลดประวัติใบรับเข้าได้: {logUserMessage('receipt-events', receiptEventsError)}</p>}
         {receiptEvents.length > 0 && <section className="surface p-5 sm:p-7 grid gap-4" aria-labelledby="invoice-receipts">
           <h2 id="invoice-receipts" className="font-bold text-lg">ใบรับเข้าและผลตรวจรับของ Invoice นี้</h2>
+          {receiptLineError && <p role="alert" className="error">โหลดรายการน้ำยาในใบรับเข้าไม่สำเร็จ: {logUserMessage('receipt-lines', receiptLineError)}</p>}
+          {historicalProductsResult.error && <p role="alert" className="error">อ่านชื่อ Product ของใบรับเข้าไม่สำเร็จ: {logUserMessage('receipt-products', historicalProductsResult.error)}</p>}
+          {historicalLocationsResult.error && <p role="alert" className="error">อ่านชื่อตำแหน่งจัดเก็บของใบรับเข้าไม่สำเร็จ: {logUserMessage('receipt-locations', historicalLocationsResult.error)}</p>}
           {receiptEvents.map(event => {
             const canEdit = access.warehouses.some(warehouse => Number(warehouse.id) === Number(event.warehouse_id) && canSupervise(warehouse.role));
             const reversed = reversedReceiptIds.has(event.id);
+            const received = receiptLinesByReceipt.get(event.id) ?? [];
+            const receivedUnits = received.reduce((total, item) => total + item.quantity, 0);
             return <div key={event.id} className="grid gap-3">
+              <div className="rounded-xl border border-line p-4 grid gap-3" aria-label={`รายการน้ำยาที่รับเข้า ${event.event_number ?? ''}`}>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h3 className="font-bold">ใบรับเข้า {event.event_number ?? '—'}</h3>
+                    <p className="muted text-sm">รับเข้าเมื่อ {new Date(event.received_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</p>
+                  </div>
+                  <span className="badge">{reversed ? 'ย้อนรายการแล้ว' : 'บันทึกรับเข้าแล้ว'}</span>
+                </div>
+                {!receiptLineError && (received.length ? <>
+                  <p className="text-sm font-semibold">รายการน้ำยาที่รับเข้า {received.length} รายการ · จำนวนรวม {receivedUnits.toLocaleString('th-TH')} หน่วย</p>
+                  <div className="grid gap-2">
+                    {received.map((item, index) => {
+                      const product = productNameById.get(productIdByInvoiceLine.get(item.invoice_line_id) ?? '');
+                      const location = locationNameById.get(item.location_id);
+                      return <article key={item.id} className="rounded-lg border border-line p-3 grid gap-2">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <strong className="block break-words">{index + 1}. {product ? `${product.code} · ${product.name}` : 'Product ในใบรับเข้า'}</strong>
+                          </div>
+                          <span className="font-semibold whitespace-nowrap">จำนวน {item.quantity.toLocaleString('th-TH')}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm muted">
+                          <span>LOT: {item.lot_number}</span>
+                          <span>หมดอายุ: {item.expiry_date}</span>
+                          <span>ตำแหน่ง: {location ? `${location.code} · ${location.name}` : 'ไม่พบชื่อตำแหน่ง'}</span>
+                        </div>
+                      </article>;
+                    })}
+                  </div>
+                </> : <p className="muted text-sm">ไม่พบรายการน้ำยาสำหรับใบรับเข้านี้ หากคาดว่ามีข้อมูล โปรดแจ้งผู้ดูแลระบบตรวจสอบ</p>)}
+              </div>
               {canEdit && !reversed && <ReceiptEditForm
                 receiptId={event.id}
                 warehouseId={Number(event.warehouse_id)}
