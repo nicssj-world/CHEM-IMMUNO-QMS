@@ -104,6 +104,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const outstanding = lines.filter(l => Number(l.remaining_quantity) > 0);
   const canCloseShort = Boolean(invoice && invoice.status === 'open' && outstanding.length && [...new Set(outstanding.map(l => Number(l.warehouse_id)))].every(id => access.warehouses.some(w => Number(w.id) === id && canSupervise(w.role))));
   // Warehouses on this invoice that have no storage location yet: packages cannot be put away until one exists.
+  const back = (path: string) => encodeURIComponent(path);
   const invoiceWarehouses = [...new Set(lines.map(l => Number(l.warehouse_id)))];
   const missingLocations = access.warehouses.filter(w => invoiceWarehouses.includes(Number(w.id)) && locations.length === 0);
   // Quality record for this invoice: receipt events with their assessments, and the vendor issues raised against it.
