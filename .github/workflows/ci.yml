@@ -45,4 +45,4 @@ jobs:
           cache: npm
       - run: npm ci
       # Bootstrap creates shared PostgreSQL roles; suites must be sequential within one cluster.
-      - run: node --import tsx --test tests/db/unified-count.test.ts && node --import tsx --test tests/db/unified-vendor.test.ts
+      - run: node --import tsx --test tests/db/unified-count.test.ts && node --import tsx --test tests/db/unified-vendor.test.ts && node --import tsx --test tests/db/receive-wizard.test.ts
