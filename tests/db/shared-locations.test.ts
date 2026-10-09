@@ -75,7 +75,7 @@ test('shared Location Master: legacy IDs survive, storage is shared, stock and p
     const imm = await newLocation(U.admin, 2, 'FR-01');
     const productChe = await rpc<string>(U.admin, 'ci_create_product', [productPayload(1, 'CHE-P')], ['jsonb']);
     const productImm = await rpc<string>(U.admin, 'ci_create_product', [productPayload(2, 'IMM-P')], ['jsonb']);
-    await owner(db => db.query(await readFile('supabase/migrations/20261009090000_ci_shared_location_master.sql', 'utf8')));
+    await owner(async db => db.query(await readFile('supabase/migrations/20261009090000_ci_shared_location_master.sql', 'utf8')));
 
     await t.test('all legacy physical Location IDs and origins remain, with links to both warehouses', async () => {
       const rows = await owner(db => db.query<{id: string; warehouse_id: number}>('SELECT id,warehouse_id FROM public.ci_locations ORDER BY id'));
