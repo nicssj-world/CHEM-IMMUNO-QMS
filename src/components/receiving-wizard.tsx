@@ -168,7 +168,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     if(sessionLocationId && locationsById.has(sessionLocationId))return sessionLocationId;
     return preselectLocation(product.default_location_id,product.warehouse_id,locations,recentLocationByProduct[productId]);
   }
-  async function addScannedPackage(candidate:ScanReview):Promise<boolean> {
+  async function addScannedPackage(candidate:ScanReview,rememberLocation=false):Promise<boolean> {
     if(!candidate.productId||!productsById.has(candidate.productId)){
       sayScan('warn','ยังไม่ได้เลือกน้ำยา','เลือกน้ำยาจากทะเบียนก่อน');return false;
     }
@@ -184,7 +184,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       return false;
     }
     setWizardLines(merged.lines);
-    if(candidate.locationId)setSessionLocationId(candidate.locationId);
+    if(rememberLocation && candidate.locationId)setSessionLocationId(candidate.locationId);
     setError('');
     setNotice('เพิ่มผลสแกนลงร่างแล้ว · ยังไม่เพิ่ม Stock');
     setScanReview(null);
@@ -233,7 +233,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   async function addReviewedScan() {
     if(!scanReview)return;
     setScanBusy(true);
-    try {await addScannedPackage(scanReview);}
+    try {await addScannedPackage(scanReview,true);}
     catch(cause){const msg=userMessage(cause instanceof Error?cause.message:null,'ตรวจ LOT ไม่สำเร็จ');setError(msg);sayScan('error','ตรวจ LOT ไม่สำเร็จ',msg);}
     finally{setScanBusy(false);}
   }
