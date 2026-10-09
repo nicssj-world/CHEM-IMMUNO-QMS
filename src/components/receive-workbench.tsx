@@ -40,6 +40,7 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
   const warehouseId = warehouseIds[0];
   const [scan, setScan] = useState<ScanResolution | null>(null);
   const [showScanDetails, setShowScanDetails] = useState(false);
+  const [stage, setStage] = useState<2 | 3 | 4>(2);
   const [draft, setDraft] = useState<Draft>({ invoiceLineId: '', quantity: '1', lot: '', expiry: '', locationId: '' });
   const [packages, setPackages] = useState<Package[]>([]);
   const packagesRef = useRef<Package[]>([]);
@@ -75,6 +76,7 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
       setDraftKey(crypto.randomUUID());
       setAssessment(DEFAULT_ASSESSMENT);
       setAssessmentProblem('');
+      setStage(2);
       setMessage('บันทึกรับเข้าแล้ว · สแกนแพ็กเกจถัดไปได้');
     });
   },[savedToken,invoiceId,userId]);
@@ -304,6 +306,14 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
   }
 
   return <div className="grid gap-6">
+    <div className="surface p-4 grid gap-2" aria-label="ขั้นตอนรับเข้า Invoice เดิม">
+      <p className="muted text-sm">Invoice สร้างแล้ว · ขั้นตอนรับน้ำยา 2–4</p>
+      <div className="grid grid-cols-3 gap-2">{([2,3,4] as const).map(n=>
+        <div key={n} className={`min-w-0 rounded-lg p-2 text-center text-xs sm:text-sm border ${stage===n ? 'border-[#087d78] bg-[#e7f4f3]' : 'border-line'}`}>
+          {n}. {n===2?'รับน้ำยา':n===3?'ตรวจสอบ':'ประเมิน'}
+        </div>)}</div>
+    </div>
+    {stage===2 && <>
     <section className="surface p-5 sm:p-7 grid gap-4"><h2 className="font-bold text-lg">ภาพ Invoice / เอกสารส่งของ</h2><p className="muted text-sm">เก็บใน Storage ส่วนตัว · จำกัด 10 MB · อนุญาตรูปภาพหรือ PDF</p><div className="grid sm:grid-cols-2 gap-3"><label className="field">ถ่ายภาพด้วยกล้อง<input className="input" type="file" accept="image/*" capture="environment" onChange={e => chooseImage(e.target.files?.[0])}/></label><label className="field">เลือกจากรูปภาพ/ไฟล์<input className="input" type="file" accept="image/*,application/pdf" onChange={e => chooseImage(e.target.files?.[0])}/></label></div>{imagePreview && <Image src={imagePreview} alt="ตัวอย่างเอกสารก่อนอัปโหลด" width={500} height={300} unoptimized className="max-h-64 max-w-full object-contain rounded-lg"/>}{attachments.length>0 && <div className="grid gap-2">{attachments.map(item=><div className="flex flex-wrap gap-2 items-center" key={item.id}><a className="button secondary" href={`/attachments/${item.id}`} target="_blank" rel="noopener noreferrer">ดูเอกสาร {item.uploaded_at}</a><button className="button danger" type="button" disabled={busy} onClick={() => void removeImage(item.id)}>ลบก่อนยืนยัน</button></div>)}<p className="muted text-xs">หากต้องการเปลี่ยนภาพ ให้ลบภาพที่อัปโหลดก่อน</p></div>}<p role="status" className="muted text-sm">{photoStatus}</p><div className="flex gap-2 flex-wrap"><button className="button" type="button" disabled={!image || busy || attachments.length>0} onClick={() => void uploadImage()}>บันทึกภาพ</button><button className="button secondary" type="button" disabled={!image} onClick={() => chooseImage()}>นำภาพที่เลือกออก</button></div></section>
     <section id="ci-receive-entry" className="surface p-4 sm:p-7 grid gap-4 scroll-mt-4"><div><h2 className="font-bold text-lg">สแกนน้ำยาและจัดร่างรับเข้า</h2><p className="muted text-sm">ระบบเลือกรหัสน้ำยา CHE/IMM อัตโนมัติ · การสแกนยังไม่เพิ่ม Stock</p></div>
       <label className="field">ตำแหน่งจัดเก็บสำหรับการสแกนรอบนี้ (ถ้ามี)
@@ -322,53 +332,64 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
        {(!scanReady || showScanDetails) && <div className="grid sm:grid-cols-2 gap-3"><label className="field sm:col-span-2">Product ใน Invoice<select className="input" value={draft.invoiceLineId} onChange={e => { const line = lineById.get(e.target.value); setDraft({ ...draft, invoiceLineId: e.target.value, locationId: line ? suggestedLocation(line.product_id,line.warehouse_id) : '' }); }} required><option value="">เลือก Product</option>{lines.filter(l => warehouseIds.includes(l.warehouse_id) && Number(l.remaining_quantity)>0).map(l => { const product=productById.get(l.product_id); return <option key={l.invoice_line_id} value={l.invoice_line_id}>{product?.product_code} · {product?.display_name} · ค้าง {l.remaining_quantity}</option>; })}</select></label><label className="field">LOT {scan?.parsed.lot && !scanBatchFields(scan.parsed).requiresReview ? '(จาก Barcode · ตรวจได้)' : ''}<input className="input" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" value={draft.lot} onChange={e => setDraft({ ...draft, lot:e.target.value })} required/></label><label className="field">หมดอายุ {scan?.parsed.expiry && !scanBatchFields(scan.parsed).requiresReview ? '(จาก Barcode · ตรวจได้)' : ''}<input className="input" type="date" value={draft.expiry} onChange={e => setDraft({ ...draft, expiry:e.target.value })} required/></label><label className="field">ตำแหน่ง<select className="input" value={draft.locationId} onChange={e => setDraft({ ...draft, locationId:e.target.value })} required><option value="">เลือกตำแหน่ง</option>{locations.map(l => <option key={l.id} value={l.id}>{l.parent_code ? `${l.parent_code} › ` : ''}{l.code} · {l.name}</option>)}</select></label></div>}
        {scan && !scan.invoiceLineId && <button className="button secondary" type="button" onClick={() => void propose()}>เสนอการจับคู่ Barcode กับ Product ที่เลือก</button>}
       <button className="button min-h-12" disabled={busy} type="button" onClick={() => void addPackage()}>เพิ่มแพ็กเกจในร่าง</button>
+      {packageError && packages.length>0 && <p className="error" role="alert">{packageError}</p>}
+      <div className="flex justify-end"><button className="button" type="button"
+        disabled={busy || !draftRestored || Boolean(packageError)} onClick={()=>setStage(3)}>ถัดไป · ตรวจสอบ →</button></div>
     </section>
-    <form action={confirmReceipt} onSubmit={event => {
-      const problem = validateReceiptPackages(packages,lines) ?? assessmentError(assessment);
+    </>}
+    <form action={confirmReceipt} onSubmit={event=>{
+      const problem=validateReceiptPackages(packages,lines) ?? assessmentError(assessment);
       setAssessmentProblem(problem ?? '');
-      if (problem || !draftRestored) event.preventDefault();
-    }} className="surface p-4 sm:p-7 grid gap-4">
+      if(stage!==4 || problem || !draftRestored) event.preventDefault();
+    }} className="grid gap-4">
       <input type="hidden" name="invoice_id" value={invoiceId}/>
       <input type="hidden" name="idempotency_key" value={draftKey}/>
-      {packages.map(item => <div key={item.id} hidden>
+      {packages.map(item=><div key={item.id} hidden>
         <input type="hidden" name="invoice_line_id" value={item.invoiceLineId}/>
         <input type="hidden" name="quantity" value={item.quantity}/>
         <input type="hidden" name="lot_number" value={item.lot}/>
         <input type="hidden" name="expiry_date" value={item.expiry}/>
         <input type="hidden" name="location_id" value={item.locationId}/>
       </div>)}
-      <div className="flex flex-wrap gap-3 items-start justify-between">
-        <div><h2 className="font-bold text-lg">ตรวจร่างและผลตรวจรับ</h2>
-          <p className="muted text-sm">{packages.length} LOT/ตำแหน่ง · รวม {totalUnits.toLocaleString('th-TH')} หน่วย · ยังไม่เพิ่ม Stock จนกดยืนยัน</p>
+      {stage===3 && <section className="surface p-4 sm:p-7 grid gap-4">
+        <div className="flex flex-wrap justify-between gap-3">
+          <div><h2 className="font-bold text-lg">Step 3 · ตรวจสอบข้อมูลรับเข้า</h2>
+            <p className="muted text-sm">{packages.length} LOT/ตำแหน่ง · รวม {totalUnits.toLocaleString('th-TH')} หน่วย · ยังไม่เพิ่ม Stock</p>
+          </div>
+          {packages.length>0 && <button type="button" className="button secondary" onClick={()=>{
+            if(!window.confirm('ล้างรายการทั้งหมดในร่างนี้?'))return;
+            setPack([]);clearReceiveDraft(invoiceId);clearWorkbenchDraft(invoiceId,userId);
+            setDraftKey(crypto.randomUUID());setStage(2);
+          }}>ล้างร่าง</button>}
         </div>
-        {packages.length > 0 && <button type="button" className="button secondary" onClick={() => {
-          if (!window.confirm('ต้องการล้างรายการในร่างนี้ทั้งหมดหรือไม่? รายการที่รับเข้าจริงแล้วจะไม่ถูกเปลี่ยน')) return;
-          setPack([]);
-          clearReceiveDraft(invoiceId);
-          clearWorkbenchDraft(invoiceId,userId);
-          setDraftKey(crypto.randomUUID());
-          setMessage('ล้างร่างรับเข้าแล้ว');
-        }}>ล้างร่าง</button>}
-      </div>
-      {draftStorageWarning && <p role="alert" className="error">อุปกรณ์นี้ไม่อนุญาตให้บันทึกร่างอัตโนมัติ · โปรดอย่าออกจากหน้าก่อนยืนยัน</p>}
-      {!draftStorageWarning && packages.length>0 && <p role="status" className="muted text-xs">บันทึกร่างอัตโนมัติบนอุปกรณ์นี้ · ผู้ใช้คนเดิมกลับมาทำต่อได้ · ไม่ซิงก์ข้ามเครื่อง</p>}
-      {packageIssues.length > 0 && <section role="alert" className="error grid gap-2" aria-label="รายการรับเข้าที่ต้องแก้ไข">
-        <strong>มี {packageIssues.length} LOT/ตำแหน่งที่ต้องแก้ก่อนยืนยัน</strong>
-        {packageIssues.map(issue => {
-          const item = packages.find(row => row.id === issue.id);
-          const productId = lines.find(line => line.invoice_line_id === item?.invoiceLineId)?.product_id;
-          return <button key={issue.id} type="button" className="text-left underline underline-offset-2 min-h-10" onClick={() => document.getElementById('ci-receipt-' + issue.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
-            {productById.get(productId ?? '')?.product_code ?? 'รายการน้ำยา'} · LOT {item?.lot || '(ยังไม่ระบุ)'}: {issue.message}
-          </button>;
-        })}
+        {draftStorageWarning&&<p className="error" role="alert">ไม่สามารถบันทึกร่างบนอุปกรณ์นี้ได้ · โปรดอย่าออกจากหน้า</p>}
+        <ReceiptPackageReview packages={packages} invalidIds={packageIssues.map(issue=>issue.id)}
+          lines={lines} products={products} locations={locations}
+          onChange={(id,change)=>setPack(packagesRef.current.map(item=>item.id===id?{...item,...change}:item))}
+          onRemove={id=>setPack(packagesRef.current.filter(item=>item.id!==id))}
+          onAddLot={lineId=>{showAddLot(lineId);setStage(2);}}/>
+        {packageError&&<p className="error" role="alert">{packageError}</p>}
+        <div className="flex flex-wrap gap-2 justify-between">
+          <button className="button secondary" type="button" onClick={()=>setStage(2)}>← แก้ไข LOT</button>
+          <button className="button" type="button" disabled={Boolean(packageError) || !draftRestored}
+            onClick={()=>setStage(4)}>ถัดไป · ประเมิน →</button>
+        </div>
       </section>}
-      <ReceiptPackageReview packages={packages} invalidIds={packageIssues.map(issue => issue.id)} lines={lines} products={products} locations={locations}
-        onChange={(id,change)=>setPack(packagesRef.current.map(item=>item.id===id?{...item,...change}:item))}
-        onRemove={id=>setPack(packagesRef.current.filter(item=>item.id!==id))}
-        onAddLot={showAddLot}/>
-      {packageError && packages.length>0 && <p role="alert" className="error">{packageError}</p>}
-      <ReceiptAssessmentFields value={assessment} onChange={next => { setAssessment(next); if (assessmentProblem) setAssessmentProblem(assessmentError(next) ?? ''); }}/>
-      {assessmentProblem && <p className="error" role="alert">{assessmentProblem}</p>}<p className="muted text-sm">ยืนยันแล้วจึงบันทึก Stock แบบ atomic ตามคลังของน้ำยาแต่ละรายการ</p><SubmitButton label={`ยืนยันรับเข้า ${packages.length} LOT/ตำแหน่ง`} pendingLabel="กำลังบันทึกรับเข้า…" disabled={busy || !draftRestored || Boolean(packageError) || Boolean(assessmentError(assessment))}/>{packageError && <p className="muted text-sm" role="status">ตรวจสอบข้อมูลทุก LOT ให้ครบก่อนยืนยัน</p>}
+      {stage===4&&<section className="surface p-4 sm:p-7 grid gap-4">
+        <div><h2 className="font-bold text-lg">Step 4 · ประเมินและยืนยันรับเข้า</h2>
+          <p className="muted text-sm">{packages.length} LOT · รับจริง {totalUnits.toLocaleString('th-TH')} หน่วย · บันทึก Stock เมื่อยืนยันครั้งเดียว</p>
+        </div>
+        <ReceiptAssessmentFields value={assessment} onChange={next=>{
+          setAssessment(next);
+          if(assessmentProblem)setAssessmentProblem(assessmentError(next)??'');
+        }}/>
+        {assessmentProblem&&<p className="error" role="alert">{assessmentProblem}</p>}
+        <div className="flex flex-wrap gap-2 justify-between">
+          <button type="button" className="button secondary" onClick={()=>setStage(3)}>← กลับไปตรวจสอบ</button>
+          <SubmitButton label={`ยืนยันรับเข้า ${packages.length} LOT/ตำแหน่ง`} pendingLabel="กำลังบันทึกรับเข้า…"
+            disabled={busy || !draftRestored || Boolean(packageError) || Boolean(assessmentError(assessment))}/>
+        </div>
+      </section>}
     </form>
   </div>;
 }
