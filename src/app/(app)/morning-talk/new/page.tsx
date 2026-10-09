@@ -13,7 +13,7 @@ export default async function NewMorningTalkPage() {
   const client = await createClient();
   if (!client) return <main className="grid gap-4"><h1 className="page-title">สร้าง Morning Talk</h1><p className="error" role="alert">ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล</p></main>;
   // Only the scopes this user may manage are offered, so ALL never appears for a supervisor of a single warehouse.
-  const scopes = creatableScopes(await loadManageableScopes(client));
+  const scopes = creatableScopes(await loadManageableScopes(client)).filter(scope => scope === 'ALL');
   if (scopes.length === 0) redirect('/morning-talk');
   const warehouseId = (scope: TalkScope) => (scope === 'ALL' ? null : Number(access.warehouses.find(item => item.code === scope)?.id));
   const membersByScope: Partial<Record<TalkScope, ScopeMember[]>> = {};
