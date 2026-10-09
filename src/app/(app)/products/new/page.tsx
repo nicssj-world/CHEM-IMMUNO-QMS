@@ -13,7 +13,7 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
   if (!canSupervise(warehouse.role)) return <p className="error">สิทธิ์ของคุณไม่อนุญาตให้เพิ่มน้ำยาในคลังนี้</p>;
   const supervisedWarehouses = access.warehouses.filter(w => canSupervise(w.role));
   const client = await createClient();
-  const locationResult = client ? await client.from('ci_locations').select('id,warehouse_id,code,name,parent_location_id').eq('active', true).in('warehouse_id', supervisedWarehouses.map(w => Number(w.id))).order('code').limit(400) : { data: [] };
+  const locationResult = client ? await client.from('ci_locations').select('id,warehouse_id,code,name,parent_location_id').eq('active', true).order('code').limit(400) : { data: [] };
   const locations = locationResult.data ?? [];
   return <main className="grid gap-6 max-w-[820px]"><div><Link href="/products" className="muted text-sm">← น้ำยาทั้งหมด</Link><p className="eyebrow mt-5 mb-2">Product master</p><h1 className="page-title">เพิ่มน้ำยา</h1><p className="muted text-sm mt-2">Product Code จะออกจากฐานข้อมูลโดยอัตโนมัติและเปลี่ยนไม่ได้</p></div>{params.error && <p className="error" role="alert">{params.error}</p>}
     <form action={createProduct} className="surface p-5 sm:p-7 grid gap-5">

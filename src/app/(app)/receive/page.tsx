@@ -32,7 +32,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const [productsResult, vendorsResult, locationsResult, invoicesResult] = client ? await Promise.all([
     client.from('ci_products').select('id,warehouse_id,product_code,display_name,default_location_id').eq('active',true).in('warehouse_id',warehouseIds).order('product_code').limit(1000),
     client.from('ci_vendors').select('id,name').eq('active',true).order('name').limit(100),
-    client.from('ci_locations').select('id,warehouse_id,code,name,parent_location_id').eq('active',true).in('warehouse_id',warehouseIds).order('code').limit(1000),
+    client.from('ci_locations').select('id,warehouse_id,code,name,parent_location_id').eq('active',true).order('code').limit(1000),
     client.from('ci_invoices').select('id,invoice_number,invoice_date,status,vendor_id,po_number').order('created_at',{ascending:false}).limit(30),
   ]) : [{data:[],error:null},{data:[],error:null},{data:[],error:null},{data:[],error:null}];
   const products = (productsResult.data ?? []) as Product[];
@@ -80,7 +80,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const supervisedCodes = access.warehouses.filter(w => canSupervise(w.role)).map(w => w.code);
   // Warehouses on this invoice that have no storage location yet: packages cannot be put away until one exists.
   const invoiceWarehouses = [...new Set(lines.map(l => Number(l.warehouse_id)))];
-  const missingLocations = access.warehouses.filter(w => invoiceWarehouses.includes(Number(w.id)) && !locations.some(l => Number(l.warehouse_id) === Number(w.id)));
+  const missingLocations = locations.length ? [] : access.warehouses.filter(w => invoiceWarehouses.includes(Number(w.id)));
   const back = (path: string) => encodeURIComponent(path);
   // Quality record for this invoice: receipt events with their assessments, and the vendor issues raised against it.
   const { events: receiptEvents } = invoice && client ? await loadReceiptEvents(client, { invoiceId: invoice.id }) : { events: [] };
@@ -124,7 +124,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
             <div><SubmitButton className="button danger" label="ปิด Invoice แบบรับไม่ครบ" pendingLabel="กำลังบันทึก…"/></div>
           </ConfirmForm>
         </details>}
-        {invoice.status === 'open' && missingLocations.map(w => <p key={w.id} className="error" role="alert">{w.name} ยังไม่มีตำแหน่งจัดเก็บ จึงรับน้ำยาของคลังนี้ไม่ได้ · {canSupervise(w.role) ? <Link href={'/locations?warehouse=' + w.code + '&return=' + back('/receive?invoice=' + invoice.id)}>เพิ่มตำแหน่งก่อนเริ่มสแกน</Link> : 'แจ้งหัวหน้างานให้เพิ่มตำแหน่ง'}</p>)}
+        {invoice.status === 'open' && missingLocations.map(w => <p key={w.id} className="error" role="alert">{w.name} ยังไม่มีตำแหน่งจัดเก็บ จึงรับน้ำยาของคลังนี้ไม่ได้ · {canSupervise(w.role) ? <Link href={'/locations?return=' + back('/receive?invoice=' + invoice.id)}>เพิ่มตำแหน่งก่อนเริ่มสแกน</Link> : 'แจ้งหัวหน้างานให้เพิ่มตำแหน่ง'}</p>)}
         {invoice.status === 'open' && warehouseIds.length ? <ReceiveWorkbench recentLocationByProduct={recentLocationByProduct} savedToken={params.saved ? params.at : undefined} invoiceId={invoice.id} idempotencyKey={randomUUID()} lines={lines} products={products} locations={locations} warehouseIds={[...new Set(lines.map(line => line.warehouse_id))].filter(id => warehouseIds.includes(id))} initialAttachments={attachmentData ?? []}/> : <>
           <p className="notice">Invoice นี้ปิดแล้ว หรือบัญชีนี้ไม่มีสิทธิ์รับเข้า</p>
           {attachmentData?.map(item => <a key={item.id} href={'/attachments/' + item.id} target="_blank" rel="noopener noreferrer" className="button secondary">ดูเอกสารรับเข้า {item.uploaded_at}</a>)}
@@ -159,7 +159,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
         {warehouseIds.length > 0 && <section className="surface p-5 sm:p-7">
           <h2 className="font-bold text-lg mb-2">สร้าง Invoice</h2>
           <p className="muted text-sm mb-5">ตรวจเลขที่ Invoice ก่อนสร้าง เพื่อป้องกันการสร้างซ้ำ · ถ้าเลขที่ซ้ำกับผู้ขายเดิม ระบบจะเปิด Invoice เดิม</p>
-          {(canAddVendor || supervisedCodes.length > 0) && <p className="muted text-sm -mt-3 mb-5 flex flex-wrap gap-x-4 gap-y-1">{canAddVendor && <Link href={'/vendors/new?return=' + back('/receive')}>ไม่มีผู้ขายในรายการ? เพิ่มผู้ขาย</Link>}{supervisedCodes.length > 0 && <Link href={'/locations?warehouse=' + supervisedCodes[0] + '&return=' + back('/receive')}>จัดการตำแหน่งจัดเก็บ</Link>}</p>}
+          {(canAddVendor || supervisedCodes.length > 0) && <p className="muted text-sm -mt-3 mb-5 flex flex-wrap gap-x-4 gap-y-1">{canAddVendor && <Link href={'/vendors/new?return=' + back('/receive')}>ไม่มีผู้ขายในรายการ? เพิ่มผู้ขาย</Link>}{supervisedCodes.length > 0 && <Link href={'/locations?return=' + back('/receive')}>จัดการตำแหน่งจัดเก็บ</Link>}</p>}
           <NewInvoiceForm vendors={vendors} products={products}/>
         </section>}
         <section className="surface p-5 sm:p-7">
