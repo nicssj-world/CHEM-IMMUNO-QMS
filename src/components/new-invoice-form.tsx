@@ -18,7 +18,6 @@ type Vendor = { id: string; name: string };
 type Line = { key: string; productId: string; quantity: string; lot: string; expiry: string; raw?: string; scanned: boolean; open: boolean };
 
 const FORM_ID = 'new-invoice';
-const warehouseTag = (id: number) => (id === 1 ? 'CHE' : 'IMM');
 const round = (value: number) => Math.round(value * 1000) / 1000;
 const incomplete = (line: Pick<Line, 'productId' | 'lot' | 'expiry'>) => !line.productId || !line.lot || !line.expiry;
 
@@ -177,7 +176,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
             <div className="flex items-center gap-2 p-2 pl-3">
               <button type="button" className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left cursor-pointer" onClick={() => patch(line.key, { open: !line.open })} aria-expanded={line.open} aria-label={`${line.open ? 'ย่อ' : 'แก้ไข'} ${label}`}>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2"><strong className="truncate text-sm">{label}</strong>{product && <span className="badge shrink-0">{warehouseTag(product.warehouse_id)}</span>}</span>
+                  <span className="flex items-center gap-2"><strong className="truncate text-sm">{label}</strong></span>
                   {product && <span className="block truncate text-xs muted">{product.display_name}</span>}
                   <span className="block text-xs">LOT {line.lot || <span className="text-amber-800">ยังไม่ระบุ</span>} · หมดอายุ {line.expiry || <span className="text-amber-800">ยังไม่ระบุ</span>}</span>
                 </span>
@@ -191,7 +190,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
             </div>
             {line.open && <div className="grid gap-3 border-t border-line p-3">
               <div className="grid sm:grid-cols-[1fr_120px] gap-3">
-                <label className="field">น้ำยา<select form={FORM_ID} className="input" value={line.productId} onChange={e => patch(line.key, { productId: e.target.value })} required><option value="">เลือกน้ำยา</option>{products.map(p => <option key={p.id} value={p.id}>[{warehouseTag(p.warehouse_id)}] {p.product_code} · {p.display_name}</option>)}</select></label>
+                <label className="field">น้ำยา<select form={FORM_ID} className="input" value={line.productId} onChange={e => patch(line.key, { productId: e.target.value })} required><option value="">เลือกน้ำยา</option>{products.map(p => <option key={p.id} value={p.id}>{p.product_code} · {p.display_name}</option>)}</select></label>
                 <label className="field">จำนวน<IntegerQuantityInput form={FORM_ID} className="input" min="1" value={line.quantity} onChange={e => patch(line.key, { quantity: e.target.value })} required /></label>
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
