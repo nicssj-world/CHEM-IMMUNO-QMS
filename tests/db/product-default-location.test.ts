@@ -56,7 +56,7 @@ test('Product -> Default Location: optional, same-warehouse, active-only assignm
   try {
     await owner(async db => {
       await db.query(await readFile('tests/db/bootstrap.sql', 'utf8'));
-      for (const file of (await readdir('supabase/migrations')).filter(name => name.endsWith('.sql')).sort()) {
+      for (const file of (await readdir('supabase/migrations')).filter(name => name.endsWith('.sql') && !name.includes('ci_shared_location_master')).sort()) {
         await db.query(await readFile(path.join('supabase/migrations', file), 'utf8'));
       }
       await db.query(`INSERT INTO auth.users(id) VALUES ('${U.admin}'),('${U.staff}'),('${U.supervisor}'),('${U.viewer}'),('${U.imm}')`);

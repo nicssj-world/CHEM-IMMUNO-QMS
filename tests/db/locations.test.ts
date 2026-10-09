@@ -73,7 +73,9 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const fridgeEnv = { temperature_monitored: true, temp_min_c: 2, temp_max_c: 8, humidity_monitored: false, rh_min_pct: null, rh_max_pct: null };
 
 async function migrationFiles() {
-  return (await readdir(path.join(process.cwd(), 'supabase/migrations'))).filter(file => file.endsWith('.sql')).sort();
+  // This suite asserts the original per-warehouse behavior up to the September baseline.
+  // The shared-catalog migration has its own end-state database regression suite.
+  return (await readdir(path.join(process.cwd(), 'supabase/migrations'))).filter(file => file.endsWith('.sql') && !file.includes('ci_shared_location_master')).sort();
 }
 async function applyFiles(client: Client, files: string[]) {
   for (const file of files) await client.query(await readFile(path.join(process.cwd(), file), 'utf8'));

@@ -46,6 +46,7 @@ create trigger ci_locations_share_after_insert after insert on public.ci_locatio
 create function ci_private.guard_shared_location_code() returns trigger
 language plpgsql set search_path = '' as $$
 begin
+  if tg_op = 'UPDATE' and new.code is not distinct from old.code then return new; end if;
   if exists(
     select 1 from public.ci_locations existing
     where existing.id <> new.id and lower(btrim(existing.code)) = lower(btrim(new.code))
