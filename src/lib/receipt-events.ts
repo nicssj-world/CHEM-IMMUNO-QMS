@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ASSESSMENT_COLUMNS, type AssessmentRow } from '@/lib/receipt-assessment';
+import { groupReceiptEvents, type ReceiptTransactionLink } from '@/lib/receipt-groups';
 
 export type ReceiptEvent = {
   id: string; warehouse_id: number; received_at: string; invoice_id: string;
@@ -24,7 +25,7 @@ export async function loadReceiptEvents(client: SupabaseClient, filter: { vendor
   if (filter.invoiceId) query = query.eq('invoice_id', filter.invoiceId);
   if (filter.warehouseId) query = query.eq('warehouse_id', filter.warehouseId);
   const { data, error } = await query;
-  if (error) return { events: [] as ReceiptEvent[], error };
+  if (error) return { events: [] as ReceiptEvent[], groups: [] as ReturnType<typeof groupReceiptEvents<ReceiptEvent>>, transactions: [] as ReceiptTransactionLink[], error };
   const rows = (data ?? []) as unknown as Raw[];
   const assessmentIds = rows.map(r => one(r.ci_receipt_assessments)?.id).filter((id): id is string => Boolean(id));
   const { data: revisionData, error: revisionError } = assessmentIds.length
@@ -38,5 +39,14 @@ export async function loadReceiptEvents(client: SupabaseClient, filter: { vendor
     const assessment = one(r.ci_receipt_assessments);
     return { id: r.id, warehouse_id: r.warehouse_id, received_at: r.received_at, invoice_id: r.invoice_id, invoice: r.ci_invoices, event_number: one(r.ci_receipt_event_numbers)?.event_number ?? null, assessment, revisions: assessment ? revisions.get(assessment.id) ?? [] : [] };
   });
-  return { events, error: revisionError };
+  const { data: transactionData, error: transactionError } = events.length
+    ? await client.from('ci_stock_transactions')
+      .select('id,receipt_id,idempotency_key')
+      .eq('kind', 'receive')
+      .in('receipt_id', events.map(event => event.id))
+    : { data: [], error: null };
+  const transactions = (transactionData ?? []) as ReceiptTransactionLink[];
+  // If transactions are not readable, show standalone original records and an error.
+  const groups = groupReceiptEvents(events, transactionError ? [] : transactions);
+  return { events, groups, transactions, error: revisionError ?? transactionError };
 }
