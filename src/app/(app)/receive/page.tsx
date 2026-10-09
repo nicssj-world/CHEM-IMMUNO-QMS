@@ -5,6 +5,7 @@ import { requireAccess, canMutate, canSupervise } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { ReceiveWorkbench } from '@/components/receive-workbench';
 import { mostRecentReceivedLocations } from '@/lib/recent-receive-location';
+import { canManageVendors } from '@/lib/vendors';
 import { ReceivingWizard } from '@/components/receiving-wizard';
 import { InvoiceEvidenceManager } from '@/components/invoice-evidence-manager';
 import type { WizardDraft } from '@/lib/receiving-wizard';
@@ -66,9 +67,44 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
     if (activeDraft?.status==='submitted' && activeDraft.invoice_id) {
       redirect('/receive?invoice='+encodeURIComponent(activeDraft.invoice_id));
     }
+    // Existing receiving history location preselection also applies to NEW Invoice drafts.
+    // Exclude reversal entries; never suggest a location which was undone.
+    let wizardRecentLocations:Record<string,string>={};
+    if(client && products.length){
+      const history=await client.from('ci_receipt_lines')
+        .select('id,receipt_id,invoice_line_id,location_id,created_at,warehouse_id')
+        .in('warehouse_id',warehouseIds).order('created_at',{ascending:false}).limit(500);
+      if(!history.error && history.data?.length){
+        const invoiceLineIds=[...new Set(history.data.map(item=>item.invoice_line_id))];
+        const receiptIds=[...new Set(history.data.map(item=>item.receipt_id))];
+        const [oldLines,transactions]=await Promise.all([
+          client.from('ci_invoice_lines').select('id,product_id').in('id',invoiceLineIds),
+          client.from('ci_stock_transactions').select('id,receipt_id').eq('kind','receive').in('receipt_id',receiptIds),
+        ]);
+        if(!oldLines.error && !transactions.error){
+          const receiveIds=(transactions.data??[]).map(item=>item.id);
+          const reversal=receiveIds.length?await client.from('ci_stock_transactions')
+            .select('source_transaction_id').eq('kind','reversal').in('source_transaction_id',receiveIds)
+            : {data:[],error:null};
+          if(!reversal.error){
+            const reversedIds=new Set((reversal.data??[]).map(item=>item.source_transaction_id));
+            const reversedReceiptIds=new Set((transactions.data??[])
+              .filter(item=>reversedIds.has(item.id)).map(item=>item.receipt_id));
+            wizardRecentLocations=mostRecentReceivedLocations(
+              history.data,oldLines.data??[],reversedReceiptIds,new Set(products.map(item=>item.id)));
+          }
+        }
+      }
+    }
+    const vendorLinkAllowed=canManageVendors(access.warehouses);
+    const supervisingWarehouse=access.warehouses.find(w=>canSupervise(w.role));
+    const locationManageHref=supervisingWarehouse
+      ? '/locations?warehouse='+encodeURIComponent(supervisingWarehouse.code)+'&return='+encodeURIComponent('/receive')
+      : undefined;
     return <main><ReceivingWizard vendors={vendors} products={products} locations={locations}
       initialDraft={activeDraft as WizardDraft|null} recentInvoices={invoices}
-      recentDrafts={draftRows??[]}/></main>;
+      recentDrafts={draftRows??[]} recentLocationByProduct={wizardRecentLocations}
+      canAddVendor={vendorLinkAllowed} locationManageHref={locationManageHref}/></main>;
   }
   const { data: lineData, error: lineError } = invoice && client ? await client.from('ci_invoice_line_progress').select('invoice_line_id,warehouse_id,product_id,ordered_quantity,received_quantity,remaining_quantity').eq('invoice_id',invoice.id).limit(1000) : {data:[],error:null};
   const lines = (lineData ?? []) as Line[];
