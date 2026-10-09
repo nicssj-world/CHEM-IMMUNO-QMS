@@ -370,7 +370,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           </div>
           {invoiceScanStatus&&<p className="muted text-xs" role="status">{invoiceScanStatus}</p>}
         </div>
-        <label className="field min-w-0"><span>วันที่ Invoice <span className="text-[#b42318]">*</span></span>
+        <label className="field receive-date-field min-w-0"><span>วันที่ Invoice <span className="text-[#b42318]">*</span></span>
           <input className="input block min-w-0 max-w-full" type="date"
             value={header.invoiceDate} onChange={e=>setHeader({...header,invoiceDate:e.target.value})}
             aria-required="true"/></label>
@@ -434,7 +434,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
             <label className="field min-w-0">LOT *
               <input className="input" autoCapitalize="characters" value={scanReview.lot}
                 onChange={e=>setScanReview(previous=>previous?{...previous,lot:e.target.value}:previous)}/></label>
-            <label className="field min-w-0">หมดอายุ *
+            <label className="field receive-date-field min-w-0">หมดอายุ *
               <input type="date" className="input block min-w-0 max-w-full" value={scanReview.expiry}
                 onChange={e=>setScanReview(previous=>previous?{...previous,expiry:e.target.value}:previous)}/></label>
             <label className="field min-w-0">ตำแหน่งจัดเก็บ *
@@ -484,7 +484,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
                 <label className="field min-w-0"><span>LOT <span className="text-[#b42318]">*</span></span>
                   <input className="input" autoCapitalize="characters" autoComplete="off" value={pkg.lot}
                     onChange={e=>alterLot(line.id,pkg.id,{lot:e.target.value})}/></label>
-                <label className="field min-w-0"><span>วันหมดอายุ <span className="text-[#b42318]">*</span></span>
+                <label className="field receive-date-field min-w-0"><span>วันหมดอายุ <span className="text-[#b42318]">*</span></span>
                   <input className="input block min-w-0 max-w-full" type="date" value={pkg.expiry}
                     onChange={e=>alterLot(line.id,pkg.id,{expiry:e.target.value})}/></label>
                 <label className="field min-w-0"><span>ตำแหน่งจัดเก็บ <span className="text-[#b42318]">*</span></span>
