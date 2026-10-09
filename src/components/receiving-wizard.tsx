@@ -35,7 +35,7 @@ const TITLES=['ข้อมูล Invoice','รับเข้าน้ำยา
 const initialHeader={vendorId:'',invoiceNumber:'',invoiceDate:'',poNumber:''};
 const makeLot=(locationId=''):WizardLot=>({id:crypto.randomUUID(),quantity:'1',lot:'',expiry:'',locationId});
 const makeLine=(productId:string,locationId=''):WizardLine=>({
-  id:crypto.randomUUID(),productId,orderedQuantity:'1',packages:[makeLot(locationId)],
+  id:crypto.randomUUID(),productId,orderedQuantity:'',packages:[makeLot(locationId)],
 });
 
 export function ReceivingWizard({vendors,products,locations,initialDraft,recentInvoices,recentDrafts,recentLocationByProduct={},canAddVendor=false,locationManageHref}:{
@@ -400,7 +400,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
 
     {step===2 && <section className="surface p-4 sm:p-7 grid gap-4">
       <div><h2 className="font-bold text-lg">Step 2 · รับเข้าน้ำยา</h2>
-        <p className="muted text-sm">กำหนดจำนวนตาม Invoice หนึ่งครั้งต่อ Product · จำนวนรับจริงระบุแยกตาม LOT · รับบางส่วนได้</p></div>
+        <p className="muted text-sm">สแกนต่อเนื่องได้ทันที · ระบุจำนวนตาม Invoice เพียงครั้งเดียวก่อนถัดไป · จำนวนรับจริงนับแยก LOT · รับบางส่วนได้</p></div>
       <div className="rounded-lg bg-surface-2 p-3 text-sm"><strong>Invoice {header.invoiceNumber}</strong> · {vendorsById.get(header.vendorId)?.name??'—'}</div>
       <p className="muted text-xs">ภาพ Invoice หรือเอกสารส่งของสามารถแนบได้หลังยืนยันรับเข้า และยังเปิดดู/แนบเพิ่มได้จาก Invoice เดิม</p>
       <div className="contents">
@@ -469,6 +469,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
               onClick={()=>setWizardLines(old=>old.filter(item=>item.id!==line.id))}>ลบ</button>
           </div>
           <label className="field max-w-xs"><span>จำนวนตาม Invoice <span className="text-[#b42318]">*</span></span>
+            <span className="muted text-xs">กรอกจากเอกสาร · การสแกนไม่แก้ตัวเลขนี้อัตโนมัติ</span>
             <IntegerQuantityInput className="input" min="1" value={line.orderedQuantity}
               onChange={e=>alterLine(line.id,old=>({...old,orderedQuantity:e.target.value}))} aria-required="true"/>
           </label>
