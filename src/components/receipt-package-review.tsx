@@ -64,16 +64,16 @@ export function ReceiptPackageReview({
               </summary>
               <div className="border-t border-line p-3 grid grid-cols-2 gap-3">
                 <label className="field">LOT
-                  <input className="input min-h-11" value={item.lot} onChange={e=>onChange(item.id,{lot:e.target.value})} autoCapitalize="characters" autoCorrect="off" required />
+                  <input className="input min-h-11" value={item.lot} onChange={e=>onChange(item.id,{lot:e.target.value})} autoCapitalize="characters" autoCorrect="off" />
                 </label>
                 <label className="field">จำนวน
-                  <IntegerQuantityInput className="input min-h-11" min="1" value={item.quantity} onChange={e=>onChange(item.id,{quantity:e.target.value})} required />
+                  <IntegerQuantityInput className="input min-h-11" min="1" value={item.quantity} onChange={e=>onChange(item.id,{quantity:e.target.value})} />
                 </label>
                 <label className="field col-span-2">วันหมดอายุ
-                  <input className="input min-h-11" type="date" value={item.expiry} onChange={e=>onChange(item.id,{expiry:e.target.value})} required />
+                  <input className="input min-h-11" type="date" value={item.expiry} onChange={e=>onChange(item.id,{expiry:e.target.value})} />
                 </label>
                 <label className="field col-span-2">ตำแหน่งจัดเก็บ
-                  <select className="input min-h-11" value={item.locationId} onChange={e=>onChange(item.id,{locationId:e.target.value})} required>
+                  <select className="input min-h-11" value={item.locationId} onChange={e=>onChange(item.id,{locationId:e.target.value})}>
                     <option value="">เลือกตำแหน่ง</option>
                     {options.map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code ? loc.parent_code+' › ' : ''}{loc.code} · {loc.name}</option>)}
                   </select>
@@ -98,10 +98,10 @@ export function ReceiptPackageReview({
             </tr></thead>
             <tbody className="divide-y divide-[var(--line)]">
               {group.map(item => <tr key={item.id}>
-                <td className="p-2 pl-3"><input className="input min-w-[120px]" aria-label="เลข LOT" value={item.lot} onChange={e=>onChange(item.id,{lot:e.target.value})} required /></td>
-                <td className="p-2"><IntegerQuantityInput className="input w-full" aria-label="จำนวนรับเข้า" min="1" value={item.quantity} onChange={e=>onChange(item.id,{quantity:e.target.value})} required /></td>
-                <td className="p-2"><input className="input w-full" aria-label="วันหมดอายุ" type="date" value={item.expiry} onChange={e=>onChange(item.id,{expiry:e.target.value})} required /></td>
-                <td className="p-2"><select className="input w-full" aria-label="ตำแหน่งจัดเก็บ" value={item.locationId} onChange={e=>onChange(item.id,{locationId:e.target.value})} required>
+                <td className="p-2 pl-3"><input className="input min-w-[120px]" aria-label="เลข LOT" value={item.lot} onChange={e=>onChange(item.id,{lot:e.target.value})} /></td>
+                <td className="p-2"><IntegerQuantityInput className="input w-full" aria-label="จำนวนรับเข้า" min="1" value={item.quantity} onChange={e=>onChange(item.id,{quantity:e.target.value})} /></td>
+                <td className="p-2"><input className="input w-full" aria-label="วันหมดอายุ" type="date" value={item.expiry} onChange={e=>onChange(item.id,{expiry:e.target.value})} /></td>
+                <td className="p-2"><select className="input w-full" aria-label="ตำแหน่งจัดเก็บ" value={item.locationId} onChange={e=>onChange(item.id,{locationId:e.target.value})}>
                   <option value="">เลือกตำแหน่ง</option>
                   {options.map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code ? loc.parent_code+' › ' : ''}{loc.code} · {loc.name}</option>)}
                 </select></td>

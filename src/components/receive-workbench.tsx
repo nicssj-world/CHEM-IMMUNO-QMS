@@ -68,13 +68,16 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
   // After a confirmed receipt the new URL token means its packages are already stock.
   useEffect(() => {
     if (!savedToken) return;
-    clearReceiveDraft(invoiceId);
-    clearWorkbenchDraft(invoiceId,userId);
-    setPack([]);
-    setDraftKey(crypto.randomUUID());
-    setAssessment(DEFAULT_ASSESSMENT);
-    setAssessmentProblem('');
-    setMessage('บันทึกรับเข้าแล้ว · สแกนแพ็กเกจถัดไปได้');
+    // Defer the local-draft recovery/reset state update from the effect body.
+    void Promise.resolve().then(() => {
+      clearReceiveDraft(invoiceId);
+      clearWorkbenchDraft(invoiceId,userId);
+      setPack([]);
+      setDraftKey(crypto.randomUUID());
+      setAssessment(DEFAULT_ASSESSMENT);
+      setAssessmentProblem('');
+      setMessage('บันทึกรับเข้าแล้ว · สแกนแพ็กเกจถัดไปได้');
+    });
   },[savedToken,invoiceId,userId]);
 
   // Restore local unconfirmed packages (user + invoice scoped) before falling back
@@ -82,6 +85,7 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
   useEffect(() => {
     if (hydrated.current) return;
     hydrated.current = true;
+    void Promise.resolve().then(() => {
     if (savedToken) { clearReceiveDraft(invoiceId); clearWorkbenchDraft(invoiceId,userId); setDraftRestored(true); return; }
     const stored = readWorkbenchDraft(invoiceId,userId);
     if (stored?.packages.length) {
@@ -142,12 +146,13 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
       setMessage(`นำเข้า ${accepted.length} LOT/ตำแหน่งจากที่สแกนไว้ · ตรวจตำแหน่งก่อนยืนยัน${skipped.length ? ` · ข้าม ${skipped.length} รายการ: ${skipped.join(' / ')}` : ''}`);
       setDraftRestored(true);
     })();
+    });
   }, [invoiceId,userId,lines,locations,productById,warehouseIds,savedToken,recentLocationByProduct]);
 
   useEffect(() => {
     if (!draftRestored) return;
-    if (!saveWorkbenchDraft(invoiceId,userId,packages,draftKey) && packages.length) setDraftStorageWarning(true);
-    else setDraftStorageWarning(false);
+    const failed = !saveWorkbenchDraft(invoiceId,userId,packages,draftKey) && packages.length>0;
+    void Promise.resolve().then(() => setDraftStorageWarning(failed));
   },[draftRestored,invoiceId,userId,packages,draftKey]);
 
   const packageError = validateReceiptPackages(packages,lines);
