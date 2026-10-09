@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
+import { createClient as createStorageClient } from '@supabase/supabase-js';
 import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
 import { ScanLine, X } from 'lucide-react';
 import { invoiceNumberFromScan } from '@/lib/invoice-barcode';
@@ -10,7 +12,7 @@ import { InvoiceReagentPicker } from './invoice-reagent-picker';
 import { IntegerQuantityInput } from './integer-quantity-input';
 import { ReceiptAssessmentFields } from './receipt-assessment-fields';
 import { assessmentError, type AssessmentInput } from '@/lib/receipt-assessment';
-import { resolveProductScan, checkLotExpiryConflict, proposeScanMapping, type ProductScan } from '@/app/actions/scanner';
+import { resolveProductScan, checkLotExpiryConflict, proposeScanMapping, registerInvoiceAttachment, type ProductScan } from '@/app/actions/scanner';
 import { preselectLocation } from '@/lib/receive-location';
 import { createReceivingWizardDraft, saveReceivingWizardDraft, finalizeReceivingWizard } from '@/app/actions/receiving-wizard';
 import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment, appendWizardScan,
@@ -69,6 +71,54 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const [locationPath,setLocationPath]=useState<string|null>(null);
   const [sessionLocationId,setSessionLocationId]=useState('');
   const [scanBusy,setScanBusy]=useState(false);
+  const [selectedEvidence,setSelectedEvidence]=useState<File|null>(null);
+  const [imagePreview,setImagePreview]=useState<string|null>(null);
+  const [completedInvoiceId,setCompletedInvoiceId]=useState('');
+  const [evidenceBusy,setEvidenceBusy]=useState(false);
+  useEffect(()=>{
+    if(!selectedEvidence?.type.startsWith('image/'))return;
+    const url=URL.createObjectURL(selectedEvidence);
+    setImagePreview(url);
+    return ()=>{URL.revokeObjectURL(url);setImagePreview(null);};
+  },[selectedEvidence]);
+  function chooseEvidence(file:File|null){
+    if(file && (file.size>10*1024*1024 ||
+       !(file.type.startsWith('image/') || file.type==='application/pdf'))){
+      setError('เลือกภาพหรือ PDF ขนาดไม่เกิน 10 MB');
+      return;
+    }
+    setSelectedEvidence(file);
+    setError('');
+  }
+  async function uploadEvidenceToInvoice(invoiceId:string) {
+    if(!selectedEvidence)return true;
+    const firstProduct=productsById.get(linesRef.current[0]?.productId);
+    if(!firstProduct)throw new Error('ไม่พบกลุ่มน้ำยาของ Invoice');
+    const authorization=await registerInvoiceAttachment(invoiceId,firstProduct.warehouse_id,
+      {type:selectedEvidence.type,size:selectedEvidence.size});
+    const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    if(!url||!key)throw new Error('ระบบจัดเก็บเอกสารยังไม่พร้อม');
+    const storage=createStorageClient(url,key,{
+      auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
+    const {error:uploadError}=await storage.storage.from('ci-invoice-evidence')
+      .uploadToSignedUrl(authorization.object_key,authorization.token,selectedEvidence,{contentType:selectedEvidence.type});
+    if(uploadError)throw uploadError;
+    return true;
+  }
+  function navigateCompleted(invoiceId:string){
+    router.replace('/receive?invoice='+encodeURIComponent(invoiceId)+
+      '&saved='+encodeURIComponent('ยืนยันรับน้ำยาเรียบร้อย')+'&at='+Date.now().toString(36));
+    router.refresh();
+  }
+  async function retryEvidenceUpload(){
+    if(!completedInvoiceId)return;
+    setEvidenceBusy(true);
+    try {await uploadEvidenceToInvoice(completedInvoiceId);navigateCompleted(completedInvoiceId);}
+    catch(cause){setError('รับน้ำยาเข้าคลังสำเร็จแล้ว แต่แนบไฟล์ไม่สำเร็จ: '+
+      userMessage(cause instanceof Error?cause.message:null,'โปรดลองใหม่'));}
+    finally{setEvidenceBusy(false);}
+  }
   const savedQueue=useRef<Promise<unknown>>(Promise.resolve());
   const sayScan=(tone:ScanFeedback['tone'],title:string,detail?:string)=>
     setScanFeedback({id:++scanFeedbackId.current,tone,title,detail});
@@ -254,10 +304,22 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     startTransition(async()=>{
       try {
         await savedQueue.current;
+        if(completedInvoiceId){
+          await retryEvidenceUpload();
+          return;
+        }
         const result=await finalizeReceivingWizard(draftId,header,lines,assessment);
         if(!result.ok){setError(result.message);return;}
-        router.replace('/receive?invoice='+encodeURIComponent(result.id)+'&saved='+encodeURIComponent('ยืนยันรับน้ำยาเรียบร้อย')+'&at='+Date.now().toString(36));
-        router.refresh();
+        setCompletedInvoiceId(result.id);
+        if(selectedEvidence){
+          try {await uploadEvidenceToInvoice(result.id);}
+          catch(cause) {
+            setError('รับเข้าและบันทึก Stock สำเร็จแล้ว แต่แนบไฟล์ไม่สำเร็จ: '+
+              userMessage(cause instanceof Error?cause.message:null,'กดแนบไฟล์อีกครั้ง'));
+            return;
+          }
+        }
+        navigateCompleted(result.id);
       }catch(cause){setError(userMessage(cause instanceof Error?cause.message:null,'ยืนยันรับเข้าไม่สำเร็จ'));}
     });
   }
@@ -447,6 +509,25 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           <p className="muted text-sm">ตาม Invoice {line.orderedQuantity||'—'} · รับจริง {amount} · ค้างรับ {outstanding}</p>
         </article>;
       })}
+      <section className="rounded-xl border border-line p-4 grid gap-3 min-w-0">
+        <h3 className="font-bold">ภาพ Invoice / เอกสารส่งของ</h3>
+        <p className="muted text-sm">ถ่ายภาพหรือเลือก PDF ได้ตั้งแต่ Step 2 · ไฟล์จะอัปโหลดหลังยืนยัน Step 4 โดยไม่สร้าง Invoice ก่อนเวลา</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <label className="field min-w-0">ถ่ายภาพด้วยกล้อง
+            <input className="input min-w-0" type="file" accept="image/*" capture="environment"
+              onChange={e=>chooseEvidence(e.target.files?.[0]??null)}/></label>
+          <label className="field min-w-0">เลือกจากรูปภาพ/PDF
+            <input className="input min-w-0" type="file" accept="image/*,application/pdf"
+              onChange={e=>chooseEvidence(e.target.files?.[0]??null)}/></label>
+        </div>
+        {imagePreview && <Image src={imagePreview} alt="ตัวอย่างเอกสารก่อนอัปโหลด"
+          width={500} height={300} unoptimized className="max-h-64 max-w-full object-contain rounded-lg"/>}
+        {selectedEvidence&&<div className="flex flex-wrap gap-2 items-center">
+          <span className="text-sm break-all">{selectedEvidence.name} · {(selectedEvidence.size/1024/1024).toFixed(2)} MB · รอแนบเมื่อยืนยัน</span>
+          <button type="button" className="button secondary" onClick={()=>chooseEvidence(null)}>นำไฟล์ที่เลือกออก</button>
+        </div>}
+        {selectedEvidence&&<p className="muted text-xs">ไฟล์ที่เลือกยังอยู่บนอุปกรณ์นี้ ไม่ควรออกจากหน้านี้จนยืนยันเสร็จ · รายการน้ำยาและ LOT จะบันทึก Draft อัตโนมัติ</p>}
+      </section>
       {!lines.length && <p className="rounded-xl border border-dashed border-line p-4 muted text-sm">ยังไม่มีรายการ · สแกนหรือค้นหาน้ำยาเพื่อเริ่มรับเข้า</p>}
       {summary}
       <div className="flex flex-wrap gap-2 justify-between">
@@ -475,6 +556,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         </div>)}
       </div>)}
       {summary}
+      {selectedEvidence&&<p className="notice text-sm">เอกสารรอแนบ: {selectedEvidence.name} · จะอัปโหลดหลังยืนยันใน Step 4</p>}
       {totals.pending>0 && <p className="notice text-sm" role="status">ยังมียอดค้างรับ {totals.pending} หน่วย · Invoice จะเปิดให้รับเพิ่มเติมภายหลัง</p>}
       <div className="flex flex-wrap gap-2 justify-between">
         <button className="button secondary" disabled={pending} type="button" onClick={()=>setStep(2)}>← แก้รายการรับเข้า</button>
@@ -486,13 +568,22 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       <div><h2 className="font-bold text-lg">Step 4 · ประเมินการรับเข้า</h2>
         <p className="muted text-sm">เมื่อยืนยัน ระบบสร้าง Invoice และบันทึก Stock กับผลประเมินเป็นธุรกรรมเดียว</p></div>
       {summary}
+      {selectedEvidence&&<p className="muted text-sm">เอกสารรอแนบ: {selectedEvidence.name}</p>}
       <ReceiptAssessmentFields value={assessment} onChange={setAssessment}/>
       <button className="button secondary justify-self-start" type="button" disabled={pending} onClick={()=>save(4)}>บันทึกแบบประเมินเป็นร่าง</button>
-      <div className="flex flex-wrap gap-2 justify-between">
+      {completedInvoiceId && <div className="notice grid gap-3" role="status">
+        <strong>ยืนยันรับน้ำยาและบันทึก Stock เรียบร้อยแล้ว</strong>
+        <p className="text-sm">ขั้นตอนนี้ไม่สามารถยืนยันซ้ำได้ · หากไฟล์แนบไม่สำเร็จ กดแนบไฟล์อีกครั้ง หรือเปิด Invoice เพื่อตรวจสอบ</p>
+        <div className="flex flex-wrap gap-2">
+          <button className="button" type="button" disabled={evidenceBusy} onClick={()=>void retryEvidenceUpload()}>{evidenceBusy?'กำลังแนบ…':'แนบไฟล์อีกครั้ง'}</button>
+          <button className="button secondary" type="button" onClick={()=>navigateCompleted(completedInvoiceId)}>เปิด Invoice ที่รับแล้ว</button>
+        </div>
+      </div>}
+      {!completedInvoiceId&&<div className="flex flex-wrap gap-2 justify-between">
         <button className="button secondary" type="button" disabled={pending} onClick={()=>setStep(3)}>← กลับไปตรวจสอบ</button>
         <button className="button min-h-12" type="button" disabled={pending || !!assessmentError(assessment)}
           onClick={complete}>{pending?'กำลังบันทึก…':'ยืนยันรับเข้าและจบกระบวนการ'}</button>
-      </div>
+      </div>}
     </section>}
 
     {error && <p className="error" role="alert">{error}</p>}
