@@ -10,7 +10,6 @@ import type { WizardDraft } from '@/lib/receiving-wizard';
 import { ConfirmForm } from '@/components/confirm-form';
 import { SubmitButton } from '@/components/submit-button';
 import { closeInvoiceShort } from '@/app/actions/vendors';
-import { canManageVendors } from '@/lib/vendors';
 import { logUserMessage, savedNotice } from '@/lib/messages';
 import { label, invoiceStatusLabels } from '@/lib/labels';
 import { VendorIssuePanel } from '@/components/vendor-issue-panel';
@@ -102,14 +101,11 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
     }
   }
   const {data:attachmentData,error:attachmentError}=invoice&&client?await client.from('ci_attachments').select('id,attachment_type,uploaded_at').eq('invoice_id',invoice.id).order('uploaded_at',{ascending:false}).limit(20):{data:[],error:null};
-  const canAddVendor = canManageVendors(access.warehouses);
   const outstanding = lines.filter(l => Number(l.remaining_quantity) > 0);
   const canCloseShort = Boolean(invoice && invoice.status === 'open' && outstanding.length && [...new Set(outstanding.map(l => Number(l.warehouse_id)))].every(id => access.warehouses.some(w => Number(w.id) === id && canSupervise(w.role))));
-  const supervisedCodes = access.warehouses.filter(w => canSupervise(w.role)).map(w => w.code);
   // Warehouses on this invoice that have no storage location yet: packages cannot be put away until one exists.
   const invoiceWarehouses = [...new Set(lines.map(l => Number(l.warehouse_id)))];
   const missingLocations = access.warehouses.filter(w => invoiceWarehouses.includes(Number(w.id)) && locations.length === 0);
-  const back = (path: string) => encodeURIComponent(path);
   // Quality record for this invoice: receipt events with their assessments, and the vendor issues raised against it.
   const { events: receiptEvents, groups: receiptGroups, transactions: receiveTransactions, error: receiptEventsError } = invoice && client
     ? await loadReceiptEvents(client, { invoiceId: invoice.id })
