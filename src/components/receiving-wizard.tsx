@@ -107,6 +107,10 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         if(!draftId) {
           const result=await createReceivingWizardDraft(header);
           if(!result.ok){setError(result.message);return;}
+          if (result.existingInvoice) {
+            router.replace('/receive?invoice='+encodeURIComponent(result.id));
+            return;
+          }
           setDraftId(result.id);
           router.replace('/receive?draft='+encodeURIComponent(result.id));
           return;
