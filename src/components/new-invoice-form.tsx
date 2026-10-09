@@ -152,7 +152,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
         <div className="flex items-stretch gap-2">
           <input id="ci-invoice-number" ref={invoiceInput} form={FORM_ID} className="input min-w-0 flex-1" name="invoice_number" value={invoiceNumber} onChange={event => { setInvoiceNumber(event.target.value); setInvoiceScanStatus(''); setExisting(null); }} autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" required />
           <button type="button" className="button secondary shrink-0 min-h-11" aria-expanded={invoiceScannerOpen} aria-controls="ci-invoice-scanner" onClick={() => { setInvoiceScannerOpen(open => !open); setInvoiceScanStatus(''); setInvoiceFeedback(null); }}>
-            <ScanLine size={18} aria-hidden /> <span className="hidden sm:inline">สแกน</span><span className="sm:hidden">สแกน</span>
+            <ScanLine size={18} aria-hidden /> <span>สแกน</span>
           </button>
         </div>
         {invoiceScanStatus && <p role="status" className="text-xs muted">{invoiceScanStatus}</p>}
@@ -161,7 +161,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
       <label className="field">เลขที่ PO (ถ้ามี)<input form={FORM_ID} className="input" name="po_number" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" /></label>
     </div>
     {invoiceScannerOpen && <section id="ci-invoice-scanner" className="surface grid gap-3 p-4" aria-label="สแกนเลขที่ Invoice">
-      <div className="flex items-center justify-between gap-3"><div><h3 className="font-bold">สแกนเลขที่ Invoice</h3><p className="muted text-xs">สแกน Barcode บนเอกสาร Invoice · ระบบกรอกตัวเลขให้เท่านั้น ไม่สร้าง Invoice อัตโนมัติ</p></div><button type="button" className="button secondary shrink-0" onClick={() => setInvoiceScannerOpen(false)} aria-label="ปิดเครื่องสแกน Invoice"><X size={18} aria-hidden /></button></div>
+      <div className="flex items-center justify-between gap-3"><div><h3 className="font-bold">สแกนเลขที่ Invoice</h3><p className="muted text-xs">สแกน Barcode บนเอกสาร Invoice · ระบบกรอกเฉพาะช่องเลขที่ Invoice ไม่สร้าง Invoice อัตโนมัติ</p></div><button type="button" className="button secondary shrink-0" onClick={() => setInvoiceScannerOpen(false)} aria-label="ปิดเครื่องสแกน Invoice"><X size={18} aria-hidden /></button></div>
       <BarcodeScanner purpose="invoice" showManual={false} autoStart continuous formats={['CODE_128', 'CODE_39', 'EAN_13', 'QR_CODE']} onScan={onInvoiceScan} feedback={invoiceFeedback} />
       <p className="muted text-xs">ถ้ารหัสมี URL หรือข้อมูลอื่นที่ไม่ใช่เลข Invoice ให้พิมพ์เลขจากเอกสารแทนเพื่อป้องกันการกรอกผิด</p>
     </section>}
