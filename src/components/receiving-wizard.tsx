@@ -7,7 +7,7 @@ import { BarcodeScanner } from './barcode-scanner';
 import { InvoiceReagentPicker } from './invoice-reagent-picker';
 import { IntegerQuantityInput } from './integer-quantity-input';
 import { ReceiptAssessmentFields } from './receipt-assessment-fields';
-import { DEFAULT_ASSESSMENT, assessmentError, type AssessmentInput } from '@/lib/receipt-assessment';
+import { assessmentError, type AssessmentInput } from '@/lib/receipt-assessment';
 import { resolveProductScan } from '@/app/actions/scanner';
 import { createReceivingWizardDraft, saveReceivingWizardDraft, finalizeReceivingWizard } from '@/app/actions/receiving-wizard';
 import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment,
