@@ -17,7 +17,7 @@ export async function getStockOptions(warehouseId: string, { includeZero = false
   const [balanceResult, productResult, locationResult] = await Promise.all([
     loadRows ? balances.order('expiry_date').order('lot_number').limit(1000) : Promise.resolve({ data: [], error: null }),
     client.from('ci_products').select('id,product_code,display_name').eq('warehouse_id',warehouseId).eq('active',true).order('product_code').limit(1000),
-    client.from('ci_locations').select('id,code,name,parent_location_id').eq('warehouse_id',warehouseId).eq('active',true).order('code'),
+    client.from('ci_locations').select('id,code,name,parent_location_id').eq('active',true).order('code'),
   ]);
   const error = balanceResult.error?.message ?? productResult.error?.message ?? locationResult.error?.message ?? null;
   const products = (productResult.data ?? []) as PickerProduct[];
