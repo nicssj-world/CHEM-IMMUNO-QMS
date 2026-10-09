@@ -38,7 +38,7 @@ export async function createReceivingWizardDraft(header: WizardHeader): Promise<
 }
 
 export async function saveReceivingWizardDraft(
-  id:string,header:WizardHeader,lines:WizardLine[],assessment:AssessmentInput,step:number,
+  id:string,header:WizardHeader,lines:WizardLine[],assessment:AssessmentInput,step:number,quiet=false,
 ):Promise<WizardActionResult> {
   const issue=wizardHeaderError(header);
   if (issue) return {ok:false,message:issue};
@@ -49,7 +49,7 @@ export async function saveReceivingWizardDraft(
     p_id:id,p_header:header,p_lines:lines,p_assessment:assessment,p_step:step,
   });
   if (error) return {ok:false,message:logUserMessage('receive-save-draft',error,'ไม่สามารถบันทึกร่างได้')};
-  revalidatePath('/receive');
+  if(!quiet)revalidatePath('/receive');
   return {ok:true,id};
 }
 

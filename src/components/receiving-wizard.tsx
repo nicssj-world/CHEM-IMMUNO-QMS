@@ -1,8 +1,10 @@
 'use client';
 
-import { useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
+import { createClient as createStorageClient } from '@supabase/supabase-js';
 import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
 import { ScanLine, X } from 'lucide-react';
 import { invoiceNumberFromScan } from '@/lib/invoice-barcode';
@@ -10,9 +12,10 @@ import { InvoiceReagentPicker } from './invoice-reagent-picker';
 import { IntegerQuantityInput } from './integer-quantity-input';
 import { ReceiptAssessmentFields } from './receipt-assessment-fields';
 import { assessmentError, type AssessmentInput } from '@/lib/receipt-assessment';
-import { resolveProductScan } from '@/app/actions/scanner';
+import { resolveProductScan, checkLotExpiryConflict, proposeScanMapping, registerInvoiceAttachment, type ProductScan } from '@/app/actions/scanner';
+import { preselectLocation } from '@/lib/receive-location';
 import { createReceivingWizardDraft, saveReceivingWizardDraft, finalizeReceivingWizard } from '@/app/actions/receiving-wizard';
-import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment,
+import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment, appendWizardScan,
   type WizardDraft, type WizardHeader, type WizardLine, type WizardLot, type WizardLocation, type WizardProduct } from '@/lib/receiving-wizard';
 import { scanBatchFields } from '@/lib/barcode';
 import { userMessage } from '@/lib/messages';
@@ -20,17 +23,25 @@ import { userMessage } from '@/lib/messages';
 type Vendor = { id: string; name: string };
 type RecentInvoice = {id:string; invoice_number:string;invoice_date:string;status:string;vendor_id:string};
 type RecentDraft = {id:string;invoice_number:string;invoice_date:string;vendor_id:string;step:number;updated_at:string};
+type ScanReview = {raw:string;parsed:ProductScan['parsed'];productId:string;lot:string;expiry:string;quantity:string;locationId:string;};
+const scanFailureMessage = {
+  invalid:'กรุณาตรวจ LOT วันหมดอายุ จำนวน และตำแหน่งให้ครบ',
+  capacity:'จำนวนรับจริงเกินจำนวนตาม Invoice · ต้องตรวจหรือแก้จำนวนตามเอกสารเอง',
+  'lot-expiry-conflict':'LOT เดียวกันมีวันหมดอายุไม่ตรงกับร่างเดิม',
+  review:'มี LOT ที่กรอกค้างไว้ · กรุณาตรวจและบันทึกให้ครบก่อนสแกนเพิ่ม',
+} as const;
 
 const TITLES=['ข้อมูล Invoice','รับเข้าน้ำยา','ตรวจสอบข้อมูล','ประเมินและยืนยัน'];
 const initialHeader={vendorId:'',invoiceNumber:'',invoiceDate:'',poNumber:''};
 const makeLot=(locationId=''):WizardLot=>({id:crypto.randomUUID(),quantity:'1',lot:'',expiry:'',locationId});
 const makeLine=(productId:string,locationId=''):WizardLine=>({
-  id:crypto.randomUUID(),productId,orderedQuantity:'1',packages:[makeLot(locationId)],
+  id:crypto.randomUUID(),productId,orderedQuantity:'',packages:[makeLot(locationId)],
 });
 
-export function ReceivingWizard({vendors,products,locations,initialDraft,recentInvoices,recentDrafts}:{
+export function ReceivingWizard({vendors,products,locations,initialDraft,recentInvoices,recentDrafts,recentLocationByProduct={},canAddVendor=false,locationManageHref}:{
   vendors:Vendor[];products:WizardProduct[];locations:WizardLocation[];
   initialDraft?:WizardDraft|null;recentInvoices:RecentInvoice[];recentDrafts:RecentDraft[];
+  recentLocationByProduct?:Record<string,string>;canAddVendor?:boolean;locationManageHref?:string;
 }) {
   const router=useRouter();
   const [step,setStep]=useState(initialDraft ? Math.min(4,Math.max(2,initialDraft.step)) : 1);
@@ -39,6 +50,12 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     ? {vendorId:initialDraft.vendor_id,invoiceNumber:initialDraft.invoice_number,invoiceDate:initialDraft.invoice_date,poNumber:initialDraft.po_number??''}
     : initialHeader);
   const [lines,setLines]=useState<WizardLine[]>(initialDraft?.lines ?? []);
+  const linesRef=useRef(lines);
+  function setWizardLines(next:WizardLine[]|((old:WizardLine[])=>WizardLine[])) {
+    const updated=typeof next==='function'?next(linesRef.current):next;
+    linesRef.current=updated;
+    setLines(updated);
+  }
   const [assessment,setAssessment]=useState<AssessmentInput>(restoreWizardAssessment(initialDraft?.assessment));
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
@@ -48,6 +65,63 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const [invoiceFeedback,setInvoiceFeedback]=useState<ScanFeedback|null>(null);
   const invoiceScanSequence=useRef(0);
   const invoiceNumberInput=useRef<HTMLInputElement>(null);
+  const [scanFeedback,setScanFeedback]=useState<ScanFeedback|null>(null);
+  const scanFeedbackId=useRef(0);
+  const [scanReview,setScanReview]=useState<ScanReview|null>(null);
+  const [locationPath,setLocationPath]=useState<string|null>(null);
+  const [sessionLocationId,setSessionLocationId]=useState('');
+  const [scanBusy,setScanBusy]=useState(false);
+  const [selectedEvidence,setSelectedEvidence]=useState<File|null>(null);
+  const [imagePreview,setImagePreview]=useState<string|null>(null);
+  const [completedInvoiceId,setCompletedInvoiceId]=useState('');
+  const [evidenceBusy,setEvidenceBusy]=useState(false);
+  const evidenceUrlRef=useRef<string|null>(null);
+  useEffect(()=>()=>{if(evidenceUrlRef.current)URL.revokeObjectURL(evidenceUrlRef.current);},[]);
+  function chooseEvidence(file:File|null){
+    if(file && (file.size>10*1024*1024 ||
+       !(file.type.startsWith('image/') || file.type==='application/pdf'))){
+      setError('เลือกภาพหรือ PDF ขนาดไม่เกิน 10 MB');
+      return;
+    }
+    if(evidenceUrlRef.current)URL.revokeObjectURL(evidenceUrlRef.current);
+    const nextUrl=file?.type.startsWith('image/')?URL.createObjectURL(file):null;
+    evidenceUrlRef.current=nextUrl;
+    setImagePreview(nextUrl);
+    setSelectedEvidence(file);
+    setError('');
+  }
+  async function uploadEvidenceToInvoice(invoiceId:string) {
+    if(!selectedEvidence)return true;
+    const firstProduct=productsById.get(linesRef.current[0]?.productId);
+    if(!firstProduct)throw new Error('ไม่พบกลุ่มน้ำยาของ Invoice');
+    const authorization=await registerInvoiceAttachment(invoiceId,firstProduct.warehouse_id,
+      {type:selectedEvidence.type,size:selectedEvidence.size});
+    const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    if(!url||!key)throw new Error('ระบบจัดเก็บเอกสารยังไม่พร้อม');
+    const storage=createStorageClient(url,key,{
+      auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
+    const {error:uploadError}=await storage.storage.from('ci-invoice-evidence')
+      .uploadToSignedUrl(authorization.object_key,authorization.token,selectedEvidence,{contentType:selectedEvidence.type});
+    if(uploadError)throw uploadError;
+    return true;
+  }
+  function navigateCompleted(invoiceId:string){
+    router.replace('/receive?invoice='+encodeURIComponent(invoiceId)+
+      '&saved='+encodeURIComponent('ยืนยันรับน้ำยาเรียบร้อย')+'&at='+Date.now().toString(36));
+    router.refresh();
+  }
+  async function retryEvidenceUpload(){
+    if(!completedInvoiceId)return;
+    setEvidenceBusy(true);
+    try {await uploadEvidenceToInvoice(completedInvoiceId);navigateCompleted(completedInvoiceId);}
+    catch(cause){setError('รับน้ำยาเข้าคลังสำเร็จแล้ว แต่แนบไฟล์ไม่สำเร็จ: '+
+      userMessage(cause instanceof Error?cause.message:null,'โปรดลองใหม่'));}
+    finally{setEvidenceBusy(false);}
+  }
+  const savedQueue=useRef<Promise<unknown>>(Promise.resolve());
+  const sayScan=(tone:ScanFeedback['tone'],title:string,detail?:string)=>
+    setScanFeedback({id:++scanFeedbackId.current,tone,title,detail});
   const productsById=useMemo(()=>new Map(products.map(p=>[p.id,p])),[products]);
   const locationsById=useMemo(()=>new Map(locations.map(p=>[p.id,p])),[locations]);
   const vendorsById=useMemo(()=>new Map(vendors.map(p=>[p.id,p])),[vendors]);
@@ -69,7 +143,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   }
 
   function alterLine(id:string,update:(line:WizardLine)=>WizardLine) {
-    setLines(current=>current.map(line=>line.id===id?update(line):line));
+    setWizardLines(current=>current.map(line=>line.id===id?update(line):line));
   }
   function alterLot(lineId:string,lotId:string,change:Partial<WizardLot>) {
     alterLine(lineId,line=>({...line,packages:line.packages.map(pkg=>pkg.id===lotId?{...pkg,...change}:pkg)}));
@@ -83,38 +157,112 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     if(lines.length>=250){setError('เพิ่มน้ำยาได้ไม่เกิน 250 รายการ');return;}
     const product=productsById.get(productId);
     if(!product)return;
-    setLines(old=>[...old,makeLine(productId,product.default_location_id && locationsById.has(product.default_location_id)?product.default_location_id:'')]);
+    setWizardLines(old=>[...old,makeLine(productId,suggestedLocation(productId))]);
     setNotice('');
     setError('');
   }
 
+  function suggestedLocation(productId:string):string {
+    const product=productsById.get(productId);
+    if(!product)return '';
+    if(sessionLocationId && locationsById.has(sessionLocationId))return sessionLocationId;
+    return preselectLocation(product.default_location_id,product.warehouse_id,locations,recentLocationByProduct[productId]);
+  }
+  async function addScannedPackage(candidate:ScanReview,rememberLocation=false):Promise<boolean> {
+    if(!candidate.productId||!productsById.has(candidate.productId)){
+      sayScan('warn','ยังไม่ได้เลือกน้ำยา','เลือกน้ำยาจากทะเบียนก่อน');return false;
+    }
+    const merged=appendWizardScan(linesRef.current,candidate,()=>crypto.randomUUID());
+    if(!merged.ok) {
+      sayScan('warn',merged.reason==='capacity'?'ยอดเกิน Invoice':'ตรวจรายละเอียด',scanFailureMessage[merged.reason]);
+      setError(scanFailureMessage[merged.reason]);
+      return false;
+    }
+    if(await checkLotExpiryConflict(candidate.productId,candidate.lot,candidate.expiry)) {
+      setError('LOT นี้มีวันหมดอายุไม่ตรงกับ Stock เดิม');
+      sayScan('warn','ตรวจสอบ LOT','วันหมดอายุขัดแย้งกับ Stock เดิม');
+      return false;
+    }
+    setWizardLines(merged.lines);
+    if(rememberLocation && candidate.locationId)setSessionLocationId(candidate.locationId);
+    setError('');
+    setNotice('เพิ่มผลสแกนลงร่างแล้ว · ยังไม่เพิ่ม Stock');
+    setScanReview(null);
+    sayScan('ok',merged.merged?'นับเพิ่ม 1 แพ็กเกจ':'เพิ่ม LOT ใหม่',
+      `${productsById.get(candidate.productId)?.product_code} · LOT ${candidate.lot}`);
+    return true;
+  }
+
   async function onScan(raw:string,symbology:string) {
+    if(scanBusy||pending)return;
+    setScanBusy(true);
+    setLocationPath(null);
+    setError('');
     try {
       const scan=await resolveProductScan(raw,symbology);
-      const product=scan.product?.id ? productsById.get(scan.product.id) : null;
-      if(!product){setError(scan.message??'ไม่พบน้ำยาที่ตรงกับ Barcode ในทะเบียนที่รับเข้าได้');return;}
+      if(scan.locationQr) {
+        setScanReview(null);
+        setLocationPath(scan.locationQr.path);
+        sayScan('warn','QR ตำแหน่งจัดเก็บ','นี่คือ QR Location ไม่ใช่ Barcode น้ำยา');
+        return;
+      }
+      const product=scan.product?.id?productsById.get(scan.product.id):null;
       const batch=scanBatchFields(scan.parsed);
-      const knownLot=batch.lot;
-      const expiry=batch.expiry;
-      setLines(old=>{
-        const existing=old.find(line=>line.productId===product.id);
-        const current=existing ?? makeLine(product.id,product.default_location_id && locationsById.has(product.default_location_id)?product.default_location_id:'');
-        const matched=current.packages.find(pkg=>knownLot && expiry && pkg.lot===knownLot && pkg.expiry===expiry);
-        const nextPackages=matched
-          ? current.packages.map(pkg=>pkg.id===matched.id?{...pkg,quantity:String(Number(pkg.quantity)+1)}:pkg)
-          : current.packages.length===1 && !current.packages[0].lot && !current.packages[0].expiry
-            ? [{...current.packages[0],lot:knownLot,expiry}]
-            : [...current.packages,{...makeLot(product.default_location_id && locationsById.has(product.default_location_id)?product.default_location_id:''),lot:knownLot,expiry}];
-        const received=nextPackages.reduce((total,pkg)=>total+(Number(pkg.quantity)||0),0);
-        const updated={...current,packages:nextPackages,orderedQuantity:String(Math.max(Number(current.orderedQuantity)||0,received))};
-        return existing ? old.map(line=>line.id===existing.id?updated:line) : [...old,updated];
-      });
-      setError('');
-      setNotice(batch.requiresReview?'สแกนแล้ว · กรุณาตรวจและกรอก LOT/วันหมดอายุให้ครบ':'สแกนแล้ว · เพิ่มจำนวนรับเข้าในร่าง (ยังไม่เพิ่ม Stock)');
+      const candidate:ScanReview={
+        raw,parsed:scan.parsed,productId:product?.id??'',
+        lot:batch.lot,expiry:batch.expiry,quantity:'1',
+        locationId:product?suggestedLocation(product.id):'',
+      };
+      const needReview=!product || batch.requiresReview || !batch.lot || !batch.expiry || !candidate.locationId;
+      if(needReview) {
+        setScanReview(candidate);
+        const detail=scan.message??(batch.requiresReview?'Barcode มีคำเตือน · กรุณายืนยันข้อมูลก่อนเพิ่ม':'ตรวจ LOT วันหมดอายุและตำแหน่งก่อนเพิ่ม');
+        setNotice(detail);
+        sayScan('warn','ตรวจรายละเอียด',detail);
+        return;
+      }
+      // Same safe merge, quantity and expiry guards as the original ReceiveWorkbench.
+      const ok=await addScannedPackage(candidate);
+      if(!ok)setScanReview(candidate);
     } catch(cause) {
-      setError(userMessage(cause instanceof Error?cause.message:null,'สแกนไม่สำเร็จ'));
+      const message=userMessage(cause instanceof Error?cause.message:null,'สแกนไม่สำเร็จ');
+      setError(message);
+      sayScan('error','สแกนไม่สำเร็จ',message);
+    } finally {setScanBusy(false);}
+  }
+  async function addReviewedScan() {
+    if(!scanReview)return;
+    setScanBusy(true);
+    try {await addScannedPackage(scanReview,true);}
+    catch(cause){const msg=userMessage(cause instanceof Error?cause.message:null,'ตรวจ LOT ไม่สำเร็จ');setError(msg);sayScan('error','ตรวจ LOT ไม่สำเร็จ',msg);}
+    finally{setScanBusy(false);}
+  }
+  async function proposeMapping() {
+    if(!scanReview?.productId)return;
+    const parsed=scanReview.parsed;
+    const kind=parsed.gtin?'GTIN':parsed.primary?'HIBC_PRIMARY':parsed.additionalProductId?'GS1_AI240':'OTHER';
+    const value=parsed.gtin??parsed.primary??parsed.additionalProductId??parsed.raw.trim();
+    try {
+      await proposeScanMapping(scanReview.productId,kind,value,scanReview.raw);
+      setNotice('ส่งข้อเสนอการจับคู่ Barcode แล้ว · รอ Supervisor/Admin อนุมัติ');
+    } catch(cause) {
+      setError(userMessage(cause instanceof Error?cause.message:null,'เสนอการจับคู่ไม่สำเร็จ'));
     }
   }
+
+  // Sequential, debounced server-side autosave. An in-flight edit can never land
+  // after a newer explicit Next/Save and silently rewind a cross-device draft.
+  useEffect(()=>{
+    if(!draftId)return;
+    const timer=setTimeout(()=>{
+      const snapshot={header,lines,assessment,step};
+      savedQueue.current=savedQueue.current.then(async()=>{
+        const result=await saveReceivingWizardDraft(draftId,snapshot.header,snapshot.lines,snapshot.assessment,snapshot.step,true);
+        if(!result.ok)setNotice('บันทึกอัตโนมัติไม่สำเร็จ · โปรดกดบันทึกร่างก่อนออกจากหน้า');
+      }).catch(()=>setNotice('บันทึกอัตโนมัติไม่สำเร็จ · โปรดกดบันทึกร่างก่อนออกจากหน้า'));
+    },1200);
+    return ()=>clearTimeout(timer);
+  },[draftId,header,lines,assessment,step]);
 
   function save(nextStep:number) {
     setError('');setNotice('');
@@ -137,6 +285,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           router.replace('/receive?draft='+encodeURIComponent(result.id));
           return;
         }
+        await savedQueue.current;
         const result=await saveReceivingWizardDraft(draftId,header,lines,assessment,nextStep);
         if(!result.ok){setError(result.message);return;}
         setStep(nextStep);
@@ -154,10 +303,23 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     setError('');
     startTransition(async()=>{
       try {
+        await savedQueue.current;
+        if(completedInvoiceId){
+          await retryEvidenceUpload();
+          return;
+        }
         const result=await finalizeReceivingWizard(draftId,header,lines,assessment);
         if(!result.ok){setError(result.message);return;}
-        router.replace('/receive?invoice='+encodeURIComponent(result.id)+'&saved='+encodeURIComponent('ยืนยันรับน้ำยาเรียบร้อย')+'&at='+Date.now().toString(36));
-        router.refresh();
+        setCompletedInvoiceId(result.id);
+        if(selectedEvidence){
+          try {await uploadEvidenceToInvoice(result.id);}
+          catch(cause) {
+            setError('รับเข้าและบันทึก Stock สำเร็จแล้ว แต่แนบไฟล์ไม่สำเร็จ: '+
+              userMessage(cause instanceof Error?cause.message:null,'กดแนบไฟล์อีกครั้ง'));
+            return;
+          }
+        }
+        navigateCompleted(result.id);
       }catch(cause){setError(userMessage(cause instanceof Error?cause.message:null,'ยืนยันรับเข้าไม่สำเร็จ'));}
     });
   }
@@ -228,18 +390,70 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           formats={['CODE_128','CODE_39','EAN_13','QR_CODE']}
           onScan={onInvoiceScan} feedback={invoiceFeedback}/>
       </section>}
+      <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+        {canAddVendor&&<Link href="/vendors/new?return=%2Freceive" className="underline">ไม่มีผู้ขายในรายการ? เพิ่มผู้ขายใหม่</Link>}
+        {locationManageHref&&<Link href={locationManageHref} className="underline">จัดการตำแหน่งจัดเก็บ</Link>}
+      </div>
       <div className="flex justify-end"><button className="button min-h-12" type="button" disabled={pending}
         onClick={()=>save(2)}>{pending?'กำลังบันทึกร่าง…':'ถัดไป · รับน้ำยา →'}</button></div>
     </section>}
 
     {step===2 && <section className="surface p-4 sm:p-7 grid gap-4">
       <div><h2 className="font-bold text-lg">Step 2 · รับเข้าน้ำยา</h2>
-        <p className="muted text-sm">กำหนดจำนวนตาม Invoice หนึ่งครั้งต่อ Product · จำนวนรับจริงระบุแยกตาม LOT · รับบางส่วนได้</p></div>
+        <p className="muted text-sm">สแกนต่อเนื่องได้ทันที · ระบุจำนวนตาม Invoice เพียงครั้งเดียวก่อนถัดไป · จำนวนรับจริงนับแยก LOT · รับบางส่วนได้</p></div>
       <div className="rounded-lg bg-surface-2 p-3 text-sm"><strong>Invoice {header.invoiceNumber}</strong> · {vendorsById.get(header.vendorId)?.name??'—'}</div>
       <p className="muted text-xs">ภาพ Invoice หรือเอกสารส่งของสามารถแนบได้หลังยืนยันรับเข้า และยังเปิดดู/แนบเพิ่มได้จาก Invoice เดิม</p>
-      <div className="grid gap-3 rounded-xl border border-line p-3">
+      <div className="contents">
         <h3 className="font-bold">เพิ่มน้ำยาจาก Barcode</h3>
-        <BarcodeScanner onScan={onScan} dock continuous summary={<span className="text-sm font-semibold">ร่าง {totals.lots} LOT · {totals.received} หน่วย</span>}/>
+        <label className="field min-w-0">ตำแหน่งจัดเก็บสำหรับการสแกนรอบนี้ (ถ้ามี)
+          <select className="input" value={sessionLocationId} onChange={e=>setSessionLocationId(e.target.value)}>
+            <option value="">เลือกอัตโนมัติจาก Product / ครั้งก่อน</option>
+            {locations.map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code?loc.parent_code+' › ':''}{loc.code} · {loc.name}</option>)}
+          </select>
+          <span className="muted text-xs">เลือกครั้งเดียวเพื่อใช้กับการสแกนถัดไป · แต่ละ LOT ยังเปลี่ยนตำแหน่งเองได้</span>
+        </label>
+        <BarcodeScanner onScan={onScan} dock continuous feedback={scanFeedback}
+          summary={<span className="text-sm font-semibold">ร่าง {totals.lots} LOT · {totals.received.toLocaleString('th-TH')} หน่วย</span>}/>
+        {locationPath && <Link className="button secondary justify-self-start" href={locationPath}>เปิดตำแหน่งที่สแกน</Link>}
+        {scanReview && <section className="rounded-xl border border-amber-300 bg-amber-50 p-3 grid gap-3 text-slate-900 min-w-0"
+          aria-label="ตรวจสอบ Barcode ก่อนเพิ่มลงร่าง">
+          <div className="flex flex-wrap justify-between items-start gap-2">
+            <div><strong className="block">ตรวจสอบ Barcode ก่อนเพิ่ม</strong>
+              <p className="text-xs">ข้อมูลที่ยังไม่ยืนยันจะไม่เพิ่มจำนวนรับเข้า · กรุณาตรวจสอบกับฉลากจริง</p></div>
+            <button className="button secondary shrink-0" type="button" onClick={()=>setScanReview(null)}>ยกเลิกผลสแกนนี้</button>
+          </div>
+          <div className="text-xs grid gap-1 break-all">
+            <p><strong>Raw:</strong> <code>{scanReview.raw}</code></p>
+            <p>{scanReview.parsed.standard} · {scanReview.parsed.symbology} · REF (240): {scanReview.parsed.additionalProductId??'—'}</p>
+            <p>GTIN (01): {scanReview.parsed.gtin??'—'} · LOT: {scanReview.parsed.lot??'ต้องกรอก'} · Expiry: {scanReview.parsed.expiry??'ต้องกรอก'}</p>
+            {scanReview.parsed.warnings.map((warning,i)=><p role="alert" key={i}>⚠ {warning}</p>)}
+          </div>
+          <InvoiceReagentPicker products={products} value={scanReview.productId}
+            onChange={productId=>setScanReview(previous=>previous?{...previous,productId,locationId:suggestedLocation(productId)}:previous)}/>
+          <div className="grid sm:grid-cols-2 gap-3 min-w-0">
+            <label className="field min-w-0">LOT *
+              <input className="input" autoCapitalize="characters" value={scanReview.lot}
+                onChange={e=>setScanReview(previous=>previous?{...previous,lot:e.target.value}:previous)}/></label>
+            <label className="field min-w-0">หมดอายุ *
+              <input type="date" className="input block min-w-0 max-w-full" value={scanReview.expiry}
+                onChange={e=>setScanReview(previous=>previous?{...previous,expiry:e.target.value}:previous)}/></label>
+            <label className="field min-w-0">ตำแหน่งจัดเก็บ *
+              <select className="input" value={scanReview.locationId}
+                onChange={e=>setScanReview(previous=>previous?{...previous,locationId:e.target.value}:previous)}>
+                <option value="">เลือกตำแหน่ง</option>
+                {locations.map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code?loc.parent_code+' › ':''}{loc.code} · {loc.name}</option>)}
+              </select></label>
+            <label className="field min-w-0">จำนวนรับจริง *
+              <IntegerQuantityInput className="input" min="1" value={scanReview.quantity}
+                onChange={e=>setScanReview(previous=>previous?{...previous,quantity:e.target.value}:previous)}/></label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="button" disabled={scanBusy||pending||!scanReview.productId}
+              onClick={()=>void addReviewedScan()}>ตรวจสอบและเพิ่มลงร่าง</button>
+            <button type="button" className="button secondary" disabled={scanBusy||!scanReview.productId}
+              onClick={()=>void proposeMapping()}>เสนอการจับคู่ Barcode</button>
+          </div>
+        </section>}
         <h3 className="font-bold">หรือเพิ่มน้ำยาด้วยตนเอง</h3>
         <InvoiceReagentPicker products={products} value="" onChange={addProduct}/>
       </div>
@@ -252,9 +466,10 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
             <div className="min-w-0"><strong>{index+1}. {product?.product_code??'น้ำยา'}</strong>
               <p className="muted text-sm break-words">{product?.display_name??'—'}</p></div>
             <button className="button secondary text-[#a83442] shrink-0" disabled={pending} type="button"
-              onClick={()=>setLines(old=>old.filter(item=>item.id!==line.id))}>ลบ</button>
+              onClick={()=>setWizardLines(old=>old.filter(item=>item.id!==line.id))}>ลบ</button>
           </div>
           <label className="field max-w-xs"><span>จำนวนตาม Invoice <span className="text-[#b42318]">*</span></span>
+            <span className="muted text-xs">กรอกจากเอกสาร · การสแกนไม่แก้ตัวเลขนี้อัตโนมัติ</span>
             <IntegerQuantityInput className="input" min="1" value={line.orderedQuantity}
               onChange={e=>alterLine(line.id,old=>({...old,orderedQuantity:e.target.value}))} aria-required="true"/>
           </label>
@@ -295,6 +510,25 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           <p className="muted text-sm">ตาม Invoice {line.orderedQuantity||'—'} · รับจริง {amount} · ค้างรับ {outstanding}</p>
         </article>;
       })}
+      <section className="rounded-xl border border-line p-4 grid gap-3 min-w-0">
+        <h3 className="font-bold">ภาพ Invoice / เอกสารส่งของ</h3>
+        <p className="muted text-sm">ถ่ายภาพหรือเลือก PDF ได้ตั้งแต่ Step 2 · ไฟล์จะอัปโหลดหลังยืนยัน Step 4 โดยไม่สร้าง Invoice ก่อนเวลา</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <label className="field min-w-0">ถ่ายภาพด้วยกล้อง
+            <input className="input min-w-0" type="file" accept="image/*" capture="environment"
+              onChange={e=>chooseEvidence(e.target.files?.[0]??null)}/></label>
+          <label className="field min-w-0">เลือกจากรูปภาพ/PDF
+            <input className="input min-w-0" type="file" accept="image/*,application/pdf"
+              onChange={e=>chooseEvidence(e.target.files?.[0]??null)}/></label>
+        </div>
+        {imagePreview && <Image src={imagePreview} alt="ตัวอย่างเอกสารก่อนอัปโหลด"
+          width={500} height={300} unoptimized className="max-h-64 max-w-full object-contain rounded-lg"/>}
+        {selectedEvidence&&<div className="flex flex-wrap gap-2 items-center">
+          <span className="text-sm break-all">{selectedEvidence.name} · {(selectedEvidence.size/1024/1024).toFixed(2)} MB · รอแนบเมื่อยืนยัน</span>
+          <button type="button" className="button secondary" onClick={()=>chooseEvidence(null)}>นำไฟล์ที่เลือกออก</button>
+        </div>}
+        {selectedEvidence&&<p className="muted text-xs">ไฟล์ที่เลือกยังอยู่บนอุปกรณ์นี้ ไม่ควรออกจากหน้านี้จนยืนยันเสร็จ · รายการน้ำยาและ LOT จะบันทึก Draft อัตโนมัติ</p>}
+      </section>
       {!lines.length && <p className="rounded-xl border border-dashed border-line p-4 muted text-sm">ยังไม่มีรายการ · สแกนหรือค้นหาน้ำยาเพื่อเริ่มรับเข้า</p>}
       {summary}
       <div className="flex flex-wrap gap-2 justify-between">
@@ -323,6 +557,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         </div>)}
       </div>)}
       {summary}
+      {selectedEvidence&&<p className="notice text-sm">เอกสารรอแนบ: {selectedEvidence.name} · จะอัปโหลดหลังยืนยันใน Step 4</p>}
       {totals.pending>0 && <p className="notice text-sm" role="status">ยังมียอดค้างรับ {totals.pending} หน่วย · Invoice จะเปิดให้รับเพิ่มเติมภายหลัง</p>}
       <div className="flex flex-wrap gap-2 justify-between">
         <button className="button secondary" disabled={pending} type="button" onClick={()=>setStep(2)}>← แก้รายการรับเข้า</button>
@@ -334,13 +569,22 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       <div><h2 className="font-bold text-lg">Step 4 · ประเมินการรับเข้า</h2>
         <p className="muted text-sm">เมื่อยืนยัน ระบบสร้าง Invoice และบันทึก Stock กับผลประเมินเป็นธุรกรรมเดียว</p></div>
       {summary}
+      {selectedEvidence&&<p className="muted text-sm">เอกสารรอแนบ: {selectedEvidence.name}</p>}
       <ReceiptAssessmentFields value={assessment} onChange={setAssessment}/>
       <button className="button secondary justify-self-start" type="button" disabled={pending} onClick={()=>save(4)}>บันทึกแบบประเมินเป็นร่าง</button>
-      <div className="flex flex-wrap gap-2 justify-between">
+      {completedInvoiceId && <div className="notice grid gap-3" role="status">
+        <strong>ยืนยันรับน้ำยาและบันทึก Stock เรียบร้อยแล้ว</strong>
+        <p className="text-sm">ขั้นตอนนี้ไม่สามารถยืนยันซ้ำได้ · หากไฟล์แนบไม่สำเร็จ กดแนบไฟล์อีกครั้ง หรือเปิด Invoice เพื่อตรวจสอบ</p>
+        <div className="flex flex-wrap gap-2">
+          <button className="button" type="button" disabled={evidenceBusy} onClick={()=>void retryEvidenceUpload()}>{evidenceBusy?'กำลังแนบ…':'แนบไฟล์อีกครั้ง'}</button>
+          <button className="button secondary" type="button" onClick={()=>navigateCompleted(completedInvoiceId)}>เปิด Invoice ที่รับแล้ว</button>
+        </div>
+      </div>}
+      {!completedInvoiceId&&<div className="flex flex-wrap gap-2 justify-between">
         <button className="button secondary" type="button" disabled={pending} onClick={()=>setStep(3)}>← กลับไปตรวจสอบ</button>
         <button className="button min-h-12" type="button" disabled={pending || !!assessmentError(assessment)}
           onClick={complete}>{pending?'กำลังบันทึก…':'ยืนยันรับเข้าและจบกระบวนการ'}</button>
-      </div>
+      </div>}
     </section>}
 
     {error && <p className="error" role="alert">{error}</p>}
