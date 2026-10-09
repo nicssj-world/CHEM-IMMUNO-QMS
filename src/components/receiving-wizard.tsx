@@ -328,6 +328,10 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           formats={['CODE_128','CODE_39','EAN_13','QR_CODE']}
           onScan={onInvoiceScan} feedback={invoiceFeedback}/>
       </section>}
+      <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+        {canAddVendor&&<Link href="/vendors/new?return=%2Freceive" className="underline">ไม่มีผู้ขายในรายการ? เพิ่มผู้ขายใหม่</Link>}
+        {locationManageHref&&<Link href={locationManageHref} className="underline">จัดการตำแหน่งจัดเก็บ</Link>}
+      </div>
       <div className="flex justify-end"><button className="button min-h-12" type="button" disabled={pending}
         onClick={()=>save(2)}>{pending?'กำลังบันทึกร่าง…':'ถัดไป · รับน้ำยา →'}</button></div>
     </section>}
@@ -337,7 +341,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         <p className="muted text-sm">กำหนดจำนวนตาม Invoice หนึ่งครั้งต่อ Product · จำนวนรับจริงระบุแยกตาม LOT · รับบางส่วนได้</p></div>
       <div className="rounded-lg bg-surface-2 p-3 text-sm"><strong>Invoice {header.invoiceNumber}</strong> · {vendorsById.get(header.vendorId)?.name??'—'}</div>
       <p className="muted text-xs">ภาพ Invoice หรือเอกสารส่งของสามารถแนบได้หลังยืนยันรับเข้า และยังเปิดดู/แนบเพิ่มได้จาก Invoice เดิม</p>
-      <div className="grid gap-3 rounded-xl border border-line p-3 min-w-0">
+      <div className="contents">
         <h3 className="font-bold">เพิ่มน้ำยาจาก Barcode</h3>
         <label className="field min-w-0">ตำแหน่งจัดเก็บสำหรับการสแกนรอบนี้ (ถ้ามี)
           <select className="input" value={sessionLocationId} onChange={e=>setSessionLocationId(e.target.value)}>
