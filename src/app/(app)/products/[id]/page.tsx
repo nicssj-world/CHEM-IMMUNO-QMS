@@ -51,7 +51,7 @@ export default async function ProductDetailPage({ params, searchParams }: { para
     client.from('ci_products').select('id,product_code,display_name,product_type').eq('warehouse_id',warehouse.id).eq('active',true).order('product_code').limit(250),
     client.from('ci_platforms').select('id,platform_key,display_name').eq('warehouse_id',warehouse.id).order('display_name'),
     client.from('ci_reorder_status').select('mode,usable_stock,rop,suggested_order,missing_reason').eq('product_id',id).maybeSingle(),
-    client.from('ci_locations').select('id,code,name,parent_location_id,active').eq('warehouse_id',warehouse.id).limit(200),
+    client.from('ci_locations').select('id,code,name,parent_location_id,active').limit(500),
     client.from('ci_stock_lots').select('id').eq('product_id',id).limit(200),
   ]);
   const identifiers = (identifierResult.data ?? []) as Identifier[];

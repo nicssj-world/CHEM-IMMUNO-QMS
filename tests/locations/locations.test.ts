@@ -148,10 +148,10 @@ test('breadcrumbs and picker labels show the parent, and parent choices follow t
   assert.equal(locationBreadcrumb(rows[0], byId), 'CHE-FR-01');
   assert.equal(locationBreadcrumb(rows[1], byId), 'CHE-FR-01 › S1');
   assert.equal(locationOptionLabel(rows[1], byId), 'CHE-FR-01 › S1 · name S1');
-  assert.deepEqual(parentOptions(rows, { warehouseId: 1 }).map(item => item.id), ['a', 'c'], 'top-level, active, same warehouse only');
-  assert.deepEqual(parentOptions(rows, { warehouseId: 1, selfId: 'c' }).map(item => item.id), ['a'], 'never itself');
-  assert.deepEqual(parentOptions(rows, { warehouseId: 1, selfId: 'a' }), [], 'a location that already has children cannot become a child');
-  assert.deepEqual(parentOptions(rows, { warehouseId: 2 }).map(item => item.id), ['e']);
+  assert.deepEqual(parentOptions(rows, {}).map(item => item.id), ['a', 'c', 'e'], 'top-level, active from both warehouses');
+  assert.deepEqual(parentOptions(rows, { selfId: 'c' }).map(item => item.id), ['a', 'e'], 'never itself');
+  assert.deepEqual(parentOptions(rows, { selfId: 'a' }), [], 'a location that already has children cannot become a child');
+  assert.deepEqual(parentOptions(rows, {}).map(item => item.id), ['a', 'c', 'e']);
 });
 
 test('location stock keeps non-zero ledger balances for the container and its children, oldest expiry first', () => {

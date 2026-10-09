@@ -4,19 +4,15 @@ import Link from 'next/link';
 import { useState, useTransition, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { createLocationRecord, updateLocationRecord } from '@/app/actions/locations';
-import { LOCATION_TYPES, isMonitorableType } from '@/lib/locations';
+import { LOCATION_TYPES } from '@/lib/locations';
 import { SubmitButton } from './submit-button';
 
 export type LocationFormFields = {
   code: string; name: string; location_type: string; parent_location_id: string; room: string; description: string; storage_condition: string;
-  portal_equipment_url: string; portal_equipment_label: string; own_monitoring: boolean;
-  temperature_monitored: boolean; temp_min_c: string; temp_max_c: string; humidity_monitored: boolean; rh_min_pct: string; rh_max_pct: string;
-  check_times: string[]; monitoring_state: 'active' | 'paused'; pause_reason: string;
+  portal_equipment_url: string; portal_equipment_label: string;
 };
 export const EMPTY_LOCATION_FORM: LocationFormFields = {
   code: '', name: '', location_type: 'refrigerator', parent_location_id: '', room: '', description: '', storage_condition: '', portal_equipment_url: '', portal_equipment_label: '',
-  own_monitoring: false, temperature_monitored: false, temp_min_c: '', temp_max_c: '', humidity_monitored: false, rh_min_pct: '', rh_max_pct: '',
-  check_times: [], monitoring_state: 'active', pause_reason: '',
 };
 
 type Props = {
@@ -38,8 +34,6 @@ export function LocationForm({ mode, warehouse, initial, parents, cancelHref, lo
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
   const set = <K extends keyof LocationFormFields>(field: K, next: LocationFormFields[K]) => setValue(current => ({ ...current, [field]: next }));
-  // Preserve existing monitoring settings in the edit payload while their UI is paused.
-  const showMonitoring = isMonitorableType(value.location_type) || value.own_monitoring;
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,15 +42,13 @@ export function LocationForm({ mode, warehouse, initial, parents, cancelHref, lo
     const data = new FormData();
     data.set('warehouse_id', String(warehouse.id));
     for (const [field, entry] of Object.entries(value)) {
-      if (field === 'check_times') continue;
       if (typeof entry === 'string') data.set(field, entry); else if (entry) data.set(field, 'on');
     }
-    if (mode === 'edit' && showMonitoring && (value.temperature_monitored || value.humidity_monitored)) data.set('check_times', JSON.stringify(value.check_times));
     startTransition(async () => {
       const result = mode === 'create' ? await createLocationRecord(data) : await updateLocationRecord(locationId!, data, expectedUpdatedAt!);
       if (!result.ok) { setError(result.message); setErrors(result.errors ?? {}); return; }
       const done = mode === 'create' ? `เพิ่มตำแหน่ง ${value.code.trim()}` : 'บันทึกการแก้ไขแล้ว';
-      router.push(`/locations/${result.id}?warehouse=${warehouse.code}&saved=${encodeURIComponent(done)}&at=${Date.now().toString(36)}`);
+      router.push(`/locations/${result.id}?saved=${encodeURIComponent(done)}&at=${Date.now().toString(36)}`);
       router.refresh();
     });
   }
@@ -65,10 +57,10 @@ export function LocationForm({ mode, warehouse, initial, parents, cancelHref, lo
   const describe = (field: string) => (errors[field] ? { 'aria-invalid': true, 'aria-describedby': `error-${field}` } as const : {});
   return <form onSubmit={submit} className="grid gap-5" noValidate>
     <section className="surface p-5 sm:p-7 grid gap-4 content-start">
-      <h2 className="font-bold text-lg">ข้อมูลตำแหน่งใน {warehouse.name}</h2>
+      <h2 className="font-bold text-lg">ข้อมูลตำแหน่งจัดเก็บ</h2>
       <div className="grid sm:grid-cols-[200px_1fr] gap-4">
         <div className="grid gap-1"><label className="field" htmlFor="f-code">รหัสตำแหน่ง
-          <input id="f-code" className="input" value={value.code} onChange={event => set('code', event.target.value)} required maxLength={40} readOnly={codeLocked} autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" placeholder="เช่น CHE-FR-01" {...describe('code')} />
+          <input id="f-code" className="input" value={value.code} onChange={event => set('code', event.target.value)} required maxLength={40} readOnly={codeLocked} autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" placeholder="เช่น FR-01" {...describe('code')} />
         </label>{codeLocked && <p className="muted text-xs">รหัสนี้ถูกใช้ในประวัติสต็อกแล้ว จึงแก้ไขไม่ได้</p>}{fieldError('code')}</div>
         <div className="grid gap-1"><label className="field" htmlFor="f-name">ชื่อ / คำอธิบายสั้น
           <input id="f-name" className="input" value={value.name} onChange={event => set('name', event.target.value)} required maxLength={120} placeholder="เช่น ตู้เย็นน้ำยา Chemistry 1" {...describe('name')} />

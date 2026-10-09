@@ -23,10 +23,6 @@ export function ReceiptPackageReview({
   const locationById = new Map(locations.map(location => [location.id,location]));
   const groups = new Map<string,ReceiptPackage[]>();
   for (const item of packages) groups.set(item.invoiceLineId,[...(groups.get(item.invoiceLineId) ?? []),item]);
-  const locationOptions = (lineId: string) => {
-    const warehouse = lineById.get(lineId)?.warehouse_id;
-    return locations.filter(location => Number(location.warehouse_id) === Number(warehouse));
-  };
 
   if (!packages.length) return <p className="rounded-lg border border-dashed border-line p-4 text-sm muted">
     ยังไม่มีรายการในร่าง · สแกน Data Matrix หรือเลือกน้ำยาเพื่อเพิ่ม LOT
@@ -37,7 +33,7 @@ export function ReceiptPackageReview({
       const line = lineById.get(lineId);
       const product = productById.get(line?.product_id ?? '');
       const units = group.reduce((sum,item) => sum + (Number(item.quantity) || 0),0);
-      const options = locationOptions(lineId);
+      const options = locations;
       return <section key={lineId} className="rounded-xl border border-line overflow-hidden">
         <div className="bg-surface-2 p-3 flex flex-wrap gap-2 items-start justify-between">
           <div className="min-w-0 flex-1">

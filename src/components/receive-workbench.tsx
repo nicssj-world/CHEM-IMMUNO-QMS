@@ -59,7 +59,6 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
   const [attachments,setAttachments] = useState<Attachment[]>(initialAttachments);
   const lineById = useMemo(() => new Map(lines.map(l => [l.invoice_line_id, l])), [lines]);
   const productById = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
-  const currentLine = lineById.get(draft.invoiceLineId);
   const scanReady = Boolean(scan?.invoiceLineId && draft.lot && draft.expiry && draft.locationId && !scanBatchFields(scan.parsed).requiresReview);
   const hydrated = useRef(false);
   const [assessment, setAssessment] = useState<AssessmentInput>(DEFAULT_ASSESSMENT);
@@ -93,7 +92,7 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
       let dropped = 0;
       for (const item of stored.packages) {
         const line = lines.find(l => l.invoice_line_id === item.invoiceLineId && warehouseIds.includes(l.warehouse_id));
-        const validLocation = locations.some(l => l.id === item.locationId && l.warehouse_id === line?.warehouse_id);
+        const validLocation = locations.some(l => l.id === item.locationId);
         if (!line || (item.locationId && !validLocation)) { dropped++; continue; }
         // A draft without a location must survive a page reload so staff can
         // finish it after the storage master has been configured.
@@ -160,7 +159,7 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
   function suggestedLocation(productId: string, warehouse: number): string {
     const latest = [...packagesRef.current].reverse().find(item => lineById.get(item.invoiceLineId)?.product_id===productId);
     const session = sessionLocationByWarehouse[warehouse];
-    if (session && locations.some(location => location.id===session && location.warehouse_id===warehouse)) return session;
+    if (session && locations.some(location => location.id===session)) return session;
     return preselectLocation(productById.get(productId)?.default_location_id,warehouse,locations,latest?.locationId ?? recentLocationByProduct[productId]);
   }
   function showAddLot(lineId: string) {
@@ -304,7 +303,7 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
       <label className="field">ตำแหน่งจัดเก็บสำหรับการสแกนรอบนี้ (ถ้ามี)
         <select className="input min-h-11" value={sessionLocationByWarehouse[warehouseId] ?? ''} onChange={e=>setSessionLocationByWarehouse(prev=>({...prev,[warehouseId]:e.target.value}))}>
           <option value="">เลือกอัตโนมัติจาก Product / ครั้งก่อน</option>
-          {locations.filter(loc=>loc.warehouse_id===warehouseId).map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code ? loc.parent_code+' › ' : ''}{loc.code} · {loc.name}</option>)}
+          {locations.map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code ? loc.parent_code+' › ' : ''}{loc.code} · {loc.name}</option>)}
         </select>
         <span className="muted text-xs">เลือกครั้งเดียวเพื่อใช้กับการสแกนถัดไป · เปลี่ยนตำแหน่งของแต่ละ LOT ในร่างได้</span>
       </label>
@@ -314,7 +313,7 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
       {locationPath && <a className="button secondary" href={locationPath}>เปิดตำแหน่งนี้</a>}
       {scanReady && !showScanDetails && <div className="notice grid gap-2 text-sm"><strong>ข้อมูลจาก Data Matrix พร้อมรับเข้า</strong><p>{scan?.productCode} · LOT {draft.lot} · หมดอายุ {draft.expiry}</p><button className="button secondary justify-self-start" type="button" onClick={() => setShowScanDetails(true)}>แก้ไขข้อมูลที่สแกน</button></div>}
        <label className="field">จำนวนแพ็ก/หน่วยฐาน<IntegerQuantityInput className="input" min="1" value={draft.quantity} onChange={e => setDraft({ ...draft, quantity:e.target.value })} required/></label>
-       {(!scanReady || showScanDetails) && <div className="grid sm:grid-cols-2 gap-3"><label className="field sm:col-span-2">Product ใน Invoice<select className="input" value={draft.invoiceLineId} onChange={e => { const line = lineById.get(e.target.value); setDraft({ ...draft, invoiceLineId: e.target.value, locationId: line ? suggestedLocation(line.product_id,line.warehouse_id) : '' }); }} required><option value="">เลือก Product</option>{lines.filter(l => l.warehouse_id === warehouseId && Number(l.remaining_quantity)>0).map(l => { const product=productById.get(l.product_id); return <option key={l.invoice_line_id} value={l.invoice_line_id}>{product?.product_code} · {product?.display_name} · ค้าง {l.remaining_quantity}</option>; })}</select></label><label className="field">LOT {scan?.parsed.lot && !scanBatchFields(scan.parsed).requiresReview ? '(จาก Barcode · ตรวจได้)' : ''}<input className="input" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" value={draft.lot} onChange={e => setDraft({ ...draft, lot:e.target.value })} required/></label><label className="field">หมดอายุ {scan?.parsed.expiry && !scanBatchFields(scan.parsed).requiresReview ? '(จาก Barcode · ตรวจได้)' : ''}<input className="input" type="date" value={draft.expiry} onChange={e => setDraft({ ...draft, expiry:e.target.value })} required/></label><label className="field">ตำแหน่ง<select className="input" value={draft.locationId} onChange={e => setDraft({ ...draft, locationId:e.target.value })} required><option value="">เลือกตำแหน่ง</option>{locations.filter(l => l.warehouse_id === currentLine?.warehouse_id).map(l => <option key={l.id} value={l.id}>{l.parent_code ? `${l.parent_code} › ` : ''}{l.code} · {l.name}</option>)}</select></label></div>}
+       {(!scanReady || showScanDetails) && <div className="grid sm:grid-cols-2 gap-3"><label className="field sm:col-span-2">Product ใน Invoice<select className="input" value={draft.invoiceLineId} onChange={e => { const line = lineById.get(e.target.value); setDraft({ ...draft, invoiceLineId: e.target.value, locationId: line ? suggestedLocation(line.product_id,line.warehouse_id) : '' }); }} required><option value="">เลือก Product</option>{lines.filter(l => l.warehouse_id === warehouseId && Number(l.remaining_quantity)>0).map(l => { const product=productById.get(l.product_id); return <option key={l.invoice_line_id} value={l.invoice_line_id}>{product?.product_code} · {product?.display_name} · ค้าง {l.remaining_quantity}</option>; })}</select></label><label className="field">LOT {scan?.parsed.lot && !scanBatchFields(scan.parsed).requiresReview ? '(จาก Barcode · ตรวจได้)' : ''}<input className="input" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" value={draft.lot} onChange={e => setDraft({ ...draft, lot:e.target.value })} required/></label><label className="field">หมดอายุ {scan?.parsed.expiry && !scanBatchFields(scan.parsed).requiresReview ? '(จาก Barcode · ตรวจได้)' : ''}<input className="input" type="date" value={draft.expiry} onChange={e => setDraft({ ...draft, expiry:e.target.value })} required/></label><label className="field">ตำแหน่ง<select className="input" value={draft.locationId} onChange={e => setDraft({ ...draft, locationId:e.target.value })} required><option value="">เลือกตำแหน่ง</option>{locations.map(l => <option key={l.id} value={l.id}>{l.parent_code ? `${l.parent_code} › ` : ''}{l.code} · {l.name}</option>)}</select></label></div>}
        {scan && !scan.invoiceLineId && <button className="button secondary" type="button" onClick={() => void propose()}>เสนอการจับคู่ Barcode กับ Product ที่เลือก</button>}
       <button className="button min-h-12" disabled={busy} type="button" onClick={() => void addPackage()}>เพิ่มแพ็กเกจในร่าง</button>
     </section>

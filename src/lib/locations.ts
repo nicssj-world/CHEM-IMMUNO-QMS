@@ -53,10 +53,10 @@ export function locationOptionLabel(location: Pick<LocationRow, 'code' | 'name' 
 }
 
 /** Locations a location may be placed under: top-level, active, same warehouse, not itself, and only if it has no children of its own. */
-export function parentOptions(locations: readonly LocationRow[], { warehouseId, selfId }: { warehouseId: number; selfId?: string }) {
+export function parentOptions(locations: readonly LocationRow[], { selfId }: { selfId?: string }) {
   const hasChildren = selfId ? locations.some(location => location.parent_location_id === selfId) : false;
   if (hasChildren) return [];
-  return locations.filter(location => location.warehouse_id === warehouseId && location.parent_location_id === null && location.active && location.id !== selfId);
+  return locations.filter(location => location.parent_location_id === null && location.active && location.id !== selfId);
 }
 
 // ---------------------------------------------------------------------------

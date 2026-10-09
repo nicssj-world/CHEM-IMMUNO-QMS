@@ -32,7 +32,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const [productsResult, vendorsResult, locationsResult, invoicesResult] = client ? await Promise.all([
     client.from('ci_products').select('id,warehouse_id,product_code,display_name,default_location_id').eq('active',true).in('warehouse_id',warehouseIds).order('product_code').limit(1000),
     client.from('ci_vendors').select('id,name').eq('active',true).order('name').limit(100),
-    client.from('ci_locations').select('id,warehouse_id,code,name,parent_location_id').eq('active',true).in('warehouse_id',warehouseIds).order('code').limit(1000),
+    client.from('ci_locations').select('id,warehouse_id,code,name,parent_location_id').eq('active',true).order('code').limit(1000),
     client.from('ci_invoices').select('id,invoice_number,invoice_date,status,vendor_id,po_number').order('created_at',{ascending:false}).limit(30),
   ]) : [{data:[],error:null},{data:[],error:null},{data:[],error:null},{data:[],error:null}];
   const products = (productsResult.data ?? []) as Product[];

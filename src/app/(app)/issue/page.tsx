@@ -19,7 +19,7 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
   const client = await createClient();
   const [productsResult,locationsResult] = client ? await Promise.all([
     client.from('ci_products').select('id,product_code,display_name').eq('warehouse_id',warehouse.id).eq('active',true).order('product_code').limit(1000),
-    client.from('ci_locations').select('id,code').eq('warehouse_id',warehouse.id),
+    client.from('ci_locations').select('id,code').order('code'),
   ]) : [{ data: [] },{ data: [] }];
   const products = (productsResult.data ?? []) as Product[];
   const locations = new Map(((locationsResult.data ?? []) as Location[]).map(l => [l.id,l.code]));
