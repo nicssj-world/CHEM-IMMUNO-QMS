@@ -5,46 +5,29 @@ import { preselectLocation } from '../../src/lib/receive-location';
 const che = (id: string) => ({ id, warehouse_id: 1 });
 const imm = (id: string) => ({ id, warehouse_id: 2 });
 
-test('a valid active default Location in the right warehouse is preselected first', () => {
+test('a Product default location takes priority across the physical shared catalog', () => {
   const locations = [che('A'), che('B'), imm('C')];
   assert.equal(preselectLocation('A', 1, locations), 'A');
-  assert.equal(preselectLocation('B', 1, locations), 'B');
+  assert.equal(preselectLocation('C', 1, locations), 'C', 'IMM-origin location works for a CHE product');
+  assert.equal(preselectLocation('B', 2, locations), 'B', 'CHE-origin location works for an IMM product');
 });
 
-test('no default, exactly one Location in the warehouse: existing single-Location auto-select is preserved', () => {
-  assert.equal(preselectLocation(null, 1, [che('A'), imm('C')]), 'A');
-  assert.equal(preselectLocation(undefined, 1, [che('A')]), 'A');
-});
-
-test('no default, several Locations in the warehouse: blank, the user chooses', () => {
-  assert.equal(preselectLocation(null, 1, [che('A'), che('B')]), '');
-});
-
-test('no default and no Location at all in the warehouse: blank', () => {
-  assert.equal(preselectLocation(null, 1, [imm('C')]), '');
+test('the only active shared location is preselected regardless of original owner', () => {
+  assert.equal(preselectLocation(null, 1, [imm('C')]), 'C');
+  assert.equal(preselectLocation(undefined, 2, [che('A')]), 'A');
   assert.equal(preselectLocation(null, 1, []), '');
 });
 
-test('a default that is not a valid option here (deactivated, deleted, or cross-warehouse) falls back to the normal rule', () => {
-  // Deactivated/deleted: not present in the (already active-only) list at all.
-  assert.equal(preselectLocation('gone', 1, [che('A')]), 'A', 'falls back to single-location auto-select');
-  assert.equal(preselectLocation('gone', 1, [che('A'), che('B')]), '', 'falls back to blank with several candidates');
-  // Cross-warehouse leakage: a default id that only exists in the OTHER warehouse's location list must never leak in.
-  assert.equal(preselectLocation('C', 1, [che('A'), che('B'), imm('C')]), '', 'a default from another warehouse is never selected here');
+test('multiple shared locations require selection unless Product default or receipt history exists', () => {
+  const locations = [che('A'), imm('C')];
+  assert.equal(preselectLocation(null, 1, locations), '');
+  assert.equal(preselectLocation(null, 1, locations, 'C'), 'C');
+  assert.equal(preselectLocation('A', 1, locations, 'C'), 'A');
+  assert.equal(preselectLocation('gone', 1, locations, 'C'), 'C');
+  assert.equal(preselectLocation('gone', 1, locations, 'missing'), '');
 });
 
-test('two Products with different defaults each resolve independently', () => {
-  const locations = [che('A'), che('B'), che('C')];
-  assert.equal(preselectLocation('B', 1, locations), 'B');
-  assert.equal(preselectLocation('C', 1, locations), 'C');
-});
-
-
-test('last confirmed receipt Location is suggested when no Product default is configured', () => {
-  const locations = [che('A'), che('B'), imm('C')];
-  assert.equal(preselectLocation(null, 1, locations, 'B'), 'B');
-  assert.equal(preselectLocation('A', 1, locations, 'B'), 'A', 'explicit Product default takes priority');
-  assert.equal(preselectLocation('missing', 1, locations, 'B'), 'B', 'inactive/missing Product default falls back to last use');
-  assert.equal(preselectLocation(null, 1, locations, 'C'), '', 'never suggest a location from a different warehouse');
-  assert.equal(preselectLocation(null, 1, [che('A')], 'missing'), 'A', 'single-location fallback still works');
+test('inactive or missing defaults never override an active last-used shared location', () => {
+  assert.equal(preselectLocation('removed', 2, [imm('C')], 'C'), 'C');
+  assert.equal(preselectLocation('removed', 2, [imm('C')], 'gone'), 'C');
 });
