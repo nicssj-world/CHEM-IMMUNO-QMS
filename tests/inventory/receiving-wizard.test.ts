@@ -96,10 +96,35 @@ test('unreviewed manual LOT must not be silently discarded when scanning',()=>{
 test('first scan can open a Product without changing later manually entered quantity',()=>{
   const first=appendWizardScan([],{productId:'p2',lot:'IMM-LOT',expiry:'2027-12-31',quantity:'1',locationId:'l1'},()=>crypto.randomUUID());
   assert.equal(first.ok,true);if(!first.ok)return;
-  assert.equal(first.lines[0].orderedQuantity,'1');
+  assert.equal(first.lines[0].orderedQuantity,'');
   const edited=[{...first.lines[0],orderedQuantity:'10'}];
   const again=appendWizardScan(edited,{productId:'p2',lot:'IMM-LOT',expiry:'2027-12-31',quantity:'1',locationId:'l1'},()=>crypto.randomUUID());
   assert.equal(again.ok,true);if(!again.ok)return;
   assert.equal(again.lines[0].orderedQuantity,'10');
   assert.equal(again.lines[0].packages[0].quantity,'2');
+});
+
+test('rapid sequential scans before invoice quantity is entered keep adding received quantity',()=>{
+  let counter=0;const id=()=>String(++counter);
+  const payload={productId:'p1',lot:'LOT-A',expiry:'2027-12-31',quantity:'1',locationId:'l1'};
+  let lines:WizardLine[]=[];
+  for(let i=0;i<5;i++){
+    const added=appendWizardScan(lines,payload,id);
+    assert.equal(added.ok,true);
+    if(!added.ok)return;
+    lines=added.lines;
+  }
+  assert.equal(lines[0].orderedQuantity,'');
+  assert.equal(lines[0].packages[0].quantity,'5');
+  assert.match(wizardLineError(lines,products,locations)??'',/Invoice/);
+  lines=[{...lines[0],orderedQuantity:'4'}];
+  assert.match(wizardLineError(lines,products,locations)??'',/เกิน/);
+  lines=[{...lines[0],orderedQuantity:'5'}];
+  assert.equal(wizardLineError(lines,products,locations),null);
+});
+
+test('an unfilled manual LOT does not count as received quantity or completed LOT',()=>{
+  const rows=[{id:'manual',productId:'p1',orderedQuantity:'3',packages:[
+    {id:'blank',quantity:'1',lot:'',expiry:'',locationId:'l1'}]}];
+  assert.deepEqual(wizardTotals(rows),{ordered:3,received:0,pending:3,lots:0});
 });
