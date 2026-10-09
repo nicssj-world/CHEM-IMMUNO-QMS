@@ -126,7 +126,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const invoiceIssues = (invoiceIssueData ?? []) as VendorIssue[];
   const { data: invoiceIssueFiles } = invoiceIssues.length && client ? await client.from('ci_vendor_issue_attachments').select('id,issue_id,file_name,size_bytes,uploaded_at').in('issue_id', invoiceIssues.map(i => i.id)) : { data: [] };
   const supervisesAny = access.warehouses.some(w => canSupervise(w.role));
-  const renderReceiptEvidence = (eventsToRender: typeof receiptEvents) => eventsToRender.map(event => {
+  const renderReceiptEvidence = (itemsToRender: typeof receiptEvents) => itemsToRender.map(event => {
             const canEdit = access.warehouses.some(warehouse => Number(warehouse.id) === Number(event.warehouse_id) && canSupervise(warehouse.role));
             const reversed = reversedReceiptIds.has(event.id);
             const received = receiptLinesByReceipt.get(event.id) ?? [];
@@ -159,7 +159,25 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
                           <span>ตำแหน่ง: {location ? `${location.code} · ${location.name}` : 'ไม่พบชื่อตำแหน่ง'}</span>
                         </div>
                       </article>;
-                    });
+                    })}
+                  </div>
+                </> : <p className="muted text-sm">ไม่พบรายการน้ำยาสำหรับใบรับเข้านี้ หากคาดว่ามีข้อมูล โปรดแจ้งผู้ดูแลระบบตรวจสอบ</p>)}
+              </div>
+              {canEdit && !reversed && <ReceiptEditForm
+                receiptId={event.id}
+                warehouseId={Number(event.warehouse_id)}
+                eventNumber={event.event_number}
+                invoice={{ invoice_number: invoice.invoice_number, invoice_date: invoice.invoice_date, po_number: invoice.po_number }}
+                lines={lines}
+                receiptLines={receiptLinesByReceipt.get(event.id) ?? []}
+                products={products}
+                locations={locations}
+                assessmentRow={event.assessment}
+              />}
+              {canEdit && reversed && <p className="notice">ใบรับเข้านี้ถูกย้อนรายการแล้ว จึงแก้ไขโดยตรงไม่ได้</p>}
+              <ReceiptAssessmentCard eventNumber={event.event_number} invoiceNumber={invoice.invoice_number} receivedAt={event.received_at} assessment={event.assessment} revisions={event.revisions} canRevise={false}/>
+            </div>;
+          });
   return (
     <main className="grid gap-6 max-w-[1100px]">
       <div><p className="eyebrow mb-2">Receiving</p><h1 className="page-title">รับน้ำยาเข้าคลัง</h1><p className="muted mt-2 text-sm">Invoice หนึ่งฉบับรับน้ำยา CHE และ IMM ร่วมกันได้ · รับบางส่วนได้หลายครั้ง</p></div>
@@ -204,52 +222,32 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
                   <div>
                     <h3 className="font-bold">ใบรับเข้า {group.displayNumber ?? '—'}</h3>
                     <p className="muted text-sm">รับเข้าเมื่อ {new Date(group.events[0].received_at).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'})}</p>
-                    <p className="muted text-xs">หลักฐาน Ledger เดิม: {group.referenceNumbers.join(' / ')} · รับเข้าจากการยืนยันครั้งเดียว</p>
+                    <p className="muted text-xs">อ้างอิงหลักฐาน Ledger เดิม: {group.referenceNumbers.join(' / ')} · บันทึกจากการยืนยันครั้งเดียว</p>
                   </div>
                   <span className="badge">{status}</span>
                 </header>
                 <p className="text-sm font-semibold">รายการน้ำยาที่รับเข้า {received.length} รายการ · จำนวนรวม {units.toLocaleString('th-TH')} หน่วย</p>
-                {!receiptLineError && <div className="grid gap-2">
-                  {received.map((line,index) => {
-                    const product = productNameById.get(productIdByInvoiceLine.get(line.invoice_line_id) ?? '');
-                    const location = locationNameById.get(line.location_id);
-                    return <article key={line.id} className="rounded-lg border border-line p-3 grid gap-2">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <strong className="block break-words">{index+1}. {product ? `${product.code} · ${product.name}` : 'Product ในใบรับเข้า'}</strong>
-                        <span className="font-semibold whitespace-nowrap">จำนวน {line.quantity.toLocaleString('th-TH')}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm muted">
-                        <span>LOT: {line.lot_number}</span>
-                        <span>หมดอายุ: {line.expiry_date}</span>
-                        <span>ตำแหน่ง: {location ? `${location.code} · ${location.name}` : 'ไม่พบชื่อตำแหน่ง'}</span>
-                      </div>
-                    </article>;
-                  })}
-                </div>}
+                {!receiptLineError && <div className="grid gap-2">{received.map((line,index) => {
+                  const product = productNameById.get(productIdByInvoiceLine.get(line.invoice_line_id) ?? '');
+                  const location = locationNameById.get(line.location_id);
+                  return <article key={line.id} className="rounded-lg border border-line p-3 grid gap-2">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <strong className="block break-words">{index+1}. {product ? `${product.code} · ${product.name}` : 'Product ในใบรับเข้า'}</strong>
+                      <span className="font-semibold whitespace-nowrap">จำนวน {line.quantity.toLocaleString('th-TH')}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm muted">
+                      <span>LOT: {line.lot_number}</span>
+                      <span>หมดอายุ: {line.expiry_date}</span>
+                      <span>ตำแหน่ง: {location ? `${location.code} · ${location.name}` : 'ไม่พบชื่อตำแหน่ง'}</span>
+                    </div>
+                  </article>;
+                })}</div>}
               </section>
               <details className="rounded-xl border border-line p-4">
-                <summary className="cursor-pointer font-semibold min-h-11">รายละเอียดการตรวจรับและแก้ไขย้อนหลัง ({group.referenceNumbers.length} รหัสอ้างอิง)</summary>
-                <p className="muted text-sm mt-2 mb-4">การรับเข้าหนึ่งครั้งมีหลักฐานภายในแยกตาม Ledger เพื่อรักษาประวัติการตรวจสอบและสิทธิ์แก้ไขเดิม</p>
+                <summary className="cursor-pointer font-semibold min-h-11">ผลตรวจรับและแก้ไขย้อนหลัง ({group.referenceNumbers.length} รหัสอ้างอิง)</summary>
+                <p className="muted text-sm mt-2 mb-4">หลักฐานเดิมยังแยกตาม Ledger เพื่อรักษาประวัติและสิทธิ์การแก้ไข</p>
                 <div className="grid gap-3">{renderReceiptEvidence(group.events)}</div>
               </details>
-            </div>;
-          })}
-                  </div>
-                </> : <p className="muted text-sm">ไม่พบรายการน้ำยาสำหรับใบรับเข้านี้ หากคาดว่ามีข้อมูล โปรดแจ้งผู้ดูแลระบบตรวจสอบ</p>)}
-              </div>
-              {canEdit && !reversed && <ReceiptEditForm
-                receiptId={event.id}
-                warehouseId={Number(event.warehouse_id)}
-                eventNumber={event.event_number}
-                invoice={{ invoice_number: invoice.invoice_number, invoice_date: invoice.invoice_date, po_number: invoice.po_number }}
-                lines={lines}
-                receiptLines={receiptLinesByReceipt.get(event.id) ?? []}
-                products={products}
-                locations={locations}
-                assessmentRow={event.assessment}
-              />}
-              {canEdit && reversed && <p className="notice">ใบรับเข้านี้ถูกย้อนรายการแล้ว จึงแก้ไขโดยตรงไม่ได้</p>}
-              <ReceiptAssessmentCard eventNumber={event.event_number} invoiceNumber={invoice.invoice_number} receivedAt={event.received_at} assessment={event.assessment} revisions={event.revisions} canRevise={false}/>
             </div>;
           })}
         </section>}
