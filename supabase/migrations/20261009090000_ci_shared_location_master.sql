@@ -26,6 +26,11 @@ create table public.ci_location_warehouses (
   warehouse_id smallint not null references public.ci_warehouses(id),
   primary key(location_id, warehouse_id)
 );
+-- The junction is an internal authorization detail. UI reads ci_locations under
+-- its existing authenticated policy; no direct PostgREST access to this table.
+alter table public.ci_location_warehouses enable row level security;
+revoke all on public.ci_location_warehouses from public, anon, authenticated;
+
 insert into public.ci_location_warehouses(location_id,warehouse_id)
 select l.id,w.id from public.ci_locations l cross join public.ci_warehouses w;
 

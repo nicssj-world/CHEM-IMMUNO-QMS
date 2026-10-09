@@ -84,6 +84,11 @@ test('shared Location Master: legacy IDs survive, storage is shared, stock and p
       assert.ok(rows.rows.some(row => row.id === imm && Number(row.warehouse_id) === 2));
       const links = await owner(db => db.query('SELECT location_id,warehouse_id FROM public.ci_location_warehouses'));
       assert.equal(links.rowCount, 4);
+      await assert.rejects(
+        () => asUser(U.staffChe, db => db.query('SELECT count(*) FROM public.ci_location_warehouses')),
+        /permission denied/,
+        'warehouse link internals are never publicly readable',
+      );
       const cheReadable = await asUser(U.staffChe, db => db.query<{id:string}>('SELECT id FROM public.ci_locations ORDER BY id'));
       const immReadable = await asUser(U.staffImm, db => db.query<{id:string}>('SELECT id FROM public.ci_locations ORDER BY id'));
       assert.deepEqual(cheReadable.rows.map(x=>x.id),immReadable.rows.map(x=>x.id));
