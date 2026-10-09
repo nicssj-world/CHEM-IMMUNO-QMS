@@ -248,3 +248,42 @@ export async function approveCount(form: FormData) {
   if (error) fail(`/counts/${countId}`,error.message);
   success(`/counts/${countId}`);
 }
+
+/** One visible count across both internal signed ledgers. The RPC snapshots atomically. */
+export async function createUnifiedCount(form: FormData) {
+  const back='/counts';
+  const client=await clientOrFail(back);
+  const { data, error }=await client.rpc('ci_create_unified_stock_count',{ p_note:value(form,'note') });
+  if(error || !data) fail(back,error?.message ?? 'เริ่มรอบตรวจนับไม่สำเร็จ');
+  revalidatePath('/counts');
+  redirect(`/counts/${data}`);
+}
+
+export async function setUnifiedCountLine(form: FormData) {
+  const batchId=value(form,'batch_id');
+  const back=`/counts/${batchId}`;
+  const client=await clientOrFail(back);
+  // Never trust the count ID supplied by a browser without matching the read-authorized group.
+  const { data:batch, error:checkError }=await client.from('ci_unified_stock_counts')
+    .select('che_count_id,imm_count_id').eq('id',batchId).maybeSingle();
+  const countId=value(form,'count_id');
+  if(checkError || !batch || (countId!==batch.che_count_id && countId!==batch.imm_count_id))
+    fail(back,'ไม่พบรอบตรวจนับนี้หรือไม่มีสิทธิ์');
+  const { error }=await client.rpc('ci_set_stock_count_line',{
+    p_line_id:value(form,'line_id'),p_physical_quantity:Number(value(form,'physical_quantity'))
+  });
+  if(error) fail(back,error.message);
+  success(back);
+}
+
+export async function approveUnifiedCount(form: FormData) {
+  const batchId=value(form,'batch_id');
+  const back=`/counts/${batchId}`;
+  const client=await clientOrFail(back);
+  const { error }=await client.rpc('ci_approve_unified_stock_count',{
+    p_batch_id:batchId,p_reason:value(form,'reason')
+  });
+  if(error) fail(back,error.message);
+  revalidatePath('/counts');
+  success(back);
+}
