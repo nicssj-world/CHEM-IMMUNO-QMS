@@ -39,7 +39,7 @@ export async function createLocation(form: FormData) {
 
 export type StartInvoiceResult = { ok: true; invoiceId: string; existing: boolean } | { ok: false; message: string };
 
-/** Creates the invoice from scanned/selected lines and returns its id; an existing vendor + number reopens that invoice. */
+/** Creates a new invoice unless an ACTIVE invoice already uses that vendor + number. Cancelled invoices remain historical records. */
 export async function startInvoice(input: { vendorId: string; invoiceNumber: string; invoiceDate: string; poNumber: string; lines: { productId: string; quantity: number }[] }): Promise<StartInvoiceResult> {
   await requireAccess();
   const client = await createClient();
@@ -49,10 +49,19 @@ export async function startInvoice(input: { vendorId: string; invoiceNumber: str
   if (!totals.size) return { ok: false, message: 'กรุณาเพิ่มน้ำยาอย่างน้อยหนึ่งรายการ' };
   const invoiceNumber = input.invoiceNumber.trim();
   if (!input.vendorId || !invoiceNumber || !input.invoiceDate) return { ok: false, message: 'กรุณากรอกผู้ขาย เลขที่ Invoice และวันที่' };
-  const { data: existing } = await client.from('ci_invoices').select('id').eq('vendor_id', input.vendorId).eq('invoice_number', invoiceNumber).limit(1).maybeSingle();
+  const { data: existing, error: lookupError } = await client.from('ci_invoices').select('id').eq('vendor_id', input.vendorId).eq('invoice_number', invoiceNumber).neq('status', 'cancelled').limit(1).maybeSingle();
+  if (lookupError) return { ok: false, message: logUserMessage('startInvoice', lookupError, 'ตรวจสอบเลข Invoice ไม่สำเร็จ') };
   if (existing) return { ok: true, invoiceId: existing.id, existing: true };
   const payload = { vendor_id: input.vendorId, invoice_number: invoiceNumber, invoice_date: input.invoiceDate, po_number: input.poNumber.trim() || null, lines: [...totals].map(([product_id, quantity]) => ({ product_id, quantity: String(quantity) })) };
   const { data, error } = await client.rpc('ci_create_invoice', { p_data: payload });
+  if (error?.code === '23505') {
+    // Another session may have created the active Invoice after our preflight.
+    // The database UNIQUE index rejects duplicates atomically; find that row.
+    const { data: concurrent, error: recheckError } = await client.from('ci_invoices').select('id')
+      .eq('vendor_id', input.vendorId).eq('invoice_number', invoiceNumber)
+      .neq('status', 'cancelled').limit(1).maybeSingle();
+    if (!recheckError && concurrent) return { ok: true, invoiceId: concurrent.id, existing: true };
+  }
   if (error || !data) return { ok: false, message: logUserMessage('startInvoice', error, 'สร้าง Invoice ไม่สำเร็จ') };
   revalidatePath('/receive');
   return { ok: true, invoiceId: data as string, existing: false };
