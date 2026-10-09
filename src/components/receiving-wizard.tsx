@@ -10,7 +10,7 @@ import { ReceiptAssessmentFields } from './receipt-assessment-fields';
 import { DEFAULT_ASSESSMENT, assessmentError, type AssessmentInput } from '@/lib/receipt-assessment';
 import { resolveProductScan } from '@/app/actions/scanner';
 import { createReceivingWizardDraft, saveReceivingWizardDraft, finalizeReceivingWizard } from '@/app/actions/receiving-wizard';
-import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot,
+import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment,
   type WizardDraft, type WizardHeader, type WizardLine, type WizardLot, type WizardLocation, type WizardProduct } from '@/lib/receiving-wizard';
 import { scanBatchFields } from '@/lib/barcode';
 import { userMessage } from '@/lib/messages';
@@ -37,7 +37,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     ? {vendorId:initialDraft.vendor_id,invoiceNumber:initialDraft.invoice_number,invoiceDate:initialDraft.invoice_date,poNumber:initialDraft.po_number??''}
     : initialHeader);
   const [lines,setLines]=useState<WizardLine[]>(initialDraft?.lines ?? []);
-  const [assessment,setAssessment]=useState<AssessmentInput>(initialDraft?.assessment ?? DEFAULT_ASSESSMENT);
+  const [assessment,setAssessment]=useState<AssessmentInput>(restoreWizardAssessment(initialDraft?.assessment));
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
   const [pending,startTransition]=useTransition();
