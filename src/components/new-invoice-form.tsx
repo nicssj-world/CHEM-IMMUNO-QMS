@@ -190,7 +190,7 @@ export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; produ
               </div>
             </div>
             {line.open && <div className="grid gap-3 border-t border-line p-3">
-              <div className="grid sm:grid-cols-[1fr_120px] gap-3">
+              <div className="grid sm:grid-cols-[minmax(0,1fr)_120px] gap-3">
                 <InvoiceReagentPicker products={products} value={line.productId} onChange={productId => patch(line.key, { productId })} />
                 <label className="field">จำนวน<IntegerQuantityInput form={FORM_ID} className="input" min="1" value={line.quantity} onChange={e => patch(line.key, { quantity: e.target.value })} required /></label>
               </div>
