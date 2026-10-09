@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { requireAccess, canMutate, canSupervise } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { ReceiveWorkbench } from '@/components/receive-workbench';
 import { mostRecentReceivedLocations } from '@/lib/recent-receive-location';
-import { NewInvoiceForm } from '@/components/new-invoice-form';
+import { ReceivingWizard } from '@/components/receiving-wizard';
+import type { WizardDraft } from '@/lib/receiving-wizard';
 import { ConfirmForm } from '@/components/confirm-form';
 import { SubmitButton } from '@/components/submit-button';
 import { closeInvoiceShort } from '@/app/actions/vendors';
@@ -24,7 +26,7 @@ type Invoice = { id: string; invoice_number: string; invoice_date: string; statu
 type Line = { invoice_line_id: string; warehouse_id: number; product_id: string; ordered_quantity: number; received_quantity: number; remaining_quantity: number };
 type ReceiptLineRow = { id: string; receipt_id: string; invoice_line_id: string; quantity: number; location_id: string; ci_stock_lots: { lot_number: string; expiry_date: string } | { lot_number: string; expiry_date: string }[] | null };
 
-export default async function ReceivePage({ searchParams }: { searchParams: Promise<{ invoice?: string; error?: string; saved?: string; at?: string }> }) {
+export default async function ReceivePage({ searchParams }: { searchParams: Promise<{ invoice?: string; draft?: string; error?: string; saved?: string; at?: string }> }) {
   const params = await searchParams;
   const access = await requireAccess();
   const client = await createClient();
@@ -42,6 +44,32 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const locations: Location[] = locationRows.map(l => ({ id: l.id, warehouse_id: l.warehouse_id, code: l.code, name: l.name, parent_code: l.parent_location_id ? locationCodes.get(l.parent_location_id) ?? null : null }));
   const invoices = (invoicesResult.data ?? []) as Invoice[];
   const invoice = params.invoice ? invoices.find(item => item.id === params.invoice) ?? (client ? (await client.from('ci_invoices').select('id,invoice_number,invoice_date,status,vendor_id,po_number').eq('id',params.invoice).maybeSingle()).data as Invoice | null : null) : null;
+  // The new four-step flow starts with an Invoice HEADER ONLY, stored separately
+  // from signed invoices. Existing Invoice receipt/history flows remain readable.
+  if (!invoice && warehouseIds.length) {
+    const {data:draftRows,error:draftListError}=client
+      ? await client.from('ci_receive_wizard_drafts')
+        .select('id,invoice_number,invoice_date,vendor_id,step,updated_at')
+        .eq('status','draft').order('updated_at',{ascending:false}).limit(30)
+      : {data:[],error:null};
+    if (draftListError) {
+      return <main className="grid gap-4"><h1 className="page-title">รับน้ำยาเข้าคลัง</h1>
+        <p className="error" role="alert">ไม่สามารถอ่านร่างรับเข้าได้: {logUserMessage('receive-draft',draftListError)}</p>
+      </main>;
+    }
+    const {data:activeDraft,error:draftError}=params.draft && client
+      ? await client.from('ci_receive_wizard_drafts')
+        .select('id,vendor_id,invoice_number,invoice_date,po_number,lines,assessment,step,status,invoice_id,updated_at')
+        .eq('id',params.draft).maybeSingle()
+      : {data:null,error:null};
+    if (draftError || params.draft && !activeDraft) notFound();
+    if (activeDraft?.status==='submitted' && activeDraft.invoice_id) {
+      redirect('/receive?invoice='+encodeURIComponent(activeDraft.invoice_id));
+    }
+    return <main><ReceivingWizard vendors={vendors} products={products} locations={locations}
+      initialDraft={activeDraft as WizardDraft|null} recentInvoices={invoices}
+      recentDrafts={draftRows??[]}/></main>;
+  }
   const { data: lineData, error: lineError } = invoice && client ? await client.from('ci_invoice_line_progress').select('invoice_line_id,warehouse_id,product_id,ordered_quantity,received_quantity,remaining_quantity').eq('invoice_id',invoice.id).limit(1000) : {data:[],error:null};
   const lines = (lineData ?? []) as Line[];
   // History-based suggestion is optional: failures cannot block receiving or manufacture a Location.
@@ -259,12 +287,6 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
           <VendorIssuePanel issues={invoiceIssues} attachments={(invoiceIssueFiles ?? []) as IssueAttachment[]} vendorId={invoice.vendor_id} warehouseId={Number(invoiceIssues[0].warehouse_id)} invoices={[]} canOpen={false} canResolve={supervisesAny} canCancel={access.warehouses.some(w => w.role === 'admin')}/>
         </section>}
       </section> : <>
-        {warehouseIds.length > 0 && <section className="surface p-5 sm:p-7">
-          <h2 className="font-bold text-lg mb-2">สร้าง Invoice</h2>
-          <p className="muted text-sm mb-5">ตรวจเลขที่ Invoice ก่อนสร้าง เพื่อป้องกันการสร้างซ้ำ · ถ้าเลขที่ซ้ำกับผู้ขายเดิม ระบบจะเปิด Invoice เดิม</p>
-          {(canAddVendor || supervisedCodes.length > 0) && <p className="muted text-sm -mt-3 mb-5 flex flex-wrap gap-x-4 gap-y-1">{canAddVendor && <Link href={'/vendors/new?return=' + back('/receive')}>ไม่มีผู้ขายในรายการ? เพิ่มผู้ขาย</Link>}{supervisedCodes.length > 0 && <Link href={'/locations?warehouse=' + supervisedCodes[0] + '&return=' + back('/receive')}>จัดการตำแหน่งจัดเก็บ</Link>}</p>}
-          <NewInvoiceForm vendors={vendors} products={products}/>
-        </section>}
         <section className="surface p-5 sm:p-7">
           <h2 className="font-bold text-lg mb-3">Invoice ล่าสุด</h2>
           <div className="grid gap-2">{invoices.map(item => <Link href={'/receive?invoice=' + item.id} className="flex justify-between gap-3 rounded-xl border border-line p-3 no-underline text-[var(--ink)] min-h-12" key={item.id}><span><strong>{item.invoice_number}</strong><span className="muted text-xs block">{item.invoice_date} · {vendors.find(v => v.id === item.vendor_id)?.name ?? '—'}</span></span><span className="badge">{label(invoiceStatusLabels, item.status)}</span></Link>)}{!invoices.length && <p className="muted text-sm">ยังไม่มี Invoice</p>}</div>
