@@ -1,8 +1,6 @@
 import Link from 'next/link';
 import { requireAccess } from '@/lib/auth';
-import { selectedWarehouse } from '@/lib/warehouse';
 import { createClient } from '@/lib/supabase/server';
-import { WarehouseSwitch } from '@/components/warehouse-switch';
 import { PrintButton } from '@/components/print-button';
 import { bangkokToday, expiryBucket, fiscalYear, stockStatus } from '@/lib/inventory-insights';
 import { reconcileMonthlyRows, reportMonth, type MonthlyRow } from '@/lib/monthly-report';
@@ -14,23 +12,23 @@ const reportColumnLabels = { opening: 'ยอดยกมา', received: 'รั
 export default async function MonthlyReportPage({ searchParams }: { searchParams: Promise<{ warehouse?: string; month?: string }> }) {
   const params = await searchParams;
   const access = await requireAccess();
-  const warehouse = selectedWarehouse(access,params.warehouse);
+  const scopeIds = access.warehouses.map(w => Number(w.id));
   const client = await createClient();
   if (!client) return <p className="error">ยังไม่ได้ตั้งค่า Supabase</p>;
   let month: string;
   try { month = reportMonth(params.month,bangkokToday()); } catch { return <p className="error" role="alert">เดือนรายงานไม่ถูกต้อง</p>; }
-  const [report, reorder, expiry, vendors, locations, productCount, unitRows] = await Promise.all([
-    client.rpc('ci_monthly_inventory_report',{p_warehouse_id:warehouse.id,p_month:`${month}-01`}),
-    client.from('ci_reorder_status').select('product_id,usable_stock,rop,suggested_order',{count:'exact'}).eq('warehouse_id',warehouse.id).limit(500),
-    client.from('ci_stock_balances').select('product_id,lot_number,expiry_date,location_id,balance',{count:'exact'}).eq('warehouse_id',warehouse.id).gt('balance',0).order('expiry_date').limit(1000),
-    client.from('ci_vendor_metrics').select('receipt_count,assessed_count,discrepancy_count,issue_count',{count:'exact'}).eq('warehouse_id',warehouse.id).eq('fiscal_year',fiscalYear(`${month}-01`)).limit(100),
-    client.from('ci_locations').select('id,code',{count:'exact'}).eq('warehouse_id',warehouse.id).limit(200),
-    client.from('ci_products').select('id',{count:'exact',head:true}).eq('warehouse_id',warehouse.id),
-    client.from('ci_products').select('id,base_stock_unit',{count:'exact'}).eq('warehouse_id',warehouse.id).limit(500),
+  const [reports, reorder, expiry, vendors, locations, productCount, unitRows] = await Promise.all([
+    Promise.all(scopeIds.map(id => client.rpc('ci_monthly_inventory_report',{p_warehouse_id:id,p_month:`${month}-01`}))),
+    client.from('ci_reorder_status').select('product_id,usable_stock,rop,suggested_order',{count:'exact'}).in('warehouse_id',scopeIds).limit(500),
+    client.from('ci_stock_balances').select('product_id,lot_number,expiry_date,location_id,balance',{count:'exact'}).in('warehouse_id',scopeIds).gt('balance',0).order('expiry_date').limit(1000),
+    client.from('ci_vendor_metrics').select('receipt_count,assessed_count,discrepancy_count,issue_count',{count:'exact'}).in('warehouse_id',scopeIds).eq('fiscal_year',fiscalYear(`${month}-01`)).limit(100),
+    client.from('ci_locations').select('id,code',{count:'exact'}).limit(200),
+    client.from('ci_products').select('id',{count:'exact',head:true}).in('warehouse_id',scopeIds),
+    client.from('ci_products').select('id,base_stock_unit',{count:'exact'}).in('warehouse_id',scopeIds).limit(500),
   ]);
-  const error = report.error??reorder.error??expiry.error??vendors.error??locations.error??productCount.error??unitRows.error;
+  const error = reports.find(report => report.error)?.error??reorder.error??expiry.error??vendors.error??locations.error??productCount.error??unitRows.error;
   if (error) return <p className="error" role="alert">อ่านรายงานไม่สำเร็จ: {logUserMessage('monthly-report', error)}</p>;
-  const rows = (report.data??[]) as MonthlyRow[];
+  const rows = reports.flatMap(report => (report.data??[]) as MonthlyRow[]).sort((a,b) => a.product_code.localeCompare(b.product_code));
   if (rows.length!==(productCount.count??0) || (productCount.count??0)>500 || (expiry.count??0)>1000 || (reorder.count??0)>500 || (vendors.count??0)>100 || (locations.count??0)>200 || (unitRows.count??0)>500) return <p className="error" role="alert">ข้อมูลรายงานเกินขอบเขตการแสดงผล · ไม่แสดงยอดรวมที่อาจไม่ครบ</p>;
   const {totals,invalidProductCodes} = reconcileMonthlyRows(rows);
   const reorders = (reorder.data??[]).filter(r=>['stockout','below ROP'].includes(stockStatus(Number(r.usable_stock),r.rop==null?null:Number(r.rop))));
@@ -40,8 +38,8 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
   const productMap = new Map(rows.map(row=>[row.product_id,row]));
   const locationMap = new Map((locations.data??[]).map(row=>[row.id,row.code]));
   const fmt=(n:number|string)=>Number(n).toLocaleString('th-TH',{maximumFractionDigits:3});
-  return <main className="grid gap-6 report-page"><div className="print-hide"><Link href="/">← ภาพรวมคลัง</Link></div><header className="flex flex-wrap justify-between items-end gap-4"><div><p className="eyebrow">Monthly inventory</p><h1 className="page-title">รายงานคงคลังรายเดือน</h1><p className="muted">{warehouse.name} · {formatMonth(month)} · เวลา Asia/Bangkok</p><p className="print-only text-xs">พิมพ์โดย {access.displayName} ({access.ephisId}) · {formatDateTime(new Date())}</p></div><PrintButton/></header>
-    <div className="print-hide"><WarehouseSwitch warehouses={access.warehouses} selected={warehouse} path="/reports/monthly"/><form method="get" className="surface p-4 flex flex-wrap gap-3 items-end mt-3"><input type="hidden" name="warehouse" value={warehouse.code}/><label className="field">เดือนรายงาน<input className="input" type="month" name="month" defaultValue={month} required/></label><button className="button">แสดงรายงาน</button></form></div>
+  return <main className="grid gap-6 report-page"><div className="print-hide"><Link href="/">← ภาพรวมคลัง</Link></div><header className="flex flex-wrap justify-between items-end gap-4"><div><p className="eyebrow">Monthly inventory</p><h1 className="page-title">รายงานคงคลังรายเดือน</h1><p className="muted">CHEM-IMMUNO · {formatMonth(month)} · เวลา Asia/Bangkok</p><p className="print-only text-xs">พิมพ์โดย {access.displayName} ({access.ephisId}) · {formatDateTime(new Date())}</p></div><PrintButton/></header>
+    <div className="print-hide"><form method="get" className="surface p-4 flex flex-wrap gap-3 items-end mt-3"><label className="field">เดือนรายงาน<input className="input" type="month" name="month" defaultValue={month} required/></label><button className="button">แสดงรายงาน</button></form></div>
     {invalidProductCodes.length>0 && <p className="error" role="alert">ยอดรายงานไม่สมดุลสำหรับ {invalidProductCodes.join(', ')} · หยุดใช้รายงานนี้เพื่อตรวจสอบ ledger</p>}
     <section className="surface p-5"><h2 className="font-bold text-lg mb-3">ที่มาของยอดคงเหลือ</h2><p className="text-sm">ยอดยกมา + รับเข้า − เบิกใช้ ± ปรับยอด − กำจัดหมดอายุ ± ยกเลิกรายการ = ยอดคงเหลือปลายเดือน</p><div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">{(['opening','received','issued','adjustments','expired_disposal','reversals','closing'] as const).map(key=><div key={key} className="border rounded-lg p-3"><p className="muted text-xs">{reportColumnLabels[key]}</p><strong>{fmt(totals[key])}</strong></div>)}</div></section>
     <section className="surface p-5"><h2 className="font-bold text-lg mb-3">รายการน้ำยา ({rows.length})</h2><div className="table-wrap desktop-table"><table className="data-table report-table"><thead><tr>{['น้ำยา',reportColumnLabels.opening,reportColumnLabels.received,reportColumnLabels.issued,reportColumnLabels.adjustments,reportColumnLabels.expired_disposal,reportColumnLabels.reversals,reportColumnLabels.closing].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{rows.map(row=><tr key={row.product_id}><td>{row.product_code} · {row.display_name}</td>{(['opening','received','issued','adjustments','expired_disposal','reversals','closing'] as const).map(key=><td key={key}>{fmt(row[key])}</td>)}</tr>)}</tbody></table></div><div className="mobile-card-list">{rows.map(row=><article key={row.product_id} className="border rounded-lg p-3"><strong>{row.product_code} · {row.display_name}</strong><p className="text-sm muted mt-1">ยอดยกมา {fmt(row.opening)} + รับเข้า {fmt(row.received)} − เบิกใช้ {fmt(row.issued)} ± ปรับยอด {fmt(row.adjustments)} − กำจัดหมดอายุ {fmt(row.expired_disposal)} ± ยกเลิกรายการ {fmt(row.reversals)} = <strong>{fmt(row.closing)}</strong></p></article>)}</div></section>

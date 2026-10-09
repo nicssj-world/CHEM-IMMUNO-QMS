@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { createClient } from '@supabase/supabase-js';
 import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
 import { ReceiptPackageReview } from './receipt-package-review';
-import { checkLotExpiryConflict, proposeScanMapping, registerInvoiceAttachment, removeInvoiceAttachment, resolveScan, type ScanResolution } from '@/app/actions/scanner';
+import { checkLotExpiryConflict, proposeScanMapping, registerInvoiceAttachment, removeInvoiceAttachment, resolveProductScan, type ScanResolution } from '@/app/actions/scanner';
 import { confirmReceipt } from '@/app/actions/inventory';
 import { clearReceiveDraft, readReceiveDraft } from '@/lib/receive-draft';
 import { userMessage } from '@/lib/messages';
@@ -37,7 +37,7 @@ function getInvoiceStorageClient(url: string, key: string) {
 }
 
 export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, products, locations, warehouseIds, initialAttachments, savedToken, recentLocationByProduct = {} }: { invoiceId: string; userId: string; idempotencyKey: string; lines: Line[]; products: Product[]; locations: Location[]; warehouseIds: number[]; initialAttachments: Attachment[]; savedToken?: string; recentLocationByProduct?: Record<string, string> }) {
-  const [warehouseId, setWarehouseId] = useState(warehouseIds[0]);
+  const warehouseId = warehouseIds[0];
   const [scan, setScan] = useState<ScanResolution | null>(null);
   const [showScanDetails, setShowScanDetails] = useState(false);
   const [draft, setDraft] = useState<Draft>({ invoiceLineId: '', quantity: '1', lot: '', expiry: '', locationId: '' });
@@ -47,7 +47,7 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
   const [draftKey, setDraftKey] = useState(idempotencyKey);
   const [draftRestored, setDraftRestored] = useState(false);
   const [draftStorageWarning, setDraftStorageWarning] = useState(false);
-  const [sessionLocationByWarehouse, setSessionLocationByWarehouse] = useState<Record<number,string>>({});
+  const [sessionLocationId, setSessionLocationId] = useState('');
   const [scanFeedback, setScanFeedback] = useState<ScanFeedback | null>(null);
   const scanFeedbackId = useRef(0);
   const [message, setMessage] = useState('');
@@ -159,14 +159,13 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
   const totalUnits = packages.reduce((sum,item)=>sum+(Number(item.quantity)||0),0);
   function suggestedLocation(productId: string, warehouse: number): string {
     const latest = [...packagesRef.current].reverse().find(item => lineById.get(item.invoiceLineId)?.product_id===productId);
-    const session = sessionLocationByWarehouse[warehouse];
+    const session = sessionLocationId;
     if (session && locations.some(location => location.id===session)) return session;
     return preselectLocation(productById.get(productId)?.default_location_id,warehouse,locations,latest?.locationId ?? recentLocationByProduct[productId]);
   }
   function showAddLot(lineId: string) {
     const line = lineById.get(lineId);
     if (!line) return;
-    setWarehouseId(line.warehouse_id);
     setScan(null);
     setShowScanDetails(true);
     setDraft({invoiceLineId:lineId,lot:'',expiry:'',quantity:'1',locationId:suggestedLocation(line.product_id,line.warehouse_id)});
@@ -185,12 +184,19 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
     setShowScanDetails(false);
     setMessage('กำลังตรวจ Barcode…');
     try {
-      const result = await resolveScan(raw,symbology,warehouseId,invoiceId);
+      const resolved = await resolveProductScan(raw,symbology);
+      const invoiceLine = lines.find(item => item.product_id === resolved.product?.id);
+      const result: ScanResolution = {
+        parsed: resolved.parsed, locationQr: resolved.locationQr,
+        productId: resolved.product?.id, productCode: resolved.product?.code,
+        invoiceLineId: invoiceLine?.invoice_line_id,
+        message: resolved.product && !invoiceLine ? 'น้ำยาที่สแกนไม่อยู่ใน Invoice นี้' : resolved.message,
+      };
       if (result.locationQr) { setScan(null);setLocationPath(result.locationQr.path);setMessage(result.message ?? '');return; }
       setScan(result);
       const lineId = result.invoiceLineId ?? '';
       const line = lineById.get(lineId);
-      const locationId = result.productId ? suggestedLocation(result.productId,warehouseId) : '';
+      const locationId = result.productId ? line ? suggestedLocation(result.productId,line.warehouse_id) : '' : '';
       const batch = scanBatchFields(result.parsed);
       const candidate: Package = {id:crypto.randomUUID(),invoiceLineId:lineId,quantity:'1',lot:batch.lot,expiry:batch.expiry,locationId,raw};
       if (line && !batch.requiresReview && batch.lot && batch.expiry && locationId) {
@@ -248,7 +254,7 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
       const added=appendReceiptPackage(packagesRef.current,candidate,lines);
       if (!added.ok) {setMessage('ยอดค้างรับเปลี่ยน กรุณาตรวจร่างอีกครั้ง');return;}
       setPack(added.packages);
-      setSessionLocationByWarehouse(prev=>({...prev,[line.warehouse_id]:candidate.locationId}));
+      setSessionLocationId(candidate.locationId);
       setScan(null);
       setShowScanDetails(false);
       setDraft({invoiceLineId:'',quantity:'1',lot:'',expiry:'',locationId:''});
@@ -299,10 +305,9 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
 
   return <div className="grid gap-6">
     <section className="surface p-5 sm:p-7 grid gap-4"><h2 className="font-bold text-lg">ภาพ Invoice / เอกสารส่งของ</h2><p className="muted text-sm">เก็บใน Storage ส่วนตัว · จำกัด 10 MB · อนุญาตรูปภาพหรือ PDF</p><div className="grid sm:grid-cols-2 gap-3"><label className="field">ถ่ายภาพด้วยกล้อง<input className="input" type="file" accept="image/*" capture="environment" onChange={e => chooseImage(e.target.files?.[0])}/></label><label className="field">เลือกจากรูปภาพ/ไฟล์<input className="input" type="file" accept="image/*,application/pdf" onChange={e => chooseImage(e.target.files?.[0])}/></label></div>{imagePreview && <Image src={imagePreview} alt="ตัวอย่างเอกสารก่อนอัปโหลด" width={500} height={300} unoptimized className="max-h-64 max-w-full object-contain rounded-lg"/>}{attachments.length>0 && <div className="grid gap-2">{attachments.map(item=><div className="flex flex-wrap gap-2 items-center" key={item.id}><a className="button secondary" href={`/attachments/${item.id}`} target="_blank" rel="noopener noreferrer">ดูเอกสาร {item.uploaded_at}</a><button className="button danger" type="button" disabled={busy} onClick={() => void removeImage(item.id)}>ลบก่อนยืนยัน</button></div>)}<p className="muted text-xs">หากต้องการเปลี่ยนภาพ ให้ลบภาพที่อัปโหลดก่อน</p></div>}<p role="status" className="muted text-sm">{photoStatus}</p><div className="flex gap-2 flex-wrap"><button className="button" type="button" disabled={!image || busy || attachments.length>0} onClick={() => void uploadImage()}>บันทึกภาพ</button><button className="button secondary" type="button" disabled={!image} onClick={() => chooseImage()}>นำภาพที่เลือกออก</button></div></section>
-    <section id="ci-receive-entry" className="surface p-4 sm:p-7 grid gap-4 scroll-mt-4"><div><h2 className="font-bold text-lg">สแกนน้ำยาและจัดร่างรับเข้า</h2><p className="muted text-sm">หนึ่ง Invoice มีน้ำยาได้ทั้งสองคลัง · การสแกนยังไม่เพิ่ม Stock</p></div><label className="field">คลังที่กำลังสแกน<select className="input" value={warehouseId} onChange={e => { setWarehouseId(Number(e.target.value)); setScan(null); setShowScanDetails(false); setDraft({ invoiceLineId: '', quantity: '1', lot: '', expiry: '', locationId: '' }); }}>
-      {warehouseIds.map(id => <option key={id} value={id}>{id === 1 ? 'CLINICAL CHEMISTRY' : id === 2 ? 'IMMUNOLOGY' : `คลัง ${id}`}</option>)}</select></label>
+    <section id="ci-receive-entry" className="surface p-4 sm:p-7 grid gap-4 scroll-mt-4"><div><h2 className="font-bold text-lg">สแกนน้ำยาและจัดร่างรับเข้า</h2><p className="muted text-sm">ระบบเลือกรหัสน้ำยา CHE/IMM อัตโนมัติ · การสแกนยังไม่เพิ่ม Stock</p></div>
       <label className="field">ตำแหน่งจัดเก็บสำหรับการสแกนรอบนี้ (ถ้ามี)
-        <select className="input min-h-11" value={sessionLocationByWarehouse[warehouseId] ?? ''} onChange={e=>setSessionLocationByWarehouse(prev=>({...prev,[warehouseId]:e.target.value}))}>
+        <select className="input min-h-11" value={sessionLocationId} onChange={e => setSessionLocationId(e.target.value)}>
           <option value="">เลือกอัตโนมัติจาก Product / ครั้งก่อน</option>
           {locations.map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code ? loc.parent_code+' › ' : ''}{loc.code} · {loc.name}</option>)}
         </select>
@@ -314,7 +319,7 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
       {locationPath && <a className="button secondary" href={locationPath}>เปิดตำแหน่งนี้</a>}
       {scanReady && !showScanDetails && <div className="notice grid gap-2 text-sm"><strong>ข้อมูลจาก Data Matrix พร้อมรับเข้า</strong><p>{scan?.productCode} · LOT {draft.lot} · หมดอายุ {draft.expiry}</p><button className="button secondary justify-self-start" type="button" onClick={() => setShowScanDetails(true)}>แก้ไขข้อมูลที่สแกน</button></div>}
        <label className="field">จำนวนแพ็ก/หน่วยฐาน<IntegerQuantityInput className="input" min="1" value={draft.quantity} onChange={e => setDraft({ ...draft, quantity:e.target.value })} required/></label>
-       {(!scanReady || showScanDetails) && <div className="grid sm:grid-cols-2 gap-3"><label className="field sm:col-span-2">Product ใน Invoice<select className="input" value={draft.invoiceLineId} onChange={e => { const line = lineById.get(e.target.value); setDraft({ ...draft, invoiceLineId: e.target.value, locationId: line ? suggestedLocation(line.product_id,line.warehouse_id) : '' }); }} required><option value="">เลือก Product</option>{lines.filter(l => l.warehouse_id === warehouseId && Number(l.remaining_quantity)>0).map(l => { const product=productById.get(l.product_id); return <option key={l.invoice_line_id} value={l.invoice_line_id}>{product?.product_code} · {product?.display_name} · ค้าง {l.remaining_quantity}</option>; })}</select></label><label className="field">LOT {scan?.parsed.lot && !scanBatchFields(scan.parsed).requiresReview ? '(จาก Barcode · ตรวจได้)' : ''}<input className="input" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" value={draft.lot} onChange={e => setDraft({ ...draft, lot:e.target.value })} required/></label><label className="field">หมดอายุ {scan?.parsed.expiry && !scanBatchFields(scan.parsed).requiresReview ? '(จาก Barcode · ตรวจได้)' : ''}<input className="input" type="date" value={draft.expiry} onChange={e => setDraft({ ...draft, expiry:e.target.value })} required/></label><label className="field">ตำแหน่ง<select className="input" value={draft.locationId} onChange={e => setDraft({ ...draft, locationId:e.target.value })} required><option value="">เลือกตำแหน่ง</option>{locations.map(l => <option key={l.id} value={l.id}>{l.parent_code ? `${l.parent_code} › ` : ''}{l.code} · {l.name}</option>)}</select></label></div>}
+       {(!scanReady || showScanDetails) && <div className="grid sm:grid-cols-2 gap-3"><label className="field sm:col-span-2">Product ใน Invoice<select className="input" value={draft.invoiceLineId} onChange={e => { const line = lineById.get(e.target.value); setDraft({ ...draft, invoiceLineId: e.target.value, locationId: line ? suggestedLocation(line.product_id,line.warehouse_id) : '' }); }} required><option value="">เลือก Product</option>{lines.filter(l => warehouseIds.includes(l.warehouse_id) && Number(l.remaining_quantity)>0).map(l => { const product=productById.get(l.product_id); return <option key={l.invoice_line_id} value={l.invoice_line_id}>{product?.product_code} · {product?.display_name} · ค้าง {l.remaining_quantity}</option>; })}</select></label><label className="field">LOT {scan?.parsed.lot && !scanBatchFields(scan.parsed).requiresReview ? '(จาก Barcode · ตรวจได้)' : ''}<input className="input" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" value={draft.lot} onChange={e => setDraft({ ...draft, lot:e.target.value })} required/></label><label className="field">หมดอายุ {scan?.parsed.expiry && !scanBatchFields(scan.parsed).requiresReview ? '(จาก Barcode · ตรวจได้)' : ''}<input className="input" type="date" value={draft.expiry} onChange={e => setDraft({ ...draft, expiry:e.target.value })} required/></label><label className="field">ตำแหน่ง<select className="input" value={draft.locationId} onChange={e => setDraft({ ...draft, locationId:e.target.value })} required><option value="">เลือกตำแหน่ง</option>{locations.map(l => <option key={l.id} value={l.id}>{l.parent_code ? `${l.parent_code} › ` : ''}{l.code} · {l.name}</option>)}</select></label></div>}
        {scan && !scan.invoiceLineId && <button className="button secondary" type="button" onClick={() => void propose()}>เสนอการจับคู่ Barcode กับ Product ที่เลือก</button>}
       <button className="button min-h-12" disabled={busy} type="button" onClick={() => void addPackage()}>เพิ่มแพ็กเกจในร่าง</button>
     </section>

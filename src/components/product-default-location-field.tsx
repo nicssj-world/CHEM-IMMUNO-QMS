@@ -15,7 +15,7 @@ export function ProductDefaultLocationField({ warehouses, locations, defaultWare
   const byId = new Map(locations.map(location => [location.id, location]));
   const options = locations;
   return <>
-    <label className="field">คลัง<select name="warehouse_id" className="input" required value={warehouseId}
+    <label className="field">กลุ่มรหัสน้ำยา<select name="warehouse_id" className="input" required value={warehouseId}
       onChange={event => { setWarehouseId(Number(event.target.value)); }}>
       {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
     </select></label>

@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { adjustStock, getAdjustmentLotOptions } from '@/app/actions/inventory';
-import { resolveAdjustmentProductScan } from '@/app/actions/scanner';
+import { resolveProductScan } from '@/app/actions/scanner';
 import { userMessage } from '@/lib/messages';
 import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
 import { ConfirmForm } from './confirm-form';
@@ -26,7 +26,7 @@ export function StockAdjustmentWorkbench({
 }: {
   warehouseId: number;
   warehouseCode: string;
-  products: PickerProduct[];
+  products: (PickerProduct & { warehouse_id: number })[];
   locations: LocationOption[];
   initialOptions: StockOption[];
   initialProductId?: string;
@@ -50,6 +50,8 @@ export function StockAdjustmentWorkbench({
   const productById = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
   const locationById = useMemo(() => new Map(locations.map(location => [location.id, location])), [locations]);
   const product = productById.get(productId);
+  const activeWarehouseId = product?.warehouse_id ?? warehouseId;
+  const activeWarehouseCode = product?.product_code.startsWith('IMM-') ? 'IMM' : product?.product_code.startsWith('CHE-') ? 'CHE' : warehouseCode;
   const sameNumberOptions = lotNumber ? options.filter(option => option.lot_number === lotNumber) : [];
   const expiryConflict = Boolean(sameNumberOptions.length && expiry && !sameNumberOptions.some(option => option.expiry_date === expiry));
   const matchingLotRows = lotRows(options, lotNumber, expiry);
@@ -109,7 +111,7 @@ export function StockAdjustmentWorkbench({
     if (!nextProductId) return;
     setBusy(true);
     try {
-      const loaded = optionsForProduct(await getAdjustmentLotOptions(warehouseId, nextProductId), nextProductId);
+      const loaded = optionsForProduct(await getAdjustmentLotOptions(productById.get(nextProductId)?.warehouse_id ?? warehouseId, nextProductId), nextProductId);
       setOptions(loaded);
       if (keepLot) chooseExistingLot(loaded, keepLot, keepExpiry);
     } catch (cause) {
@@ -121,7 +123,7 @@ export function StockAdjustmentWorkbench({
     setFormError('');
     setBusy(true);
     try {
-      const result = await resolveAdjustmentProductScan(value, symbology, warehouseId);
+      const result = await resolveProductScan(value, symbology);
       if (result.locationQr) { tell('warn', 'นี่คือ QR ตำแหน่งจัดเก็บ', 'ไม่ใช่ Barcode น้ำยา · ยังไม่ได้ปรับยอด'); return; }
       setRaw(value);
       setOptions([]);
@@ -136,7 +138,7 @@ export function StockAdjustmentWorkbench({
       setExpiry(nextExpiry);
       if (result.product) {
         setProductId(result.product.id);
-        const loaded = optionsForProduct(await getAdjustmentLotOptions(warehouseId, result.product.id), result.product.id);
+        const loaded = optionsForProduct(await getAdjustmentLotOptions(result.product.warehouseId, result.product.id), result.product.id);
         setOptions(loaded);
         if (nextLot) chooseExistingLot(loaded, nextLot, nextExpiry);
         const productLabel = `${result.product.code} · ${result.product.name}`;
@@ -213,8 +215,8 @@ export function StockAdjustmentWorkbench({
     <ConfirmForm action={adjustStock} className="surface p-5 sm:p-7 grid gap-4" message={data => `ยืนยันปรับยอด ${summaryText}\nLOT ${lotNumber} · หมดอายุ ${expiry} · ${selectedLocation?.code ?? ''}\nปรับ ${delta > 0 ? '+' : ''}${delta} · ยอดตำแหน่งนี้ ${selectedBalance} → ${after}\nเหตุผล: ${String(data.get('reason') ?? '')}\n\nบันทึกแล้วแก้ไขไม่ได้ ต้องใช้การยกเลิกรายการ`}>
       <input type="hidden" name="lot_id" value={lotId}/>
       <input type="hidden" name="product_id" value={productId}/>
-      <input type="hidden" name="warehouse_id" value={warehouseId}/>
-      <input type="hidden" name="warehouse" value={warehouseCode}/>
+      <input type="hidden" name="warehouse_id" value={activeWarehouseId}/>
+      <input type="hidden" name="warehouse" value={activeWarehouseCode}/>
       <input type="hidden" name="product" value={productId}/>
       <input type="hidden" name="lot_number" value={lotNumber}/>
       <input type="hidden" name="expiry_date" value={expiry}/>
