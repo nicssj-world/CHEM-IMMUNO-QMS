@@ -200,6 +200,20 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     }
   }
 
+  // Sequential, debounced server-side autosave. An in-flight edit can never land
+  // after a newer explicit Next/Save and silently rewind a cross-device draft.
+  useEffect(()=>{
+    if(!draftId)return;
+    const timer=setTimeout(()=>{
+      const snapshot={header,lines,assessment,step};
+      savedQueue.current=savedQueue.current.then(async()=>{
+        const result=await saveReceivingWizardDraft(draftId,snapshot.header,snapshot.lines,snapshot.assessment,snapshot.step,true);
+        if(!result.ok)setNotice('บันทึกอัตโนมัติไม่สำเร็จ · โปรดกดบันทึกร่างก่อนออกจากหน้า');
+      }).catch(()=>setNotice('บันทึกอัตโนมัติไม่สำเร็จ · โปรดกดบันทึกร่างก่อนออกจากหน้า'));
+    },1200);
+    return ()=>clearTimeout(timer);
+  },[draftId,header,lines,assessment,step]);
+
   function save(nextStep:number) {
     setError('');setNotice('');
     const headerIssue=wizardHeaderError(header);
@@ -221,6 +235,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           router.replace('/receive?draft='+encodeURIComponent(result.id));
           return;
         }
+        await savedQueue.current;
         const result=await saveReceivingWizardDraft(draftId,header,lines,assessment,nextStep);
         if(!result.ok){setError(result.message);return;}
         setStep(nextStep);
@@ -238,6 +253,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     setError('');
     startTransition(async()=>{
       try {
+        await savedQueue.current;
         const result=await finalizeReceivingWizard(draftId,header,lines,assessment);
         if(!result.ok){setError(result.message);return;}
         router.replace('/receive?invoice='+encodeURIComponent(result.id)+'&saved='+encodeURIComponent('ยืนยันรับน้ำยาเรียบร้อย')+'&at='+Date.now().toString(36));
@@ -321,9 +337,57 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         <p className="muted text-sm">กำหนดจำนวนตาม Invoice หนึ่งครั้งต่อ Product · จำนวนรับจริงระบุแยกตาม LOT · รับบางส่วนได้</p></div>
       <div className="rounded-lg bg-surface-2 p-3 text-sm"><strong>Invoice {header.invoiceNumber}</strong> · {vendorsById.get(header.vendorId)?.name??'—'}</div>
       <p className="muted text-xs">ภาพ Invoice หรือเอกสารส่งของสามารถแนบได้หลังยืนยันรับเข้า และยังเปิดดู/แนบเพิ่มได้จาก Invoice เดิม</p>
-      <div className="grid gap-3 rounded-xl border border-line p-3">
+      <div className="grid gap-3 rounded-xl border border-line p-3 min-w-0">
         <h3 className="font-bold">เพิ่มน้ำยาจาก Barcode</h3>
-        <BarcodeScanner onScan={onScan} dock continuous summary={<span className="text-sm font-semibold">ร่าง {totals.lots} LOT · {totals.received} หน่วย</span>}/>
+        <label className="field min-w-0">ตำแหน่งจัดเก็บสำหรับการสแกนรอบนี้ (ถ้ามี)
+          <select className="input" value={sessionLocationId} onChange={e=>setSessionLocationId(e.target.value)}>
+            <option value="">เลือกอัตโนมัติจาก Product / ครั้งก่อน</option>
+            {locations.map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code?loc.parent_code+' › ':''}{loc.code} · {loc.name}</option>)}
+          </select>
+          <span className="muted text-xs">เลือกครั้งเดียวเพื่อใช้กับการสแกนถัดไป · แต่ละ LOT ยังเปลี่ยนตำแหน่งเองได้</span>
+        </label>
+        <BarcodeScanner onScan={onScan} dock continuous feedback={scanFeedback}
+          summary={<span className="text-sm font-semibold">ร่าง {totals.lots} LOT · {totals.received.toLocaleString('th-TH')} หน่วย</span>}/>
+        {locationPath && <Link className="button secondary justify-self-start" href={locationPath}>เปิดตำแหน่งที่สแกน</Link>}
+        {scanReview && <section className="rounded-xl border border-amber-300 bg-amber-50 p-3 grid gap-3 text-slate-900 min-w-0"
+          aria-label="ตรวจสอบ Barcode ก่อนเพิ่มลงร่าง">
+          <div className="flex flex-wrap justify-between items-start gap-2">
+            <div><strong className="block">ตรวจสอบ Barcode ก่อนเพิ่ม</strong>
+              <p className="text-xs">ข้อมูลที่ยังไม่ยืนยันจะไม่เพิ่มจำนวนรับเข้า · กรุณาตรวจสอบกับฉลากจริง</p></div>
+            <button className="button secondary shrink-0" type="button" onClick={()=>setScanReview(null)}>ยกเลิกผลสแกนนี้</button>
+          </div>
+          <div className="text-xs grid gap-1 break-all">
+            <p><strong>Raw:</strong> <code>{scanReview.raw}</code></p>
+            <p>{scanReview.parsed.standard} · {scanReview.parsed.symbology} · REF (240): {scanReview.parsed.additionalProductId??'—'}</p>
+            <p>GTIN (01): {scanReview.parsed.gtin??'—'} · LOT: {scanReview.parsed.lot??'ต้องกรอก'} · Expiry: {scanReview.parsed.expiry??'ต้องกรอก'}</p>
+            {scanReview.parsed.warnings.map((warning,i)=><p role="alert" key={i}>⚠ {warning}</p>)}
+          </div>
+          <InvoiceReagentPicker products={products} value={scanReview.productId}
+            onChange={productId=>setScanReview(previous=>previous?{...previous,productId,locationId:suggestedLocation(productId)}:previous)}/>
+          <div className="grid sm:grid-cols-2 gap-3 min-w-0">
+            <label className="field min-w-0">LOT *
+              <input className="input" autoCapitalize="characters" value={scanReview.lot}
+                onChange={e=>setScanReview(previous=>previous?{...previous,lot:e.target.value}:previous)}/></label>
+            <label className="field min-w-0">หมดอายุ *
+              <input type="date" className="input block min-w-0 max-w-full" value={scanReview.expiry}
+                onChange={e=>setScanReview(previous=>previous?{...previous,expiry:e.target.value}:previous)}/></label>
+            <label className="field min-w-0">ตำแหน่งจัดเก็บ *
+              <select className="input" value={scanReview.locationId}
+                onChange={e=>setScanReview(previous=>previous?{...previous,locationId:e.target.value}:previous)}>
+                <option value="">เลือกตำแหน่ง</option>
+                {locations.map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code?loc.parent_code+' › ':''}{loc.code} · {loc.name}</option>)}
+              </select></label>
+            <label className="field min-w-0">จำนวนรับจริง *
+              <IntegerQuantityInput className="input" min="1" value={scanReview.quantity}
+                onChange={e=>setScanReview(previous=>previous?{...previous,quantity:e.target.value}:previous)}/></label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="button" disabled={scanBusy||pending||!scanReview.productId}
+              onClick={()=>void addReviewedScan()}>ตรวจสอบและเพิ่มลงร่าง</button>
+            <button type="button" className="button secondary" disabled={scanBusy||!scanReview.productId}
+              onClick={()=>void proposeMapping()}>เสนอการจับคู่ Barcode</button>
+          </div>
+        </section>}
         <h3 className="font-bold">หรือเพิ่มน้ำยาด้วยตนเอง</h3>
         <InvoiceReagentPicker products={products} value="" onChange={addProduct}/>
       </div>
