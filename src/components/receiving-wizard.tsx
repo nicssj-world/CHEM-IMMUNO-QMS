@@ -77,7 +77,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       setLines(old=>{
         const existing=old.find(line=>line.productId===product.id);
         const current=existing ?? makeLine(product.id,product.default_location_id && locationsById.has(product.default_location_id)?product.default_location_id:'');
-        const matched=current.packages.find(pkg=>knownLot && expiry && pkg.lot===knownLot && pkg.expiry===expiry && pkg.locationId);
+        const matched=current.packages.find(pkg=>knownLot && expiry && pkg.lot===knownLot && pkg.expiry===expiry);
         const nextPackages=matched
           ? current.packages.map(pkg=>pkg.id===matched.id?{...pkg,quantity:String(Number(pkg.quantity)+1)}:pkg)
           : current.packages.length===1 && !current.packages[0].lot && !current.packages[0].expiry
