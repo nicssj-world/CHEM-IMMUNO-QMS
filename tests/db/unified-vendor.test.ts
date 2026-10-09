@@ -45,12 +45,12 @@ test('unified vendor official report: RLS, double-counting, stale guard and immu
   });
   const vendor=await rpc<string>(ADMIN,'ci_create_vendor',[{vendorCode:'V-UNIFIED',name:'Vendor combined'}],['jsonb']);
   await t.test('single-scope staff cannot create a report or read its row',async()=>{
-   await assert.rejects(rpc(CHE_ONLY,'ci_create_unified_vendor_report',[vendor,2569],['uuid','integer']),/CI_ACCESS_DENIED/);
+   await assert.rejects(rpc(CHE_ONLY,'ci_create_unified_vendor_report',[vendor,2570],['uuid','integer']),/CI_ACCESS_DENIED/);
   });
   const policy=await privileged(async c=>(await c.query<{id:string}>("SELECT id FROM ci_vendor_evaluation_policies WHERE version='VE-POLICY-V1'")).rows[0].id);
   await rpc(ADMIN,'ci_approve_vendor_evaluation_policy',[policy],['uuid']);
-  const draft=await rpc<string>(ADMIN,'ci_create_unified_vendor_report',[vendor,2569],['uuid','integer']);
-  const same=await rpc<string>(ADMIN,'ci_create_unified_vendor_report',[vendor,2569],['uuid','integer']);
+  const draft=await rpc<string>(ADMIN,'ci_create_unified_vendor_report',[vendor,2570],['uuid','integer']);
+  const same=await rpc<string>(ADMIN,'ci_create_unified_vendor_report',[vendor,2570],['uuid','integer']);
   assert.equal(same,draft);
   const hidden=await asUser(CHE_ONLY,c=>c.query('SELECT id FROM ci_unified_vendor_reports WHERE id=$1',[draft]));
   assert.equal(hidden.rowCount,0);
@@ -58,18 +58,18 @@ test('unified vendor official report: RLS, double-counting, stale guard and immu
   const che=await rpc<string>(ADMIN,'ci_create_product',[{warehouse_id:1,product_type:'reagent',source_name:'Chem',current_ref:'REF-UNIFIED-CHE',manufacturer_barcode:'BC-UNIFIED-CHE'}],['jsonb']);
   const imm=await rpc<string>(ADMIN,'ci_create_product',[{warehouse_id:2,product_type:'reagent',source_name:'Immuno',current_ref:'REF-UNIFIED-IMM',manufacturer_barcode:'BC-UNIFIED-IMM'}],['jsonb']);
   const loc=await rpc<string>(ADMIN,'ci_create_location_v2',[{warehouse_id:1,code:'SHARED-01',name:'Reagent Shelf',location_type:'refrigerator'}],['jsonb']);
-  const invoice=await rpc<string>(ADMIN,'ci_create_invoice',[{vendor_id:vendor,invoice_number:'COMBINED-001',invoice_date:'2026-09-25',lines:[{product_id:che,quantity:1},{product_id:imm,quantity:1}]}],['jsonb']);
+  const invoice=await rpc<string>(ADMIN,'ci_create_invoice',[{vendor_id:vendor,invoice_number:'COMBINED-001',invoice_date:'2026-10-09',lines:[{product_id:che,quantity:1},{product_id:imm,quantity:1}]}],['jsonb']);
   const lines=await privileged(async c=>(await c.query<{id:string;warehouse_id:number}>('SELECT id,warehouse_id FROM ci_invoice_lines WHERE invoice_id=$1 ORDER BY warehouse_id',[invoice])).rows);
   assert.equal(lines.length,2);
   for(const [i,line] of lines.entries()){
    await rpc(ADMIN,'ci_confirm_receipt_assessed',[invoice,[{invoice_line_id:line.id,quantity:1,lot_number:'LOT-'+i,expiry_date:'2027-05-01',location_id:loc}],'combined-'+i,assessment],['uuid','jsonb','text','jsonb']);
   }
   await t.test('one mixed invoice appears once in vendor evidence from two receipt ledgers',async()=>{
-   const rows=await asUser(ADMIN,c=>c.query<{evidence_snapshot:any}>('SELECT evidence_snapshot FROM ci_unified_vendor_reports WHERE id=$1',[draft]));
+   const rows=await asUser(ADMIN,c=>c.query<{evidence_snapshot:{activity:{invoices:number;receipts:number};warehouse:{code:string}}}>('SELECT evidence_snapshot FROM ci_unified_vendor_reports WHERE id=$1',[draft]));
    assert.equal(rows.rows[0].evidence_snapshot.activity.invoices,0,'draft is frozen until explicit refresh');
    await assert.rejects(rpc(ADMIN,'ci_finalize_unified_vendor_report',[draft],['uuid']),/CI_ANNUAL_EVIDENCE_STALE/);
    await rpc(ADMIN,'ci_refresh_unified_vendor_report',[draft],['uuid']);
-   const updated=await asUser(ADMIN,c=>c.query<{evidence_snapshot:any}>('SELECT evidence_snapshot FROM ci_unified_vendor_reports WHERE id=$1',[draft]));
+   const updated=await asUser(ADMIN,c=>c.query<{evidence_snapshot:{activity:{invoices:number;receipts:number};warehouse:{code:string}}}>('SELECT evidence_snapshot FROM ci_unified_vendor_reports WHERE id=$1',[draft]));
    assert.equal(updated.rows[0].evidence_snapshot.activity.invoices,1);
    assert.equal(updated.rows[0].evidence_snapshot.activity.receipts,2);
    assert.equal(updated.rows[0].evidence_snapshot.warehouse.code,'ALL');
@@ -78,9 +78,9 @@ test('unified vendor official report: RLS, double-counting, stale guard and immu
   const draftInput={summary:'Verified',strengths:'Reliable',risksConcerns:'Monitored',recommendations:'Continue',evaluatorId:ADMIN,reviewerId:ADMIN,approverId:ADMIN};
   await rpc(ADMIN,'ci_save_unified_vendor_report',[draft,draftInput],['uuid','jsonb']);
   const number=await rpc<string>(ADMIN,'ci_finalize_unified_vendor_report',[draft],['uuid']);
-  assert.match(number,/^VEC-2569-0001$/);
+  assert.match(number,/^VEC-2570-0001$/);
   await t.test('official report freezes score, signatures and policy; cannot be changed',async()=>{
-   const row=await asUser(ADMIN,c=>c.query<{status:string;frozen_snapshot:any;evaluator_signature:string}>('SELECT status,frozen_snapshot,evaluator_signature FROM ci_unified_vendor_reports WHERE id=$1',[draft]));
+   const row=await asUser(ADMIN,c=>c.query<{status:string;frozen_snapshot:{evidence:{activity:{invoices:number;receipts:number}};criteria:unknown[]};evaluator_signature:string}>('SELECT status,frozen_snapshot,evaluator_signature FROM ci_unified_vendor_reports WHERE id=$1',[draft]));
    assert.equal(row.rows[0].status,'final');
    assert.equal(row.rows[0].frozen_snapshot.evidence.activity.invoices,1);
    assert.equal(row.rows[0].frozen_snapshot.evidence.activity.receipts,2);
@@ -88,7 +88,7 @@ test('unified vendor official report: RLS, double-counting, stale guard and immu
    assert.equal(row.rows[0].frozen_snapshot.criteria.length,8);
    await assert.rejects(rpc(ADMIN,'ci_save_unified_vendor_report',[draft,draftInput],['uuid','jsonb']),/CI_ANNUAL_REVISION_IMMUTABLE/);
    await assert.rejects(privileged(c=>c.query("UPDATE ci_unified_vendor_reports SET judgment_summary='bad' WHERE id=$1",[draft])),/CI_ANNUAL_REVISION_IMMUTABLE/);
-   const next=await rpc<string>(ADMIN,'ci_create_unified_vendor_report',[vendor,2569],['uuid','integer']);
+   const next=await rpc<string>(ADMIN,'ci_create_unified_vendor_report',[vendor,2570],['uuid','integer']);
    assert.notEqual(next,draft);
    const follow=await asUser(ADMIN,c=>c.query('SELECT revision_number,status FROM ci_unified_vendor_reports WHERE id=$1',[next]));
    assert.equal(follow.rows[0].revision_number,2);
