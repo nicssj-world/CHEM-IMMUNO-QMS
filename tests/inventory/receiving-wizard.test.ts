@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, type WizardLine } from '../../src/lib/receiving-wizard';
+import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment, type WizardLine } from '../../src/lib/receiving-wizard';
 
 const products=[
   {id:'p1',warehouse_id:1,product_code:'CHE-001',display_name:'Glucose',default_location_id:null},
@@ -41,4 +41,16 @@ test('cannot submit incomplete LOT, unapproved storage, or duplicated Product',(
 test('same reagent and LOT with conflicting expiry must be corrected before Step3',()=>{
   const rows=[{...line(),packages:[pkg('a','1','LOT-A'),pkg('b','1','LOT-A','2028-01-01')]}];
   assert.match(wizardLineError(rows,products,locations)??'',/LOT เดียวกัน/);
+});
+
+test('an unsuccessful Step 4 attempt remains editable after refreshing the draft',()=>{
+  const afterFailure=restoreWizardAssessment({
+    correct_product:true,correct_quantity:true,packaging_ok:false,
+    documentation_complete:true,temperature_required:false,has_complaint:false,
+    reason_codes:['urgent_need'],notes:'Used in urgent case',other_reason_detail:null,
+  });
+  assert.equal(afterFailure.productCondition,'abnormal');
+  assert.deepEqual(afterFailure.reasonCodes,['urgent_need']);
+  assert.equal(afterFailure.note,'Used in urgent case');
+  assert.equal(restoreWizardAssessment(null).productCondition,'normal');
 });
