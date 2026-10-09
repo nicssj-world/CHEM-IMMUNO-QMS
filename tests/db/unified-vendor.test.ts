@@ -57,7 +57,7 @@ test('unified vendor official report: RLS, double-counting, stale guard and immu
 
   const che=await rpc<string>(ADMIN,'ci_create_product',[{warehouse_id:1,product_type:'reagent',source_name:'Chem',current_ref:'REF-UNIFIED-CHE',manufacturer_barcode:'BC-UNIFIED-CHE'}],['jsonb']);
   const imm=await rpc<string>(ADMIN,'ci_create_product',[{warehouse_id:2,product_type:'reagent',source_name:'Immuno',current_ref:'REF-UNIFIED-IMM',manufacturer_barcode:'BC-UNIFIED-IMM'}],['jsonb']);
-  const loc=await rpc<string>(ADMIN,'ci_create_location_v2',[{warehouse_id:1,code:'SHARED-01',name:'Reagent Shelf',location_type:'shelf'}],['jsonb']);
+  const loc=await rpc<string>(ADMIN,'ci_create_location_v2',[{warehouse_id:1,code:'SHARED-01',name:'Reagent Shelf',location_type:'refrigerator'}],['jsonb']);
   const invoice=await rpc<string>(ADMIN,'ci_create_invoice',[{vendor_id:vendor,invoice_number:'COMBINED-001',invoice_date:'2026-09-25',lines:[{product_id:che,quantity:1},{product_id:imm,quantity:1}]}],['jsonb']);
   const lines=await privileged(async c=>(await c.query<{id:string;warehouse_id:number}>('SELECT id,warehouse_id FROM ci_invoice_lines WHERE invoice_id=$1 ORDER BY warehouse_id',[invoice])).rows);
   assert.equal(lines.length,2);
