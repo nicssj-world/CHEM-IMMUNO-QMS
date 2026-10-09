@@ -8,7 +8,7 @@ import { assessmentError, toAssessmentPayload, type AssessmentInput } from '@/li
 import { wizardHeaderError, wizardLineError, type WizardHeader, type WizardLine, type WizardProduct, type WizardLocation } from '@/lib/receiving-wizard';
 
 export type WizardActionResult =
-  | { ok: true; id: string }
+  | { ok: true; id: string; existingInvoice?: boolean }
   | { ok: false; message: string };
 
 async function authorizedClient() {
@@ -26,6 +26,12 @@ export async function createReceivingWizardDraft(header: WizardHeader): Promise<
     p_vendor:header.vendorId,p_number:header.invoiceNumber.trim(),
     p_date:header.invoiceDate,p_po:header.poNumber.trim() || null,
   });
+  if (error?.message?.includes('CI_INVOICE_EXISTS')) {
+    const {data:existing}=await client.from('ci_invoices').select('id').eq('vendor_id',header.vendorId)
+      .eq('invoice_number',header.invoiceNumber.trim()).neq('status','cancelled').limit(1).maybeSingle();
+    if(existing) return {ok:true,id:existing.id,existingInvoice:true};
+    return {ok:false,message:'Invoice นี้มีอยู่แล้ว · กรุณาเปิด Invoice เดิมจากรายการล่าสุดเพื่อรับต่อ'};
+  }
   if (error || !data) return {ok:false,message:logUserMessage('receive-draft',error,'ไม่สามารถบันทึกร่าง Invoice ได้')};
   revalidatePath('/receive');
   return {ok:true,id:String(data)};
