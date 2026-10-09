@@ -59,7 +59,7 @@ test('the input list is never mutated by sorting', () => {
 });
 
 test('labels: every scope and status has a Thai label; unknown values fall back to the raw value', () => {
-  assert.equal(scopeLabel('ALL'), 'ทั้งสองคลัง');
+  assert.equal(scopeLabel('ALL'), 'คลังน้ำยา CHEM-IMMUNO');
   assert.equal(scopeLabel('CHE'), 'Clinical Chemistry');
   assert.equal(scopeLabel('IMM'), 'Immunology');
   assert.equal(scopeLabel('XXX'), 'XXX');
