@@ -1,4 +1,4 @@
-import type { AssessmentInput } from '@/lib/receipt-assessment';
+import { ASSESSMENT_REASON_CODES, DEFAULT_ASSESSMENT, type AssessmentInput, type ReasonCode } from '@/lib/receipt-assessment';
 
 export type WizardLot = {
   id: string; quantity: string; lot: string; expiry: string; locationId: string;
@@ -70,4 +70,34 @@ export function wizardTotals(lines: readonly WizardLine[]) {
 export function remainingForLot(line: WizardLine, lotId: string) {
   return Math.max(0,Number(line.orderedQuantity) -
     line.packages.filter(p=>p.id!==lotId).reduce((n,p)=>n+(Number(p.quantity)||0),0));
+}
+
+/** A failed Step 4 retry can contain the backend assessment payload. Restore the
+ * interactive form shape safely instead of showing an invalid editor on refresh.
+ */
+export function restoreWizardAssessment(raw: unknown): AssessmentInput {
+  if (!raw || typeof raw !== 'object') return DEFAULT_ASSESSMENT;
+  const data=raw as Record<string,unknown>;
+  if ('productCondition' in data) {
+    const form=data as unknown as AssessmentInput;
+    return {...DEFAULT_ASSESSMENT,...form,
+      reasonCodes:Array.isArray(form.reasonCodes)?form.reasonCodes.filter(x=>ASSESSMENT_REASON_CODES.includes(x)):[],
+      note:typeof form.note==='string'?form.note:'',
+      otherReasonDetail:typeof form.otherReasonDetail==='string'?form.otherReasonDetail:''};
+  }
+  const reasons=Array.isArray(data.reason_codes)
+    ? data.reason_codes.filter((x):x is ReasonCode=>ASSESSMENT_REASON_CODES.includes(x as ReasonCode))
+    : [];
+  const cold=data.temperature_required===true;
+  return {
+    productCondition:data.packaging_ok===false?'abnormal':'normal',
+    documentation:data.documentation_complete===false?'incomplete':'complete',
+    itemCorrectness:data.correct_product===false||data.correct_quantity===false?'problem':'correct',
+    coldChainApplicable:cold,
+    coldChainCondition:cold?(data.temperature_ok===false?'inappropriate':'appropriate'):null,
+    hasComplaint:data.has_complaint===true,
+    note:typeof data.notes==='string'?data.notes:'',
+    reasonCodes:reasons,
+    otherReasonDetail:typeof data.other_reason_detail==='string'?data.other_reason_detail:'',
+  };
 }
