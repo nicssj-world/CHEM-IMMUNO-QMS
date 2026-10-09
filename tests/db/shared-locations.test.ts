@@ -132,6 +132,13 @@ test('shared Location Master: legacy IDs survive, storage is shared, stock and p
         SELECT warehouse_id,sum(balance)::text AS balance
         FROM public.ci_stock_balances WHERE location_id=$1 GROUP BY warehouse_id ORDER BY warehouse_id`,[che]));
       assert.deepEqual(totals.rows.map(x=>[Number(x.warehouse_id),Number(x.balance)]),[[1,3],[2,5]]);
+      // Sharing the physical location must never grant staff access to the other warehouse's stock.
+      const cheView = await asUser(U.staffChe, db => db.query<{warehouse_id:number;balance:string}>(
+        'SELECT warehouse_id,balance::text FROM public.ci_stock_balances WHERE location_id=$1',[che]));
+      const immView = await asUser(U.staffImm, db => db.query<{warehouse_id:number;balance:string}>(
+        'SELECT warehouse_id,balance::text FROM public.ci_stock_balances WHERE location_id=$1',[che]));
+      assert.deepEqual(cheView.rows.map(x=>Number(x.warehouse_id)),[1],'CHE stock access remains scoped');
+      assert.deepEqual(immView.rows.map(x=>Number(x.warehouse_id)),[2],'IMM stock access remains scoped');
       await assert.rejects(()=>rpc(U.supervisorChe,'ci_set_location_active',[che,false,'still in use'],['uuid','boolean','text']),/CI_LOCATION_HAS_STOCK|CI_LOCATION_IS_PRODUCT_DEFAULT/);
       const transfer=await rpc<string>(U.staffImm,'ci_transfer_stock',[{
         lot_id:immLot,from_location_id:che,to_location_id:imm,quantity:2,idempotency_key:'imm-transfer'
