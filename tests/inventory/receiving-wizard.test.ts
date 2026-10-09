@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment, type WizardLine } from '../../src/lib/receiving-wizard';
+import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment, appendWizardScan, type WizardLine } from '../../src/lib/receiving-wizard';
 
 const products=[
   {id:'p1',warehouse_id:1,product_code:'CHE-001',display_name:'Glucose',default_location_id:null},
@@ -53,4 +53,53 @@ test('an unsuccessful Step 4 attempt remains editable after refreshing the draft
   assert.deepEqual(afterFailure.reasonCodes,['urgent_need']);
   assert.equal(afterFailure.note,'Used in urgent case');
   assert.equal(restoreWizardAssessment(null).productCondition,'normal');
+});
+
+test('scanner appends same product/LOT/location and never adjusts invoiced quantity',()=>{
+  let generated=0;
+  const makeId=()=>String(++generated);
+  const start=[{id:'row1',productId:'p1',orderedQuantity:'3',packages:[pkg('a','1','LOT-A')]}];
+  const candidate={productId:'p1',quantity:'1',lot:'LOT-A',expiry:'2027-12-31',locationId:'l1',raw:'GS1-128'};
+  const a=appendWizardScan(start,candidate,makeId);
+  assert.equal(a.ok,true);if(!a.ok)return;
+  assert.equal(a.merged,true);
+  assert.equal(a.lines[0].packages[0].quantity,'2');
+  assert.equal(a.lines[0].orderedQuantity,'3');
+  const b=appendWizardScan(a.lines,candidate,makeId);
+  assert.equal(b.ok,true);if(!b.ok)return;
+  assert.equal(b.lines[0].packages[0].quantity,'3');
+  assert.equal(b.lines[0].orderedQuantity,'3');
+  const c=appendWizardScan(b.lines,candidate,makeId);
+  assert.deepEqual(c,{ok:false,reason:'capacity'},'extra scan must warn without inflating Invoice');
+  assert.equal(b.lines[0].orderedQuantity,'3');
+});
+
+test('scanner keeps same LOT separate by location and rejects conflicting expiry',()=>{
+  let counter=0;const id=()=>String(++counter);
+  const first=appendWizardScan([{id:'row1',productId:'p1',orderedQuantity:'5',packages:[]}],
+    {productId:'p1',lot:'LOT-A',expiry:'2027-12-31',quantity:'1',locationId:'l1'},id);
+  assert.equal(first.ok,true);if(!first.ok)return;
+  const second=appendWizardScan(first.lines,{productId:'p1',lot:'LOT-A',expiry:'2027-12-31',quantity:'1',locationId:'l2'},id);
+  assert.equal(second.ok,true);if(!second.ok)return;
+  assert.equal(second.lines[0].packages.length,2);
+  const conflict=appendWizardScan(second.lines,{productId:'p1',lot:'LOT-A',expiry:'2028-01-01',quantity:'1',locationId:'l1'},id);
+  assert.deepEqual(conflict,{ok:false,reason:'lot-expiry-conflict'});
+});
+
+test('unreviewed manual LOT must not be silently discarded when scanning',()=>{
+  const untouched=[{id:'row1',productId:'p1',orderedQuantity:'9',packages:[{...pkg('a','1','LOT-A'),locationId:''}]}];
+  const before=JSON.stringify(untouched);
+  assert.deepEqual(appendWizardScan(untouched,{productId:'p1',quantity:'1',lot:'LOT-B',expiry:'2027-12-31',locationId:'l1'},()=> 'generated'),{ok:false,reason:'review'});
+  assert.equal(JSON.stringify(untouched),before);
+});
+
+test('first scan can open a Product without changing later manually entered quantity',()=>{
+  const first=appendWizardScan([],{productId:'p2',lot:'IMM-LOT',expiry:'2027-12-31',quantity:'1',locationId:'l1'},()=>crypto.randomUUID());
+  assert.equal(first.ok,true);if(!first.ok)return;
+  assert.equal(first.lines[0].orderedQuantity,'1');
+  const edited=[{...first.lines[0],orderedQuantity:'10'}];
+  const again=appendWizardScan(edited,{productId:'p2',lot:'IMM-LOT',expiry:'2027-12-31',quantity:'1',locationId:'l1'},()=>crypto.randomUUID());
+  assert.equal(again.ok,true);if(!again.ok)return;
+  assert.equal(again.lines[0].orderedQuantity,'10');
+  assert.equal(again.lines[0].packages[0].quantity,'2');
 });
