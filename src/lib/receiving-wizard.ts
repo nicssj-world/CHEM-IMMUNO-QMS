@@ -21,7 +21,7 @@ export type WizardProduct = {
   id: string; warehouse_id: number; product_code: string; display_name: string;
   default_location_id: string | null;
 };
-export type WizardLocation = { id: string; code: string; name: string; parent_code?: string | null };
+export type WizardLocation = { id: string; warehouse_id: number; code: string; name: string; parent_code?: string | null };
 
 /** Keep the identical LOT/location merging and invoice-cap guard used by
  * pre-wizard ReceiveWorkbench. Scanning MUST NEVER edit orderedQuantity.
