@@ -24,9 +24,10 @@ function FeedbackCard({ feedback, className = '' }: { feedback: ScanFeedback; cl
  * The continuous prop keeps the camera open across scans; a code held in view counts once, and counts again only after it left the frame.
  * With `dock`, the camera strip, the latest result and `summary` stay pinned to the top while the list below scrolls.
  */
-export function BarcodeScanner({ onScan, continuous = false, dock = false, feedback, summary, formats, autoStart = false }: { onScan: (raw: string, symbology: string) => Promise<void> | void; continuous?: boolean; dock?: boolean; feedback?: ScanFeedback | null; summary?: React.ReactNode; formats?: Array<'QR_CODE' | 'DATA_MATRIX' | 'CODE_128'>; autoStart?: boolean }) {
+export function BarcodeScanner({ onScan, continuous = false, dock = false, feedback, summary, formats, autoStart = false, purpose = 'product', showManual = true }: { onScan: (raw: string, symbology: string) => Promise<void> | void; continuous?: boolean; dock?: boolean; feedback?: ScanFeedback | null; summary?: React.ReactNode; formats?: Array<'QR_CODE' | 'DATA_MATRIX' | 'CODE_128' | 'CODE_39' | 'EAN_13'>; autoStart?: boolean; purpose?: 'product' | 'invoice'; showManual?: boolean }) {
   const isQr = formats?.length === 1 && formats[0] === 'QR_CODE';
-  const codeLabel = isQr ? 'QR' : 'Barcode';
+  const invoiceMode = purpose === 'invoice';
+  const codeLabel = invoiceMode ? 'เลข Invoice' : isQr ? 'QR' : 'Barcode';
   const video = useRef<HTMLVideoElement>(null);
   const controls = useRef<IScannerControls | null>(null);
   const last = useRef<{ raw: string; at: number } | null>(null);
@@ -58,7 +59,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
       if (fromCamera && previous?.raw === raw && now - previous.at < 1500) { previous.at = now; return; }
       last.current = { raw, at: now };
       navigator.vibrate?.(60);
-      setStatus('อ่านแล้ว · สแกนชิ้นถัดไปได้เลย');
+      setStatus(invoiceMode ? 'อ่านรหัสแล้ว · ตรวจเลข Invoice' : 'อ่านแล้ว · สแกนชิ้นถัดไปได้เลย');
       acceptingRef.current = true;
       try { await onScan(raw, symbology); }
       finally { acceptingRef.current = false; }
@@ -67,7 +68,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
     if (previous?.raw === raw && now - previous.at < 2500) { setStatus('สแกนซ้ำเร็วเกินไป · ตรวจรายการก่อนสแกนอีกครั้ง'); return; }
     last.current = { raw, at: now };
     stop();
-    setStatus(isQr ? 'อ่าน QR แล้ว · กำลังเปิดตำแหน่ง' : 'อ่าน Barcode แล้ว · ตรวจ Product, LOT และวันหมดอายุก่อนบันทึก');
+    setStatus(invoiceMode ? 'อ่านเลข Invoice แล้ว · ตรวจสอบกับเอกสาร' : isQr ? 'อ่าน QR แล้ว · กำลังเปิดตำแหน่ง' : 'อ่าน Barcode แล้ว · ตรวจ Product, LOT และวันหมดอายุก่อนบันทึก');
     acceptingRef.current = true;
     try { await onScan(raw, symbology); }
     finally { acceptingRef.current = false; }
@@ -76,12 +77,12 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
   async function decodePhoto(file?: File) {
     if (!file || photoBusyRef.current) return;
     if (!file.type.startsWith('image/')) {
-      setStatus('กรุณาเลือกรูปภาพ Data Matrix เท่านั้น');
+      setStatus(invoiceMode ? 'กรุณาเลือกรูปภาพที่มี Barcode หรือ QR บน Invoice' : 'กรุณาเลือกรูปภาพ Data Matrix เท่านั้น');
       return;
     }
     photoBusyRef.current = true;
     setPhotoBusy(true);
-    setStatus('กำลังอ่าน Data Matrix จากภาพบนอุปกรณ์…');
+    setStatus(invoiceMode ? 'กำลังอ่าน Barcode / QR จากรูปบนอุปกรณ์…' : 'กำลังอ่าน Data Matrix จากภาพบนอุปกรณ์…');
     // This function works entirely inside the browser: no file bytes are uploaded.
     const objectUrl = URL.createObjectURL(file);
     let decoded = false;
@@ -110,7 +111,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
       try {
         result = await reader.decodeFromImageElement(image);
       } catch {
-        setStatus('กำลังค้นหา Data Matrix ในส่วนต่าง ๆ ของภาพ…');
+        setStatus(invoiceMode ? 'กำลังค้นหา Barcode / QR ในส่วนต่าง ๆ ของภาพ…' : 'กำลังค้นหา Data Matrix ในส่วนต่าง ๆ ของภาพ…');
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d', { willReadFrequently: true });
         if (!context) throw new Error('CANVAS_UNAVAILABLE');
@@ -136,12 +137,12 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
         }
       }
       if (!result) throw new Error('DECODE_EMPTY');
-      setStatus('อ่าน Data Matrix จากภาพสำเร็จ · ไม่ได้อัปโหลดรูป');
+      setStatus(invoiceMode ? 'อ่านรหัสจากภาพสำเร็จ · ไม่ได้อัปโหลดรูป' : 'อ่าน Data Matrix จากภาพสำเร็จ · ไม่ได้อัปโหลดรูป');
       decoded = true;
       try { await accept(result.getText(), BarcodeFormat[result.getBarcodeFormat()] ?? 'image'); }
-      catch { setStatus('อ่าน Data Matrix สำเร็จ แต่ตรวจสอบสินค้าผ่าน Server ไม่สำเร็จ · โปรดลองใหม่'); }
+      catch { setStatus(invoiceMode ? 'อ่านรหัสสำเร็จ แต่กรอกเลข Invoice ไม่สำเร็จ · โปรดลองใหม่' : 'อ่าน Data Matrix สำเร็จ แต่ตรวจสอบสินค้าผ่าน Server ไม่สำเร็จ · โปรดลองใหม่'); }
     } catch {
-      if (!decoded) setStatus('อ่าน Data Matrix จากภาพไม่สำเร็จ · ลองครอปรูปให้เหลือรหัสพร้อมขอบสีขาว หรือถ่ายให้คมชัดขึ้น');
+      if (!decoded) setStatus(invoiceMode ? 'อ่าน Barcode / QR จากรูปไม่สำเร็จ · ลองถ่ายภาพให้คมชัด หรือครอปรูปให้เห็นรหัสชัดขึ้น' : 'อ่าน Data Matrix จากภาพไม่สำเร็จ · ลองครอปรูปให้เหลือรหัสพร้อมขอบสีขาว หรือถ่ายให้คมชัดขึ้น');
     } finally {
       URL.revokeObjectURL(objectUrl);
       photoBusyRef.current = false;
@@ -185,11 +186,11 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
     <div className={`grid gap-2 ${dock && active ? 'scan-dock' : ''}`}>
       {!active && <div className="flex flex-wrap gap-2"><button type="button" className="button min-h-12" onClick={() => void start()}>{continuous ? 'เปิดกล้องสแกนต่อเนื่อง' : isQr ? 'สแกน QR / เปิดกล้อง' : 'สแกนอีกครั้ง / เปิดกล้อง'}</button></div>}
       {!isQr && <div className="flex flex-wrap gap-2">
-        <input ref={photoInput} className="sr-only" type="file" accept="image/*" aria-label="เลือกภาพ Data Matrix จากกล้องหรือคลังรูป" onChange={event => void decodePhoto(event.currentTarget.files?.[0])} />
+        <input ref={photoInput} className="sr-only" type="file" accept="image/*" aria-label={invoiceMode ? 'เลือกภาพ Barcode หรือ QR ของ Invoice' : 'เลือกภาพ Data Matrix จากกล้องหรือคลังรูป'} onChange={event => void decodePhoto(event.currentTarget.files?.[0])} />
         <button type="button" className="button secondary min-h-12" disabled={photoBusy} onClick={() => photoInput.current?.click()}>
-          <ImagePlus size={18} aria-hidden /> {photoBusy ? 'กำลังถอดรหัส…' : 'ถ่ายภาพ / เลือกรูป Data Matrix'}
+          <ImagePlus size={18} aria-hidden /> {photoBusy ? 'กำลังถอดรหัส…' : invoiceMode ? 'ถ่ายภาพ / เลือกรูป Invoice' : 'ถ่ายภาพ / เลือกรูป Data Matrix'}
         </button>
-        <p className="muted text-xs basis-full">เลือกถ่ายภาพด้วยกล้องหรือใช้รูปในเครื่อง · ถอดรหัสบนอุปกรณ์ ไม่อัปโหลดภาพ · ระบบจะค้นหารหัสจากหลายบริเวณของภาพโดยอัตโนมัติ</p>
+        <p className="muted text-xs basis-full">{invoiceMode ? 'อ่านจากกล้องหรือรูปในเครื่อง · เลข Invoice จะถูกกรอกเพื่อให้ตรวจทานก่อนสร้าง Invoice · ไม่อัปโหลดภาพ' : 'เลือกถ่ายภาพด้วยกล้องหรือใช้รูปในเครื่อง · ถอดรหัสบนอุปกรณ์ ไม่อัปโหลดภาพ · ระบบจะค้นหารหัสจากหลายบริเวณของภาพโดยอัตโนมัติ'}</p>
       </div>}
       <div className={`relative w-full max-w-lg overflow-hidden rounded-xl bg-slate-900 ${active ? '' : 'hidden'}`}>
         <video ref={video} muted playsInline className={`block w-full object-cover ${expanded ? 'h-[min(70dvh,600px)]' : 'h-[clamp(260px,42dvh,360px)]'}`} aria-label={`ภาพจากกล้องเพื่อสแกน ${codeLabel}`}/>
@@ -205,7 +206,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
     </div>
     <p className="sr-only" aria-live="polite">{feedback ? `${feedback.title}${feedback.detail ? ` · ${feedback.detail}` : ''}` : ''}</p>
     <p className="muted text-sm" role="status">{status}</p>
-    {!isQr && <p className="muted text-xs">รองรับ GS1 Data Matrix และ Code 128 · ใช้กล้องอ่านข้อมูล LOT/Expiry อัตโนมัติ</p>}
-    <form className="flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); void accept(manual, 'manual'); setManual(''); manualInput.current?.focus(); }}><label className="field flex-1 min-w-48">พิมพ์หรือวาง {codeLabel}<input ref={manualInput} className="input" value={manual} onChange={event => setManual(event.target.value)} autoCapitalize="off" autoComplete="off"/></label><button className="button secondary self-end" type="submit">ตรวจ {codeLabel}</button></form>
+    {!isQr && <p className="muted text-xs">{invoiceMode ? 'รองรับ Code 128, Code 39, EAN-13 และ QR ที่เก็บเลข Invoice โดยตรง' : 'รองรับ GS1 Data Matrix และ Code 128 · ใช้กล้องอ่านข้อมูล LOT/Expiry อัตโนมัติ'}</p>}
+    {showManual && <form className="flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); void accept(manual, 'manual'); setManual(''); manualInput.current?.focus(); }}><label className="field flex-1 min-w-48">พิมพ์หรือวาง {codeLabel}<input ref={manualInput} className="input" value={manual} onChange={event => setManual(event.target.value)} autoCapitalize="off" autoComplete="off"/></label><button className="button secondary self-end" type="submit">ตรวจ {codeLabel}</button></form>}
   </section>;
 }
