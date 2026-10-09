@@ -47,6 +47,27 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .field:has(:required:enabled)::before, label:has(:required:enabled)::before { content: '*'; position: absolute; inset-inline-start: 0; top: 0; transform: translateX(-.7em); color: #b42318; font-weight: 800; }
 .input { width: 100%; min-height: 46px; padding: 10px 13px; border: 1px solid #bfd0d8; border-radius: 10px; background: #fff; color: var(--ink); }
 .input:disabled { background: #eaf0f2; }
+
+/* iOS Safari's native date picker has an intrinsic inline size. The default
+ * auto track in .field can expand past the receiving card even when its input
+ * has min-width:0. Fix the grid track as well as the control. Keep the native
+ * calendar picker intact (no appearance:none). */
+.field.receive-date-field {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  max-width: 100%;
+}
+.field.receive-date-field > input[type="date"] {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 9px 16px; border-radius: 10px; border: 1px solid transparent; background: var(--blue); color: white; font-weight: 700; cursor: pointer; text-decoration: none; }
 .button:hover { background: #0d4c7e; }
 .button.secondary { background: white; border-color: #b9cdd7; color: var(--ink); }
