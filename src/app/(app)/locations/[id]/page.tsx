@@ -28,11 +28,10 @@ export default async function LocationDetailPage({ params, searchParams }: { par
   const { data } = await client.from('ci_locations').select(LOCATION_COLUMNS).eq('id', id).maybeSingle();
   const location = data as LocationRow | null;
   // Row-level security hides other warehouses' locations, so "not readable" and "does not exist" are the same answer.
-  const warehouse = location && access.warehouses.find(item => Number(item.id) === location.warehouse_id);
-  if (!location || !warehouse) notFound();
-  const canManage = canSupervise(warehouse.role);
+  if (!location) notFound();
+  const canManage = access.warehouses.some(item => canSupervise(item.role));
 
-  const locationResult = await client.from('ci_locations').select(LOCATION_COLUMNS).eq('warehouse_id', warehouse.id).order('code');
+  const locationResult = await client.from('ci_locations').select(LOCATION_COLUMNS).order('code');
   const all = (locationResult.data ?? []) as LocationRow[];
   const byId = new Map(all.map(item => [item.id, item]));
   const parent = location.parent_location_id ? byId.get(location.parent_location_id) : undefined;
@@ -47,7 +46,7 @@ export default async function LocationDetailPage({ params, searchParams }: { par
   const stock = buildLocationStock(balances, (productResult.data ?? []) as StockProduct[], new Map(scope.map(item => [item.id, item.code])));
   const stockError = balanceResult.error ?? productResult.error;
 
-  const here = `?warehouse=${warehouse.code}`;
+  const here = '';
   const showSubLocation = children.length > 0;
 
   return <main className="grid gap-6 max-w-[980px]">
@@ -67,7 +66,7 @@ export default async function LocationDetailPage({ params, searchParams }: { par
     <section className="surface p-5 sm:p-7 grid gap-3" aria-labelledby="details-heading"><h2 id="details-heading" className="font-bold text-lg">ข้อมูลตำแหน่ง</h2>
       <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
         <div><dt className="muted">ประเภท</dt><dd className="font-semibold">{locationTypeLabel(location.location_type)}</dd></div>
-        <div><dt className="muted">คลัง</dt><dd className="font-semibold">{warehouse.name}</dd></div>
+        <div><dt className="muted">ใช้กับคลัง</dt><dd className="font-semibold">CHE / IMM (ตำแหน่งส่วนกลาง)</dd></div>
         <div><dt className="muted">ห้อง / พื้นที่</dt><dd className="font-semibold">{location.room ?? '—'}</dd></div>
         <div><dt className="muted">เงื่อนไขการเก็บ</dt><dd className="font-semibold">{location.storage_condition ?? '—'}</dd></div>
         <div><dt className="muted">สถานะ</dt><dd><span className="badge">{location.active ? 'ใช้งาน' : 'ปิดใช้งาน'}</span></dd></div>

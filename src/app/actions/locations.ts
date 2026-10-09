@@ -22,19 +22,14 @@ function refresh(id?: string) {
   if (id) revalidatePath(`/locations/${id}`);
 }
 
-/** The RPC checks the role again; this only turns an obvious mistake into a clear message before the round trip. */
-function supervisorOf(access: Awaited<ReturnType<typeof requireAccess>>, warehouseId: number) {
-  const warehouse = access.warehouses.find(item => Number(item.id) === warehouseId);
-  return warehouse && canSupervise(warehouse.role) ? warehouse : null;
-}
-
 export async function createLocationRecord(form: FormData): Promise<LocationActionResult> {
   const { access, supabase } = await supabaseFor();
-  const warehouseId = Number(form.get('warehouse_id'));
-  if (!supervisorOf(access, warehouseId)) return { ok: false, message: logUserMessage('createLocation', 'CI_ACCESS_DENIED') };
+  const manager = access.warehouses.find(item => canSupervise(item.role));
+  if (!manager) return { ok: false, message: logUserMessage('createLocation', 'CI_ACCESS_DENIED') };
+  const warehouseId = Number(manager.id);
   const parsed = parseLocationForm(form);
   if (!parsed.ok) return { ok: false, message: 'ตรวจสอบข้อมูลที่ไฮไลต์แล้วลองอีกครั้ง', errors: parsed.errors };
-  const { data, error } = await supabase.rpc('ci_create_location_v2', { p: { warehouse_id: warehouseId, ...parsed.value } });
+  const { data, error } = await supabase.rpc('ci_create_location_v2', { p: { warehouse_id: warehouseId, ...parsed.value, env: undefined } });
   if (error || !data) return { ok: false, message: logUserMessage('createLocation', error, 'เพิ่มตำแหน่งไม่สำเร็จ กรุณาลองใหม่') };
   refresh(data as string);
   return { ok: true, id: data as string };
@@ -43,8 +38,7 @@ export async function createLocationRecord(form: FormData): Promise<LocationActi
 /** `expectedUpdatedAt` goes back exactly as the page read it: the database compares it for equality to catch concurrent edits. */
 export async function updateLocationRecord(id: string, form: FormData, expectedUpdatedAt: string): Promise<LocationActionResult> {
   const { access, supabase } = await supabaseFor();
-  const warehouseId = Number(form.get('warehouse_id'));
-  if (!supervisorOf(access, warehouseId)) return { ok: false, message: logUserMessage('updateLocation', 'CI_ACCESS_DENIED') };
+  if (!access.warehouses.some(item => canSupervise(item.role))) return { ok: false, message: logUserMessage('updateLocation', 'CI_ACCESS_DENIED') };
   const parsed = parseLocationForm(form);
   if (!parsed.ok) return { ok: false, message: 'ตรวจสอบข้อมูลที่ไฮไลต์แล้วลองอีกครั้ง', errors: parsed.errors };
   const { error } = await supabase.rpc('ci_update_location', { p_id: id, p: parsed.value, p_expected_updated_at: expectedUpdatedAt });
