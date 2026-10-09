@@ -225,7 +225,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
                   <div className="flex gap-2 items-stretch min-w-0">
                     <IntegerQuantityInput id={'receive-qty-'+pkg.id} className="input min-w-0 flex-1" min="1"
                       value={pkg.quantity} onChange={e=>alterLot(line.id,pkg.id,{quantity:e.target.value})}/>
-                    <button type="button" className="button secondary shrink-0 px-2" disabled={pending}
+                    <button type="button" className="button secondary shrink-0 px-2" disabled={pending || remainingForLot(line,pkg.id)<1}
                       onClick={()=>alterLot(line.id,pkg.id,{quantity:String(remainingForLot(line,pkg.id))})}>รับครบ</button>
                   </div>
                 </div>
