@@ -28,7 +28,7 @@ export function InvoiceReagentPicker({ products, value, onChange }: {
   }
 
   return <div className="grid gap-2 min-w-0">
-    <label className="field" htmlFor={id}>น้ำยา <span className="text-[#b42318]" aria-hidden="true">*</span></label>
+    <label className="block text-sm font-semibold" htmlFor={id}>น้ำยา <span className="text-[#b42318]" aria-hidden="true">*</span></label>
     {selected && <div className="flex items-center justify-between gap-2 rounded-lg border border-field-line bg-surface-2 p-3">
       <div className="min-w-0">
         <strong className="block text-sm break-words">{selected.product_code}</strong>
@@ -49,7 +49,7 @@ export function InvoiceReagentPicker({ products, value, onChange }: {
         <input id={id} type="search" role="combobox" aria-autocomplete="list"
           aria-expanded={showResults} aria-controls={id + '-options'}
           aria-activedescendant={showResults && options[highlighted] ? id + '-option-' + highlighted : undefined}
-          className="input min-h-12 w-full pl-10 pr-10" placeholder="พิมพ์รหัสหรือชื่อน้ำยา เช่น 002, TSH"
+          className="input min-h-12 w-full min-w-0" style={{paddingLeft:42,paddingRight:42}} placeholder="พิมพ์รหัสหรือชื่อน้ำยา เช่น 002, TSH"
           value={query} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
           onFocus={() => setExpanded(true)}
           onChange={event => {
