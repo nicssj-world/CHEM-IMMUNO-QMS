@@ -165,13 +165,13 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         <p className="muted text-sm">กรอกเฉพาะส่วนหัว ไม่มีรายการน้ำยาและยังไม่เพิ่ม Stock · กดถัดไปเพื่อเก็บ Draft และรับน้ำยา</p></div>
       <div className="grid sm:grid-cols-2 gap-3">
         <label className="field min-w-0"><span>ผู้ขาย <span className="text-[#b42318]">*</span></span>
-          <select className="input" value={header.vendorId} onChange={e=>setHeader({...header,vendorId:e.target.value})} required>
+          <select className="input" value={header.vendorId} onChange={e=>setHeader({...header,vendorId:e.target.value})} aria-required="true">
             <option value="">เลือกผู้ขาย</option>{vendors.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
           </select></label>
         <label className="field min-w-0"><span>เลขที่ Invoice <span className="text-[#b42318]">*</span></span>
-          <input className="input" value={header.invoiceNumber} onChange={e=>setHeader({...header,invoiceNumber:e.target.value})} maxLength={120} required placeholder="เลขที่บนเอกสาร"/></label>
+          <input className="input" value={header.invoiceNumber} onChange={e=>setHeader({...header,invoiceNumber:e.target.value})} maxLength={120} aria-required="true" placeholder="เลขที่บนเอกสาร"/></label>
         <label className="field min-w-0"><span>วันที่ Invoice <span className="text-[#b42318]">*</span></span>
-          <input className="input" type="date" value={header.invoiceDate} onChange={e=>setHeader({...header,invoiceDate:e.target.value})} required/></label>
+          <input className="input" type="date" value={header.invoiceDate} onChange={e=>setHeader({...header,invoiceDate:e.target.value})} aria-required="true"/></label>
         <label className="field min-w-0">เลขที่ PO (ถ้ามี)
           <input className="input" value={header.poNumber} onChange={e=>setHeader({...header,poNumber:e.target.value})} maxLength={200}/></label>
       </div>
@@ -203,7 +203,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           </div>
           <label className="field max-w-xs"><span>จำนวนตาม Invoice <span className="text-[#b42318]">*</span></span>
             <IntegerQuantityInput className="input" min="1" value={line.orderedQuantity}
-              onChange={e=>alterLine(line.id,old=>({...old,orderedQuantity:e.target.value}))} required/>
+              onChange={e=>alterLine(line.id,old=>({...old,orderedQuantity:e.target.value}))} aria-required="true"/>
           </label>
           <div className="grid gap-3">
             {line.packages.map((pkg,lotIndex)=><div key={pkg.id} className="rounded-lg bg-surface-2 p-3 grid gap-3">
