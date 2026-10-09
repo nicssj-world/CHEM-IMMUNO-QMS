@@ -75,18 +75,18 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const [imagePreview,setImagePreview]=useState<string|null>(null);
   const [completedInvoiceId,setCompletedInvoiceId]=useState('');
   const [evidenceBusy,setEvidenceBusy]=useState(false);
-  useEffect(()=>{
-    if(!selectedEvidence?.type.startsWith('image/'))return;
-    const url=URL.createObjectURL(selectedEvidence);
-    setImagePreview(url);
-    return ()=>{URL.revokeObjectURL(url);setImagePreview(null);};
-  },[selectedEvidence]);
+  const evidenceUrlRef=useRef<string|null>(null);
+  useEffect(()=>()=>{if(evidenceUrlRef.current)URL.revokeObjectURL(evidenceUrlRef.current);},[]);
   function chooseEvidence(file:File|null){
     if(file && (file.size>10*1024*1024 ||
        !(file.type.startsWith('image/') || file.type==='application/pdf'))){
       setError('เลือกภาพหรือ PDF ขนาดไม่เกิน 10 MB');
       return;
     }
+    if(evidenceUrlRef.current)URL.revokeObjectURL(evidenceUrlRef.current);
+    const nextUrl=file?.type.startsWith('image/')?URL.createObjectURL(file):null;
+    evidenceUrlRef.current=nextUrl;
+    setImagePreview(nextUrl);
     setSelectedEvidence(file);
     setError('');
   }
