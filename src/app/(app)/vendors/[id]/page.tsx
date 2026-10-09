@@ -69,7 +69,7 @@ export default async function VendorDetailPage({ params, searchParams }: { param
   const issueIds = issues.map(i => i.id);
   const { data: attachmentData } = issueIds.length ? await client.from('ci_vendor_issue_attachments').select('id,issue_id,file_name,size_bytes,uploaded_at').in('issue_id', issueIds) : { data: [] };
   const attachments = (attachmentData ?? []) as IssueAttachment[];
-  const { events, error: eventError } = await loadReceiptEvents(client, { vendorId: id, limit: 200 });
+  const { events, groups: receiptGroups, error: eventError } = await loadReceiptEvents(client, { vendorId: id, limit: 200 });
   const audit = (auditResult.data ?? []) as AuditRow[];
   const actorIds = [...new Set(audit.map(a => a.actor_id).filter((a): a is string => Boolean(a)))];
   const { data: actorData } = actorIds.length ? await client.from('ci_user_profiles').select('user_id,display_name').in('user_id', actorIds) : { data: [] };
@@ -120,7 +120,27 @@ export default async function VendorDetailPage({ params, searchParams }: { param
     <section className="surface p-5 grid gap-4" aria-labelledby="vendor-receipts">
       <h2 id="vendor-receipts" className="font-bold">ผลตรวจรับรายครั้ง · ทุกกลุ่มรหัสน้ำยา</h2>
       {eventError && <p className="error" role="alert">อ่านผลตรวจรับไม่สำเร็จ: {logUserMessage('vendor-receipts',eventError)}</p>}
-      {events.map(event=><ReceiptAssessmentCard key={event.id} eventNumber={event.event_number} invoiceNumber={event.invoice?.invoice_number??'—'} receivedAt={event.received_at} assessment={event.assessment} revisions={event.revisions} canRevise={warehouses.some(row=>Number(row.id)===event.warehouse_id&&canSupervise(row.role))}/>)}
+      {receiptGroups.map(group => group.events.length === 1
+        ? group.events.map(event => <ReceiptAssessmentCard key={event.id} eventNumber={event.event_number}
+          invoiceNumber={event.invoice?.invoice_number??'—'} receivedAt={event.received_at}
+          assessment={event.assessment} revisions={event.revisions}
+          canRevise={warehouses.some(row=>Number(row.id)===event.warehouse_id&&canSupervise(row.role))}/>)
+        : <article key={group.key} className="rounded-xl border border-line p-4 grid gap-3">
+            <header className="grid gap-1">
+              <strong>ใบรับเข้า {group.displayNumber ?? '—'} · Invoice {group.events[0].invoice?.invoice_number ?? '—'}</strong>
+              <p className="muted text-sm">รับเข้าเมื่อ {formatDateTime(group.events[0].received_at)} · รับเข้าจากการยืนยันครั้งเดียว</p>
+              <p className="muted text-xs">รหัสอ้างอิงเดิม {group.referenceNumbers.join(' / ')}</p>
+            </header>
+            <details className="border-t border-line pt-2">
+              <summary className="cursor-pointer font-semibold min-h-11">ผลตรวจรับแยกตามหลักฐานเดิม ({group.events.length} รายการ)</summary>
+              <div className="grid gap-3 pt-3">
+                {group.events.map(event => <ReceiptAssessmentCard key={event.id} eventNumber={event.event_number}
+                  invoiceNumber={event.invoice?.invoice_number??'—'} receivedAt={event.received_at}
+                  assessment={event.assessment} revisions={event.revisions}
+                  canRevise={warehouses.some(row=>Number(row.id)===event.warehouse_id&&canSupervise(row.role))}/>)}
+              </div>
+            </details>
+          </article>)}
       {!events.length&&<p className="muted text-sm">ยังไม่มีการรับน้ำยาจากผู้ขายนี้</p>}
     </section>
     <section className="surface p-5 grid gap-3" aria-labelledby="vendor-issues">
