@@ -179,6 +179,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       <div><h2 className="font-bold text-lg">Step 2 · รับเข้าน้ำยา</h2>
         <p className="muted text-sm">กำหนดจำนวนตาม Invoice หนึ่งครั้งต่อ Product · จำนวนรับจริงระบุแยกตาม LOT · รับบางส่วนได้</p></div>
       <div className="rounded-lg bg-surface-2 p-3 text-sm"><strong>Invoice {header.invoiceNumber}</strong> · {vendorsById.get(header.vendorId)?.name??'—'}</div>
+      <p className="muted text-xs">ภาพ Invoice หรือเอกสารส่งของสามารถแนบได้หลังยืนยันรับเข้า และยังเปิดดู/แนบเพิ่มได้จาก Invoice เดิม</p>
       <div className="grid gap-3 rounded-xl border border-line p-3">
         <h3 className="font-bold">เพิ่มน้ำยาจาก Barcode</h3>
         <BarcodeScanner onScan={onScan} dock continuous summary={<span className="text-sm font-semibold">ร่าง {totals.lots} LOT · {totals.received} หน่วย</span>}/>
@@ -277,6 +278,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         <p className="muted text-sm">เมื่อยืนยัน ระบบสร้าง Invoice และบันทึก Stock กับผลประเมินเป็นธุรกรรมเดียว</p></div>
       {summary}
       <ReceiptAssessmentFields value={assessment} onChange={setAssessment}/>
+      <button className="button secondary justify-self-start" type="button" disabled={pending} onClick={()=>save(4)}>บันทึกแบบประเมินเป็นร่าง</button>
       <div className="flex flex-wrap gap-2 justify-between">
         <button className="button secondary" type="button" disabled={pending} onClick={()=>setStep(3)}>← กลับไปตรวจสอบ</button>
         <button className="button min-h-12" type="button" disabled={pending || !!assessmentError(assessment)}
@@ -293,7 +295,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         key={item.id} href={'/receive?invoice='+item.id}>
         <span><strong className="block">{item.invoice_number}</strong>
           <span className="text-xs muted">{item.invoice_date} · {vendorsById.get(item.vendor_id)?.name??'ผู้ขาย'}</span></span>
-        <span className="badge">{item.status}</span>
+        <span className="badge">{({open:'ค้างรับ',closed:'รับครบ',closed_short:'ปิดรับไม่ครบ',cancelled:'ยกเลิก'} as Record<string,string>)[item.status]??item.status}</span>
       </Link>)}
       {!recentInvoices.length&&<p className="muted text-sm">ยังไม่มี Invoice</p>}
       <h3 className="font-bold border-t border-line pt-3">ร่างที่ยังทำไม่เสร็จ</h3>
