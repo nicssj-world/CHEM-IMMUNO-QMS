@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requireAccess, canMutate, canSupervise } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { ReceiveWorkbench } from '@/components/receive-workbench';
+import { mostRecentReceivedLocations } from '@/lib/recent-receive-location';
 import { NewInvoiceForm } from '@/components/new-invoice-form';
 import { ConfirmForm } from '@/components/confirm-form';
 import { SubmitButton } from '@/components/submit-button';
@@ -43,6 +44,35 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const invoice = params.invoice ? invoices.find(item => item.id === params.invoice) ?? (client ? (await client.from('ci_invoices').select('id,invoice_number,invoice_date,status,vendor_id,po_number').eq('id',params.invoice).maybeSingle()).data as Invoice | null : null) : null;
   const { data: lineData, error: lineError } = invoice && client ? await client.from('ci_invoice_line_progress').select('invoice_line_id,warehouse_id,product_id,ordered_quantity,received_quantity,remaining_quantity').eq('invoice_id',invoice.id).limit(1000) : {data:[],error:null};
   const lines = (lineData ?? []) as Line[];
+  // History-based suggestion is optional: failures cannot block receiving or manufacture a Location.
+  // All three reads are restricted by the existing per-warehouse RLS policies.
+  let recentLocationByProduct: Record<string, string> = {};
+  if (invoice && client && lines.length && warehouseIds.length) {
+    const currentProducts = new Set(lines.map(line => line.product_id));
+    const history = await client.from('ci_receipt_lines')
+      .select('id,receipt_id,invoice_line_id,location_id,created_at,warehouse_id')
+      .in('warehouse_id', warehouseIds).order('created_at', { ascending: false }).limit(500);
+    if (!history.error && history.data?.length) {
+      const historyLineIds = [...new Set(history.data.map(row => row.invoice_line_id))];
+      const historyReceipts = [...new Set(history.data.map(row => row.receipt_id))];
+      const [historicalInvoices, receivedTransactions] = await Promise.all([
+        client.from('ci_invoice_lines').select('id,product_id').in('id', historyLineIds),
+        client.from('ci_stock_transactions').select('id,receipt_id').eq('kind', 'receive').in('receipt_id', historyReceipts),
+      ]);
+      if (!historicalInvoices.error && !receivedTransactions.error) {
+        const receiveIds = (receivedTransactions.data ?? []).map(row => row.id);
+        const reversals = receiveIds.length
+          ? await client.from('ci_stock_transactions').select('source_transaction_id').eq('kind', 'reversal').in('source_transaction_id', receiveIds)
+          : { data: [], error: null };
+        if (!reversals.error) {
+          const reversedTx = new Set((reversals.data ?? []).map(row => row.source_transaction_id));
+          const reversedReceipts = new Set((receivedTransactions.data ?? [])
+            .filter(row => reversedTx.has(row.id)).map(row => row.receipt_id));
+          recentLocationByProduct = mostRecentReceivedLocations(history.data, historicalInvoices.data ?? [], reversedReceipts, currentProducts);
+        }
+      }
+    }
+  }
   const {data:attachmentData,error:attachmentError}=invoice&&client?await client.from('ci_attachments').select('id,attachment_type,uploaded_at').eq('invoice_id',invoice.id).order('uploaded_at',{ascending:false}).limit(20):{data:[],error:null};
   const canAddVendor = canManageVendors(access.warehouses);
   const outstanding = lines.filter(l => Number(l.remaining_quantity) > 0);
@@ -95,7 +125,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
           </ConfirmForm>
         </details>}
         {invoice.status === 'open' && missingLocations.map(w => <p key={w.id} className="error" role="alert">{w.name} ยังไม่มีตำแหน่งจัดเก็บ จึงรับน้ำยาของคลังนี้ไม่ได้ · {canSupervise(w.role) ? <Link href={'/locations?warehouse=' + w.code + '&return=' + back('/receive?invoice=' + invoice.id)}>เพิ่มตำแหน่งก่อนเริ่มสแกน</Link> : 'แจ้งหัวหน้างานให้เพิ่มตำแหน่ง'}</p>)}
-        {invoice.status === 'open' && warehouseIds.length ? <ReceiveWorkbench savedToken={params.saved ? params.at : undefined} invoiceId={invoice.id} idempotencyKey={randomUUID()} lines={lines} products={products} locations={locations} warehouseIds={[...new Set(lines.map(line => line.warehouse_id))].filter(id => warehouseIds.includes(id))} initialAttachments={attachmentData ?? []}/> : <>
+        {invoice.status === 'open' && warehouseIds.length ? <ReceiveWorkbench recentLocationByProduct={recentLocationByProduct} savedToken={params.saved ? params.at : undefined} invoiceId={invoice.id} idempotencyKey={randomUUID()} lines={lines} products={products} locations={locations} warehouseIds={[...new Set(lines.map(line => line.warehouse_id))].filter(id => warehouseIds.includes(id))} initialAttachments={attachmentData ?? []}/> : <>
           <p className="notice">Invoice นี้ปิดแล้ว หรือบัญชีนี้ไม่มีสิทธิ์รับเข้า</p>
           {attachmentData?.map(item => <a key={item.id} href={'/attachments/' + item.id} target="_blank" rel="noopener noreferrer" className="button secondary">ดูเอกสารรับเข้า {item.uploaded_at}</a>)}
         </>}

@@ -38,3 +38,13 @@ test('two Products with different defaults each resolve independently', () => {
   assert.equal(preselectLocation('B', 1, locations), 'B');
   assert.equal(preselectLocation('C', 1, locations), 'C');
 });
+
+
+test('last confirmed receipt Location is suggested when no Product default is configured', () => {
+  const locations = [che('A'), che('B'), imm('C')];
+  assert.equal(preselectLocation(null, 1, locations, 'B'), 'B');
+  assert.equal(preselectLocation('A', 1, locations, 'B'), 'A', 'explicit Product default takes priority');
+  assert.equal(preselectLocation('missing', 1, locations, 'B'), 'B', 'inactive/missing Product default falls back to last use');
+  assert.equal(preselectLocation(null, 1, locations, 'C'), '', 'never suggest a location from a different warehouse');
+  assert.equal(preselectLocation(null, 1, [che('A')], 'missing'), 'A', 'single-location fallback still works');
+});

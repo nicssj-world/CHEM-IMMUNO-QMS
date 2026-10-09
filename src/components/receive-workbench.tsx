@@ -33,7 +33,7 @@ function getInvoiceStorageClient(url: string, key: string) {
   return invoiceStorageClient;
 }
 
-export function ReceiveWorkbench({ invoiceId, idempotencyKey, lines, products, locations, warehouseIds, initialAttachments, savedToken }: { invoiceId: string; idempotencyKey: string; lines: Line[]; products: Product[]; locations: Location[]; warehouseIds: number[]; initialAttachments: Attachment[]; savedToken?: string }) {
+export function ReceiveWorkbench({ invoiceId, idempotencyKey, lines, products, locations, warehouseIds, initialAttachments, savedToken, recentLocationByProduct = {} }: { invoiceId: string; idempotencyKey: string; lines: Line[]; products: Product[]; locations: Location[]; warehouseIds: number[]; initialAttachments: Attachment[]; savedToken?: string; recentLocationByProduct?: Record<string, string> }) {
   const [warehouseId, setWarehouseId] = useState(warehouseIds[0]);
   const [scan, setScan] = useState<ScanResolution | null>(null);
   const [showScanDetails, setShowScanDetails] = useState(false);
@@ -83,13 +83,13 @@ export function ReceiveWorkbench({ invoiceId, idempotencyKey, lines, products, l
           if (await checkLotExpiryConflict(item.productId, item.lot, item.expiry)) { skipped.push(`${label} LOT ${item.lot}: วันหมดอายุไม่ตรงกับที่บันทึกไว้`); continue; }
         } catch { skipped.push(`${label} LOT ${item.lot}: ตรวจ LOT ไม่สำเร็จ`); continue; }
         used.set(line.invoice_line_id, total);
-        const locationId = preselectLocation(productById.get(item.productId)?.default_location_id, line.warehouse_id, locations);
+        const locationId = preselectLocation(productById.get(item.productId)?.default_location_id, line.warehouse_id, locations, recentLocationByProduct[item.productId]);
         accepted.push({ id: crypto.randomUUID(), invoiceLineId: line.invoice_line_id, quantity: item.quantity, lot: item.lot, expiry: item.expiry, locationId, raw: item.raw });
       }
       setPackages(prev => [...prev, ...accepted]);
       setMessage(`นำเข้า ${accepted.length} แพ็กเกจจากที่สแกนไว้ · เลือกตำแหน่งแล้วบันทึกผลตรวจรับ${skipped.length ? ` · ข้าม ${skipped.length} รายการ: ${skipped.join(' / ')}` : ''}`);
     })();
-  }, [invoiceId, lines, locations, productById, warehouseIds, savedToken]);
+  }, [invoiceId, lines, locations, productById, warehouseIds, savedToken, recentLocationByProduct]);
 
   const candidateKind = scan?.parsed.gtin ? 'GTIN' : scan?.parsed.primary ? 'HIBC_PRIMARY' : scan?.parsed.additionalProductId ? 'GS1_AI240' : 'OTHER';
   const candidateValue = scan?.parsed.gtin ?? scan?.parsed.primary ?? scan?.parsed.additionalProductId ?? scan?.parsed.raw.trim() ?? '';
@@ -103,7 +103,7 @@ export function ReceiveWorkbench({ invoiceId, idempotencyKey, lines, products, l
       if (result.locationQr) { setScan(null); setLocationPath(result.locationQr.path); setMessage(result.message ?? ''); return; }
       setScan(result);
       const lineId = result.invoiceLineId ?? '';
-      const locationId = preselectLocation(result.productId ? productById.get(result.productId)?.default_location_id : null, warehouseId, locations);
+      const locationId = preselectLocation(result.productId ? productById.get(result.productId)?.default_location_id : null, warehouseId, locations, result.productId ? recentLocationByProduct[result.productId] : null);
       const batch = scanBatchFields(result.parsed);
       setDraft({ invoiceLineId: lineId, quantity: '1', lot: batch.lot, expiry: batch.expiry, locationId, raw });
       setMessage(result.message ?? (result.parsed.warnings.length ? 'Barcode มีคำเตือน · ตรวจข้อมูลด้วยตนเอง' : 'พบน้ำยา · LOT/วันหมดอายุมาจาก Barcode โปรดตรวจทาน'));
