@@ -150,7 +150,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
           </ConfirmForm>
         </details>}
         {invoice.status === 'open' && missingLocations.map(w => <p key={w.id} className="error" role="alert">{w.name} ยังไม่มีตำแหน่งจัดเก็บ จึงรับน้ำยาของคลังนี้ไม่ได้ · {canSupervise(w.role) ? <Link href={'/locations?warehouse=' + w.code + '&return=' + back('/receive?invoice=' + invoice.id)}>เพิ่มตำแหน่งก่อนเริ่มสแกน</Link> : 'แจ้งหัวหน้างานให้เพิ่มตำแหน่ง'}</p>)}
-        {invoice.status === 'open' && warehouseIds.length ? <ReceiveWorkbench recentLocationByProduct={recentLocationByProduct} savedToken={params.saved ? params.at : undefined} invoiceId={invoice.id} idempotencyKey={randomUUID()} lines={lines} products={products} locations={locations} warehouseIds={[...new Set(lines.map(line => line.warehouse_id))].filter(id => warehouseIds.includes(id))} initialAttachments={attachmentData ?? []}/> : <>
+        {invoice.status === 'open' && warehouseIds.length ? <ReceiveWorkbench userId={access.userId} recentLocationByProduct={recentLocationByProduct} savedToken={params.saved ? params.at : undefined} invoiceId={invoice.id} idempotencyKey={randomUUID()} lines={lines} products={products} locations={locations} warehouseIds={[...new Set(lines.map(line => line.warehouse_id))].filter(id => warehouseIds.includes(id))} initialAttachments={attachmentData ?? []}/> : <>
           <p className="notice">Invoice นี้ปิดแล้ว หรือบัญชีนี้ไม่มีสิทธิ์รับเข้า</p>
           {attachmentData?.map(item => <a key={item.id} href={'/attachments/' + item.id} target="_blank" rel="noopener noreferrer" className="button secondary">ดูเอกสารรับเข้า {item.uploaded_at}</a>)}
         </>}
