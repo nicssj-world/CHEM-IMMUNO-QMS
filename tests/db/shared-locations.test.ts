@@ -102,7 +102,7 @@ test('shared Location Master: legacy IDs survive, storage is shared, stock and p
     });
 
     await t.test('supervisors manage the shared registry but staff and inactive users cannot edit', async () => {
-      const date = await owner(db => db.query<{updated_at:string}>('SELECT updated_at FROM public.ci_locations WHERE id=$1',[imm]));
+      const date = await owner(db => db.query<{updated_at:string}>('SELECT updated_at::text AS updated_at FROM public.ci_locations WHERE id=$1',[imm]));
       await rpc(U.supervisorChe,'ci_update_location',[imm,{name:'Shared refrigerator'},date.rows[0].updated_at],['uuid','jsonb','timestamptz']);
       await assert.rejects(()=>rpc(U.staffChe,'ci_update_location',[imm,{name:'Tamper'},date.rows[0].updated_at],['uuid','jsonb','timestamptz']),/CI_ACCESS_DENIED/);
       await assert.rejects(()=>newLocation(U.inactive,1,'NEW'),/CI_ACCESS_DENIED/);
