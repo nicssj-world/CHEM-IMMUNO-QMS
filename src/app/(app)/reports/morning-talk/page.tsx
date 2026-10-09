@@ -43,7 +43,7 @@ export default async function MorningTalkReportPage({ searchParams }: { searchPa
     <header className="flex flex-wrap justify-between items-end gap-4"><div><p className="eyebrow">Morning Talk</p><h1 className="page-title">รายงาน Morning Talk ประจำเดือน</h1><p className="muted">{formatMonth(month)} · {scope ? `${scopeLabel(scope)} (${scope})` : 'ทุกขอบเขตที่มีสิทธิ์ดู'} · เวลา Asia/Bangkok</p><p className="print-only text-xs">พิมพ์โดย {access.displayName} · {formatDateTime(new Date())}</p></div><PrintButton /></header>
     <form method="get" className="surface p-4 flex flex-wrap gap-3 items-end print-hide">
       <label className="field">เดือนรายงาน<input className="input" type="month" name="month" defaultValue={month} required /></label>
-      <label className="field">ขอบเขต<select className="input" name="scope" defaultValue={scope}><option value="">ทั้งหมด</option>{TALK_SCOPES.map(item => <option key={item} value={item}>{item === 'ALL' ? 'ทั้งสองคลัง (ALL)' : `${scopeLabel(item)} (${item})`}</option>)}</select></label>
+      <label className="field">ขอบเขต<select className="input" name="scope" defaultValue={scope}><option value="">ทั้งหมด</option>{TALK_SCOPES.map(item => <option key={item} value={item}>{item === 'ALL' ? 'คลังน้ำยา CHEM-IMMUNO' : `${scopeLabel(item)} (${item})`}</option>)}</select></label>
       <button className="button">แสดงรายงาน</button>
     </form>
     <section className="surface p-5 min-w-0"><h2 className="font-bold text-lg mb-3">สรุป</h2><div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
