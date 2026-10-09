@@ -83,9 +83,9 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const missingLocations = access.warehouses.filter(w => invoiceWarehouses.includes(Number(w.id)) && locations.length === 0);
   const back = (path: string) => encodeURIComponent(path);
   // Quality record for this invoice: receipt events with their assessments, and the vendor issues raised against it.
-  const { events: receiptEvents, error: receiptEventsError } = invoice && client
+  const { events: receiptEvents, groups: receiptGroups, transactions: receiveTransactions, error: receiptEventsError } = invoice && client
     ? await loadReceiptEvents(client, { invoiceId: invoice.id })
-    : { events: [], error: null };
+    : { events: [], groups: [], transactions: [], error: null };
   const { data: receiptLineData, error: receiptLineError } = receiptEvents.length && client
     ? await client.from('ci_receipt_lines').select('id,receipt_id,invoice_line_id,quantity,location_id,ci_stock_lots(lot_number,expiry_date)').in('receipt_id',receiptEvents.map(event => event.id)).limit(1000)
     : { data: [], error: null };
@@ -119,8 +119,6 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
     [...locations, ...(historicalLocationsResult.data ?? [])].map(location => [location.id, { code: location.code, name: location.name }]),
   );
   const productIdByInvoiceLine = new Map(lines.map(line => [line.invoice_line_id, line.product_id]));
-  const { data: receiveTransactionData } = receiptEvents.length && client ? await client.from('ci_stock_transactions').select('id,receipt_id').eq('kind', 'receive').in('receipt_id', receiptEvents.map(event => event.id)) : { data: [] };
-  const receiveTransactions = (receiveTransactionData ?? []) as { id: string; receipt_id: string }[];
   const { data: reversalData } = receiveTransactions.length && client ? await client.from('ci_stock_transactions').select('source_transaction_id').eq('kind', 'reversal').in('source_transaction_id', receiveTransactions.map(transaction => transaction.id)) : { data: [] };
   const reversedTransactionIds = new Set(((reversalData ?? []) as { source_transaction_id: string | null }[]).map(row => row.source_transaction_id).filter((id): id is string => Boolean(id)));
   const reversedReceiptIds = new Set(receiveTransactions.filter(transaction => reversedTransactionIds.has(transaction.id)).map(transaction => transaction.receipt_id));
@@ -128,39 +126,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const invoiceIssues = (invoiceIssueData ?? []) as VendorIssue[];
   const { data: invoiceIssueFiles } = invoiceIssues.length && client ? await client.from('ci_vendor_issue_attachments').select('id,issue_id,file_name,size_bytes,uploaded_at').in('issue_id', invoiceIssues.map(i => i.id)) : { data: [] };
   const supervisesAny = access.warehouses.some(w => canSupervise(w.role));
-  return (
-    <main className="grid gap-6 max-w-[1100px]">
-      <div><p className="eyebrow mb-2">Receiving</p><h1 className="page-title">รับน้ำยาเข้าคลัง</h1><p className="muted mt-2 text-sm">Invoice หนึ่งฉบับรับน้ำยา CHE และ IMM ร่วมกันได้ · รับบางส่วนได้หลายครั้ง</p></div>
-      {params.error && <p className="error" role="alert">{params.error}</p>}
-      {params.saved && <p className="notice" role="status">{savedNotice(params.saved, 'บันทึกสำเร็จ')}</p>}
-      {(lineError || attachmentError || locationsResult.error) && <p className="error" role="alert">อ่าน Invoice หรือตำแหน่งจัดเก็บไม่สำเร็จ: {logUserMessage('receive', lineError || attachmentError || locationsResult.error)}</p>}
-      {invoice ? <section className="grid gap-5">
-        <div className="surface p-5 flex flex-wrap justify-between items-center gap-3">
-          <div><p className="eyebrow">Invoice {invoice.invoice_number}</p><h2 className="font-extrabold text-xl">ตรวจและรับน้ำยา</h2><p className="muted text-sm">{invoice.invoice_date} · {vendors.find(v => v.id === invoice.vendor_id)?.name ?? 'ผู้ขาย'}</p></div>
-          <Link className="button secondary" href="/receive">กลับรายการ Invoice</Link>
-        </div>
-        {invoice.status === 'closed_short' && <p className="notice">Invoice นี้ปิดแบบรับไม่ครบแล้ว · ระบบบันทึกปัญหา “จำนวนส่งมอบไม่ครบ” ให้ผู้ขาย</p>}
-        {canCloseShort && <details className="surface p-5">
-          <summary className="cursor-pointer font-bold min-h-11 flex items-center">ผู้ขายส่งของไม่ครบและจะไม่ส่งเพิ่ม? ปิด Invoice แบบรับไม่ครบ</summary>
-          <ConfirmForm action={closeInvoiceShort} message={'ยืนยันปิด Invoice ' + invoice.invoice_number + ' แบบรับไม่ครบ?\nรายการค้างรับ ' + outstanding.length + ' รายการจะไม่รับเพิ่ม และระบบจะบันทึกเป็นปัญหาผู้ขาย'} className="grid gap-3 mt-3">
-            <input type="hidden" name="invoice_id" value={invoice.id}/>
-            <p className="muted text-sm">ค้างรับ {outstanding.length} รายการ · ถ้าแก้ใบรับเข้าแล้วเกิดยอดค้าง ระบบจะเปิด Invoice ให้รับต่อได้</p>
-            <label className="field">เหตุผล<textarea className="input min-h-20" name="reason" required maxLength={1000} placeholder="เช่น ผู้ขายแจ้งน้ำยาหมด ยกเลิกส่งส่วนที่เหลือ"/></label>
-            <div><SubmitButton className="button danger" label="ปิด Invoice แบบรับไม่ครบ" pendingLabel="กำลังบันทึก…"/></div>
-          </ConfirmForm>
-        </details>}
-        {invoice.status === 'open' && missingLocations.map(w => <p key={w.id} className="error" role="alert">{w.name} ยังไม่มีตำแหน่งจัดเก็บ จึงรับน้ำยาของคลังนี้ไม่ได้ · {canSupervise(w.role) ? <Link href={'/locations?warehouse=' + w.code + '&return=' + back('/receive?invoice=' + invoice.id)}>เพิ่มตำแหน่งก่อนเริ่มสแกน</Link> : 'แจ้งหัวหน้างานให้เพิ่มตำแหน่ง'}</p>)}
-        {invoice.status === 'open' && warehouseIds.length ? <ReceiveWorkbench key={invoice.id} userId={access.userId} recentLocationByProduct={recentLocationByProduct} savedToken={params.saved ? params.at : undefined} invoiceId={invoice.id} idempotencyKey={randomUUID()} lines={lines} products={products} locations={locations} warehouseIds={[...new Set(lines.map(line => line.warehouse_id))].filter(id => warehouseIds.includes(id))} initialAttachments={attachmentData ?? []}/> : <>
-          <p className="notice">Invoice นี้ปิดแล้ว หรือบัญชีนี้ไม่มีสิทธิ์รับเข้า</p>
-          {attachmentData?.map(item => <a key={item.id} href={'/attachments/' + item.id} target="_blank" rel="noopener noreferrer" className="button secondary">ดูเอกสารรับเข้า {item.uploaded_at}</a>)}
-        </>}
-        {receiptEventsError && <p role="alert" className="error">ไม่สามารถโหลดประวัติใบรับเข้าได้: {logUserMessage('receipt-events', receiptEventsError)}</p>}
-        {receiptEvents.length > 0 && <section className="surface p-5 sm:p-7 grid gap-4" aria-labelledby="invoice-receipts">
-          <h2 id="invoice-receipts" className="font-bold text-lg">ใบรับเข้าและผลตรวจรับของ Invoice นี้</h2>
-          {receiptLineError && <p role="alert" className="error">โหลดรายการน้ำยาในใบรับเข้าไม่สำเร็จ: {logUserMessage('receipt-lines', receiptLineError)}</p>}
-          {historicalProductsResult.error && <p role="alert" className="error">อ่านชื่อ Product ของใบรับเข้าไม่สำเร็จ: {logUserMessage('receipt-products', historicalProductsResult.error)}</p>}
-          {historicalLocationsResult.error && <p role="alert" className="error">อ่านชื่อตำแหน่งจัดเก็บของใบรับเข้าไม่สำเร็จ: {logUserMessage('receipt-locations', historicalLocationsResult.error)}</p>}
-          {receiptEvents.map(event => {
+  const renderReceiptEvidence = (eventsToRender: typeof receiptEvents) => eventsToRender.map(event => {
             const canEdit = access.warehouses.some(warehouse => Number(warehouse.id) === Number(event.warehouse_id) && canSupervise(warehouse.role));
             const reversed = reversedReceiptIds.has(event.id);
             const received = receiptLinesByReceipt.get(event.id) ?? [];
@@ -193,7 +159,81 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
                           <span>ตำแหน่ง: {location ? `${location.code} · ${location.name}` : 'ไม่พบชื่อตำแหน่ง'}</span>
                         </div>
                       </article>;
-                    })}
+                    });
+  return (
+    <main className="grid gap-6 max-w-[1100px]">
+      <div><p className="eyebrow mb-2">Receiving</p><h1 className="page-title">รับน้ำยาเข้าคลัง</h1><p className="muted mt-2 text-sm">Invoice หนึ่งฉบับรับน้ำยา CHE และ IMM ร่วมกันได้ · รับบางส่วนได้หลายครั้ง</p></div>
+      {params.error && <p className="error" role="alert">{params.error}</p>}
+      {params.saved && <p className="notice" role="status">{savedNotice(params.saved, 'บันทึกสำเร็จ')}</p>}
+      {(lineError || attachmentError || locationsResult.error) && <p className="error" role="alert">อ่าน Invoice หรือตำแหน่งจัดเก็บไม่สำเร็จ: {logUserMessage('receive', lineError || attachmentError || locationsResult.error)}</p>}
+      {invoice ? <section className="grid gap-5">
+        <div className="surface p-5 flex flex-wrap justify-between items-center gap-3">
+          <div><p className="eyebrow">Invoice {invoice.invoice_number}</p><h2 className="font-extrabold text-xl">ตรวจและรับน้ำยา</h2><p className="muted text-sm">{invoice.invoice_date} · {vendors.find(v => v.id === invoice.vendor_id)?.name ?? 'ผู้ขาย'}</p></div>
+          <Link className="button secondary" href="/receive">กลับรายการ Invoice</Link>
+        </div>
+        {invoice.status === 'closed_short' && <p className="notice">Invoice นี้ปิดแบบรับไม่ครบแล้ว · ระบบบันทึกปัญหา “จำนวนส่งมอบไม่ครบ” ให้ผู้ขาย</p>}
+        {canCloseShort && <details className="surface p-5">
+          <summary className="cursor-pointer font-bold min-h-11 flex items-center">ผู้ขายส่งของไม่ครบและจะไม่ส่งเพิ่ม? ปิด Invoice แบบรับไม่ครบ</summary>
+          <ConfirmForm action={closeInvoiceShort} message={'ยืนยันปิด Invoice ' + invoice.invoice_number + ' แบบรับไม่ครบ?\nรายการค้างรับ ' + outstanding.length + ' รายการจะไม่รับเพิ่ม และระบบจะบันทึกเป็นปัญหาผู้ขาย'} className="grid gap-3 mt-3">
+            <input type="hidden" name="invoice_id" value={invoice.id}/>
+            <p className="muted text-sm">ค้างรับ {outstanding.length} รายการ · ถ้าแก้ใบรับเข้าแล้วเกิดยอดค้าง ระบบจะเปิด Invoice ให้รับต่อได้</p>
+            <label className="field">เหตุผล<textarea className="input min-h-20" name="reason" required maxLength={1000} placeholder="เช่น ผู้ขายแจ้งน้ำยาหมด ยกเลิกส่งส่วนที่เหลือ"/></label>
+            <div><SubmitButton className="button danger" label="ปิด Invoice แบบรับไม่ครบ" pendingLabel="กำลังบันทึก…"/></div>
+          </ConfirmForm>
+        </details>}
+        {invoice.status === 'open' && missingLocations.map(w => <p key={w.id} className="error" role="alert">{w.name} ยังไม่มีตำแหน่งจัดเก็บ จึงรับน้ำยาของคลังนี้ไม่ได้ · {canSupervise(w.role) ? <Link href={'/locations?warehouse=' + w.code + '&return=' + back('/receive?invoice=' + invoice.id)}>เพิ่มตำแหน่งก่อนเริ่มสแกน</Link> : 'แจ้งหัวหน้างานให้เพิ่มตำแหน่ง'}</p>)}
+        {invoice.status === 'open' && warehouseIds.length ? <ReceiveWorkbench key={invoice.id} userId={access.userId} recentLocationByProduct={recentLocationByProduct} savedToken={params.saved ? params.at : undefined} invoiceId={invoice.id} idempotencyKey={randomUUID()} lines={lines} products={products} locations={locations} warehouseIds={[...new Set(lines.map(line => line.warehouse_id))].filter(id => warehouseIds.includes(id))} initialAttachments={attachmentData ?? []}/> : <>
+          <p className="notice">Invoice นี้ปิดแล้ว หรือบัญชีนี้ไม่มีสิทธิ์รับเข้า</p>
+          {attachmentData?.map(item => <a key={item.id} href={'/attachments/' + item.id} target="_blank" rel="noopener noreferrer" className="button secondary">ดูเอกสารรับเข้า {item.uploaded_at}</a>)}
+        </>}
+        {receiptEventsError && <p role="alert" className="error">ไม่สามารถโหลดประวัติใบรับเข้าได้: {logUserMessage('receipt-events', receiptEventsError)}</p>}
+        {receiptEvents.length > 0 && <section className="surface p-5 sm:p-7 grid gap-4" aria-labelledby="invoice-receipts">
+          <h2 id="invoice-receipts" className="font-bold text-lg">ใบรับเข้าและผลตรวจรับของ Invoice นี้</h2>
+          {receiptLineError && <p role="alert" className="error">โหลดรายการน้ำยาในใบรับเข้าไม่สำเร็จ: {logUserMessage('receipt-lines', receiptLineError)}</p>}
+          {historicalProductsResult.error && <p role="alert" className="error">อ่านชื่อ Product ของใบรับเข้าไม่สำเร็จ: {logUserMessage('receipt-products', historicalProductsResult.error)}</p>}
+          {historicalLocationsResult.error && <p role="alert" className="error">อ่านชื่อตำแหน่งจัดเก็บของใบรับเข้าไม่สำเร็จ: {logUserMessage('receipt-locations', historicalLocationsResult.error)}</p>}
+          {receiptGroups.map(group => {
+            if (group.events.length === 1) return <div key={group.key}>{renderReceiptEvidence(group.events)}</div>;
+            const received = group.events.flatMap(event => receiptLinesByReceipt.get(event.id) ?? []);
+            const units = received.reduce((sum, line) => sum + line.quantity, 0);
+            const reversed = group.events.filter(event => reversedReceiptIds.has(event.id)).length;
+            const status = reversed === group.events.length ? 'ย้อนรายการแล้ว' : reversed ? 'ย้อนรายการบางส่วน' : 'บันทึกรับเข้าแล้ว';
+            return <div key={group.key} className="grid gap-3">
+              <section className="rounded-xl border border-line p-4 grid gap-3" aria-label={`ใบรับเข้า ${group.displayNumber ?? ''}`}>
+                <header className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h3 className="font-bold">ใบรับเข้า {group.displayNumber ?? '—'}</h3>
+                    <p className="muted text-sm">รับเข้าเมื่อ {new Date(group.events[0].received_at).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'})}</p>
+                    <p className="muted text-xs">หลักฐาน Ledger เดิม: {group.referenceNumbers.join(' / ')} · รับเข้าจากการยืนยันครั้งเดียว</p>
+                  </div>
+                  <span className="badge">{status}</span>
+                </header>
+                <p className="text-sm font-semibold">รายการน้ำยาที่รับเข้า {received.length} รายการ · จำนวนรวม {units.toLocaleString('th-TH')} หน่วย</p>
+                {!receiptLineError && <div className="grid gap-2">
+                  {received.map((line,index) => {
+                    const product = productNameById.get(productIdByInvoiceLine.get(line.invoice_line_id) ?? '');
+                    const location = locationNameById.get(line.location_id);
+                    return <article key={line.id} className="rounded-lg border border-line p-3 grid gap-2">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <strong className="block break-words">{index+1}. {product ? `${product.code} · ${product.name}` : 'Product ในใบรับเข้า'}</strong>
+                        <span className="font-semibold whitespace-nowrap">จำนวน {line.quantity.toLocaleString('th-TH')}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm muted">
+                        <span>LOT: {line.lot_number}</span>
+                        <span>หมดอายุ: {line.expiry_date}</span>
+                        <span>ตำแหน่ง: {location ? `${location.code} · ${location.name}` : 'ไม่พบชื่อตำแหน่ง'}</span>
+                      </div>
+                    </article>;
+                  })}
+                </div>}
+              </section>
+              <details className="rounded-xl border border-line p-4">
+                <summary className="cursor-pointer font-semibold min-h-11">รายละเอียดการตรวจรับและแก้ไขย้อนหลัง ({group.referenceNumbers.length} รหัสอ้างอิง)</summary>
+                <p className="muted text-sm mt-2 mb-4">การรับเข้าหนึ่งครั้งมีหลักฐานภายในแยกตาม Ledger เพื่อรักษาประวัติการตรวจสอบและสิทธิ์แก้ไขเดิม</p>
+                <div className="grid gap-3">{renderReceiptEvidence(group.events)}</div>
+              </details>
+            </div>;
+          })}
                   </div>
                 </> : <p className="muted text-sm">ไม่พบรายการน้ำยาสำหรับใบรับเข้านี้ หากคาดว่ามีข้อมูล โปรดแจ้งผู้ดูแลระบบตรวจสอบ</p>)}
               </div>
