@@ -44,4 +44,4 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: node --import tsx --test tests/db/unified-count.test.ts
+      - run: node --import tsx --test tests/db/unified-count.test.ts tests/db/unified-vendor.test.ts
