@@ -126,7 +126,9 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
   const invoiceIssues = (invoiceIssueData ?? []) as VendorIssue[];
   const { data: invoiceIssueFiles } = invoiceIssues.length && client ? await client.from('ci_vendor_issue_attachments').select('id,issue_id,file_name,size_bytes,uploaded_at').in('issue_id', invoiceIssues.map(i => i.id)) : { data: [] };
   const supervisesAny = access.warehouses.some(w => canSupervise(w.role));
-  const renderReceiptEvidence = (itemsToRender: typeof receiptEvents) => itemsToRender.map(event => {
+  const renderReceiptEvidence = (itemsToRender: typeof receiptEvents) => {
+    if (!invoice) return null;
+    return itemsToRender.map(event => {
             const canEdit = access.warehouses.some(warehouse => Number(warehouse.id) === Number(event.warehouse_id) && canSupervise(warehouse.role));
             const reversed = reversedReceiptIds.has(event.id);
             const received = receiptLinesByReceipt.get(event.id) ?? [];
@@ -178,6 +180,7 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
               <ReceiptAssessmentCard eventNumber={event.event_number} invoiceNumber={invoice.invoice_number} receivedAt={event.received_at} assessment={event.assessment} revisions={event.revisions} canRevise={false}/>
             </div>;
           });
+  };
   return (
     <main className="grid gap-6 max-w-[1100px]">
       <div><p className="eyebrow mb-2">Receiving</p><h1 className="page-title">รับน้ำยาเข้าคลัง</h1><p className="muted mt-2 text-sm">Invoice หนึ่งฉบับรับน้ำยา CHE และ IMM ร่วมกันได้ · รับบางส่วนได้หลายครั้ง</p></div>
