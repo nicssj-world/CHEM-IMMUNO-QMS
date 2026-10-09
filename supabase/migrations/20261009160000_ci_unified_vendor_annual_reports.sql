@@ -267,16 +267,16 @@ create trigger ci_unified_vendor_immutable before update or delete on public.ci_
  for each row execute function ci_private.ci_unified_vendor_immutable();
 
 create function public.ci_create_unified_vendor_report(p_vendor uuid,p_fy integer)
-returns uuid language sql security invoker set search_path='' as $$
+returns uuid language sql security definer set search_path='' as $$
 select ci_private.ci_create_unified_vendor_report($1,$2) $$;
 create function public.ci_save_unified_vendor_report(p_id uuid,p_data jsonb)
-returns void language sql security invoker set search_path='' as $$
+returns void language sql security definer set search_path='' as $$
 select ci_private.ci_save_unified_vendor_report($1,$2) $$;
 create function public.ci_refresh_unified_vendor_report(p_id uuid)
-returns void language sql security invoker set search_path='' as $$
+returns void language sql security definer set search_path='' as $$
 select ci_private.ci_refresh_unified_vendor_report($1) $$;
 create function public.ci_finalize_unified_vendor_report(p_id uuid)
-returns text language sql security invoker set search_path='' as $$
+returns text language sql security definer set search_path='' as $$
 select ci_private.ci_finalize_unified_vendor_report($1) $$;
 revoke all on function public.ci_create_unified_vendor_report(uuid,integer),
  public.ci_save_unified_vendor_report(uuid,jsonb),public.ci_refresh_unified_vendor_report(uuid),
