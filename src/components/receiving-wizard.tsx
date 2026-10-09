@@ -1,9 +1,11 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { BarcodeScanner } from './barcode-scanner';
+import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
+import { ScanLine, X } from 'lucide-react';
+import { invoiceNumberFromScan } from '@/lib/invoice-barcode';
 import { InvoiceReagentPicker } from './invoice-reagent-picker';
 import { IntegerQuantityInput } from './integer-quantity-input';
 import { ReceiptAssessmentFields } from './receipt-assessment-fields';
@@ -41,10 +43,30 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
   const [pending,startTransition]=useTransition();
+  const [invoiceScannerOpen,setInvoiceScannerOpen]=useState(false);
+  const [invoiceScanStatus,setInvoiceScanStatus]=useState('');
+  const [invoiceFeedback,setInvoiceFeedback]=useState<ScanFeedback|null>(null);
+  const invoiceScanSequence=useRef(0);
+  const invoiceNumberInput=useRef<HTMLInputElement>(null);
   const productsById=useMemo(()=>new Map(products.map(p=>[p.id,p])),[products]);
   const locationsById=useMemo(()=>new Map(locations.map(p=>[p.id,p])),[locations]);
   const vendorsById=useMemo(()=>new Map(vendors.map(p=>[p.id,p])),[vendors]);
   const totals=wizardTotals(lines);
+
+  function onInvoiceScan(raw:string,symbology:string) {
+    const result=invoiceNumberFromScan(raw,symbology);
+    if(!result.ok) {
+      setInvoiceScanStatus(result.message);
+      setInvoiceFeedback({id:++invoiceScanSequence.current,tone:'warn',title:'รหัสนี้ไม่ใช่เลข Invoice',detail:result.message});
+      return;
+    }
+    setHeader(previous=>({...previous,invoiceNumber:result.invoiceNumber}));
+    setInvoiceScanStatus('อ่านเลข Invoice สำเร็จ · กรุณาตรวจสอบเลขกับเอกสารก่อนกดถัดไป');
+    setInvoiceFeedback(null);
+    setError('');
+    setInvoiceScannerOpen(false);
+    invoiceNumberInput.current?.focus();
+  }
 
   function alterLine(id:string,update:(line:WizardLine)=>WizardLine) {
     setLines(current=>current.map(line=>line.id===id?update(line):line));
@@ -163,18 +185,49 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     {step===1 && <section className="surface p-4 sm:p-7 grid gap-4">
       <div><h2 className="font-bold text-lg">Step 1 · ส่วนหัว Invoice</h2>
         <p className="muted text-sm">กรอกเฉพาะส่วนหัว ไม่มีรายการน้ำยาและยังไม่เพิ่ม Stock · กดถัดไปเพื่อเก็บ Draft และรับน้ำยา</p></div>
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
         <label className="field min-w-0"><span>ผู้ขาย <span className="text-[#b42318]">*</span></span>
           <select className="input" value={header.vendorId} onChange={e=>setHeader({...header,vendorId:e.target.value})} aria-required="true">
             <option value="">เลือกผู้ขาย</option>{vendors.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
           </select></label>
-        <label className="field min-w-0"><span>เลขที่ Invoice <span className="text-[#b42318]">*</span></span>
-          <input className="input" value={header.invoiceNumber} onChange={e=>setHeader({...header,invoiceNumber:e.target.value})} maxLength={120} aria-required="true" placeholder="เลขที่บนเอกสาร"/></label>
+        <div className="grid min-w-0 gap-[7px]">
+          <label className="block text-sm font-semibold" htmlFor="receive-invoice-number">
+            เลขที่ Invoice <span className="text-[#b42318]">*</span>
+          </label>
+          <div className="flex min-w-0 items-stretch gap-2">
+            <input id="receive-invoice-number" ref={invoiceNumberInput}
+              className="input min-w-0 flex-1" value={header.invoiceNumber}
+              onChange={e=>{setHeader({...header,invoiceNumber:e.target.value});setInvoiceScanStatus('');}}
+              autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off"
+              maxLength={120} aria-required="true" placeholder="เลขที่บนเอกสาร"/>
+            <button type="button" className="button secondary min-h-11 shrink-0"
+              aria-expanded={invoiceScannerOpen} aria-controls="receive-invoice-scanner"
+              onClick={()=>{setInvoiceScannerOpen(open=>!open);setInvoiceFeedback(null);setInvoiceScanStatus('');}}>
+              <ScanLine size={18} aria-hidden/> <span>สแกน</span>
+            </button>
+          </div>
+          {invoiceScanStatus&&<p className="muted text-xs" role="status">{invoiceScanStatus}</p>}
+        </div>
         <label className="field min-w-0"><span>วันที่ Invoice <span className="text-[#b42318]">*</span></span>
-          <input className="input" type="date" value={header.invoiceDate} onChange={e=>setHeader({...header,invoiceDate:e.target.value})} aria-required="true"/></label>
+          <input className="input block min-w-0 max-w-full" type="date"
+            value={header.invoiceDate} onChange={e=>setHeader({...header,invoiceDate:e.target.value})}
+            aria-required="true"/></label>
         <label className="field min-w-0">เลขที่ PO (ถ้ามี)
           <input className="input" value={header.poNumber} onChange={e=>setHeader({...header,poNumber:e.target.value})} maxLength={200}/></label>
       </div>
+      {invoiceScannerOpen && <section id="receive-invoice-scanner" className="rounded-xl border border-line p-3 sm:p-4 grid gap-3 min-w-0"
+        aria-label="สแกนเลขที่ Invoice">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0"><h3 className="font-semibold">สแกนเลขที่ Invoice</h3>
+            <p className="muted text-xs">อ่าน Barcode บนเอกสารเพื่อเติมเลข Invoice เท่านั้น ยังไม่สร้าง Invoice หรือเพิ่ม Stock</p>
+          </div>
+          <button type="button" className="button secondary shrink-0" aria-label="ปิดการสแกน Invoice"
+            onClick={()=>setInvoiceScannerOpen(false)}><X size={18} aria-hidden/></button>
+        </div>
+        <BarcodeScanner purpose="invoice" showManual={false} autoStart continuous
+          formats={['CODE_128','CODE_39','EAN_13','QR_CODE']}
+          onScan={onInvoiceScan} feedback={invoiceFeedback}/>
+      </section>}
       <div className="flex justify-end"><button className="button min-h-12" type="button" disabled={pending}
         onClick={()=>save(2)}>{pending?'กำลังบันทึกร่าง…':'ถัดไป · รับน้ำยา →'}</button></div>
     </section>}
@@ -217,7 +270,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
                   <input className="input" autoCapitalize="characters" autoComplete="off" value={pkg.lot}
                     onChange={e=>alterLot(line.id,pkg.id,{lot:e.target.value})}/></label>
                 <label className="field min-w-0"><span>วันหมดอายุ <span className="text-[#b42318]">*</span></span>
-                  <input className="input" type="date" value={pkg.expiry}
+                  <input className="input block min-w-0 max-w-full" type="date" value={pkg.expiry}
                     onChange={e=>alterLot(line.id,pkg.id,{expiry:e.target.value})}/></label>
                 <label className="field min-w-0"><span>ตำแหน่งจัดเก็บ <span className="text-[#b42318]">*</span></span>
                   <select className="input" value={pkg.locationId}
