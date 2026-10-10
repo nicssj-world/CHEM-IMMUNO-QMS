@@ -109,10 +109,19 @@ test('GS1 AI 17 day 00 is the last calendar day of the encoded month', () => {
 });
 
 test('GS1 trailing unknown AI retains decoded batch for explicit review only', () => {
-  const parsed = parseBarcode('010087519700639110N29106\\x1d172710311126032424009040765190999');
+  const parsed = parseBarcode('010087519700639110N29106\x1d172710311126032424009040765190\x1d999');
   assert.equal(parsed.lot, 'N29106');
   assert.equal(parsed.expiry, '2027-10-31');
   assert.ok(parsed.warnings.some(w => w.startsWith('Unknown or malformed AI')));
   assert.deepEqual(scanBatchFields(parsed), {lot:'N29106',expiry:'2027-10-31',requiresReview:true});
   assert.deepEqual(scanBatchFields({...parsed,warnings:['Duplicate AI 17']}), {lot:'',expiry:'',requiresReview:true});
+});
+
+test('GS1 variable AI 240 without FNC1 retains the entire REF, never guesses a truncated mapping', () => {
+  const parsed = parseBarcode('010087519700639110N29106\x1d172710311126032424009040765190999');
+  assert.equal(parsed.additionalProductId, '09040765190999');
+  assert.equal(parsed.lot, 'N29106');
+  assert.equal(parsed.expiry, '2027-10-31');
+  assert.equal(parsed.warnings.length, 0);
+  assert.ok(!barcodeIdentifierCandidates(parsed).includes('09040765190'));
 });
