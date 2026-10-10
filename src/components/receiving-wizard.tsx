@@ -288,6 +288,9 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
             return;
           }
           setDraftId(result.id);
+          // Advance immediately: App Router can preserve this client instance
+          // when only the draft search parameter changes.
+          setStep(2);
           router.replace('/receive?draft='+encodeURIComponent(result.id));
           return;
         }

@@ -101,7 +101,8 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
     const locationManageHref=supervisingWarehouse
       ? '/locations?warehouse='+encodeURIComponent(supervisingWarehouse.code)+'&return='+encodeURIComponent('/receive')
       : undefined;
-    return <main><ReceivingWizard vendors={vendors} products={products} locations={locations}
+    // Remount when switching between new / existing drafts in the same route.
+    return <main><ReceivingWizard key={activeDraft?.id ?? 'new'} vendors={vendors} products={products} locations={locations}
       initialDraft={activeDraft as WizardDraft|null} recentInvoices={invoices}
       recentDrafts={draftRows??[]} recentLocationByProduct={wizardRecentLocations}
       canAddVendor={vendorLinkAllowed} locationManageHref={locationManageHref}/></main>;

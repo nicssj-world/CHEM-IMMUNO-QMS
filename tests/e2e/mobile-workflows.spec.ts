@@ -337,11 +337,14 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.locator('input[type="date"]').first().fill('2026-10-09');
   await page.getByRole('button', { name: /ถัดไป · รับน้ำยา/ }).click();
   await expect(page.getByRole('heading', { name: 'Step 2 · รับเข้าน้ำยา' })).toBeVisible({timeout: 15_000});
-  const matrixA = '(01)00012345678905(17)271231(10)E2E-MATRIX-A';
+  // This GTIN is intentionally NOT registered: Product must resolve via
+  // approved REF_CURRENT from GS1 AI (240), not via GTIN or a manual picker.
+  const matrixA = '(01)00098765432109(17)271231(10)E2E-MATRIX-A(240)E2E-C1';
   await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill(matrixA);
   await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
   const pendingMatrix = page.getByRole('region', { name: 'ตรวจสอบ Barcode ก่อนเพิ่มลงร่าง' });
   await expect(pendingMatrix).toBeVisible({timeout:15_000});
+  await expect(pendingMatrix.getByText('Synthetic CHE one')).toBeVisible();
   await expect(pendingMatrix.getByRole('textbox', { name: /LOT/ })).toHaveValue('E2E-MATRIX-A');
   await expect(pendingMatrix.locator('input[type="date"]')).toHaveValue('2027-12-31');
   // A different decoded frame must never overwrite a LOT the operator has not accepted.
