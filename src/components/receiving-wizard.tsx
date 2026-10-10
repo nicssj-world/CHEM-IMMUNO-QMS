@@ -337,7 +337,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       <div><p className="eyebrow mb-1">Receiving Wizard</p><h1 className="page-title">รับน้ำยาเข้าคลัง</h1></div>
       <nav aria-label="ขั้นตอนการรับน้ำยา" className="grid grid-cols-4 gap-2">
         {TITLES.map((name,index)=><div key={name}
-          className={`min-w-0 rounded-xl border p-2 text-center ${step===index+1?'border-[#087d78] bg-[#e7f4f3]':'border-line bg-surface'}`}>
+          className={`flex h-full min-w-0 flex-col items-center justify-center rounded-xl border p-2 text-center ${step===index+1?'border-[#087d78] bg-[#e7f4f3]':'border-line bg-surface'}`}>
           <span className="block text-xs font-semibold">ขั้นที่ {index+1}</span>
           <span className="block text-xs sm:text-sm break-words">{name}</span>
         </div>)}
