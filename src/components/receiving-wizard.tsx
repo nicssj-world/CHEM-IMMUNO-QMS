@@ -17,7 +17,7 @@ import { preselectLocation } from '@/lib/receive-location';
 import { createReceivingWizardDraft, saveReceivingWizardDraft, finalizeReceivingWizard } from '@/app/actions/receiving-wizard';
 import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment, appendWizardScan,
   type WizardDraft, type WizardHeader, type WizardLine, type WizardLot, type WizardLocation, type WizardProduct } from '@/lib/receiving-wizard';
-import { scanBatchFields } from '@/lib/barcode';
+import { scannedReceivingDefaults } from '@/lib/receiving-scan-defaults';
 import { ScanIntakeGate } from '@/lib/scan-intake-gate';
 import { userMessage } from '@/lib/messages';
 
@@ -209,14 +209,14 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         return;
       }
       const product=scan.product?.id?productsById.get(scan.product.id):null;
-      const batch=scanBatchFields(scan.parsed);
+      const locationId=product?suggestedLocation(product.id):'';
+      const batch=scannedReceivingDefaults(scan.parsed,Boolean(product),Boolean(locationId));
       const candidate:ScanReview={
         raw,parsed:scan.parsed,productId:product?.id??'',
         lot:batch.lot,expiry:batch.expiry,quantity:'1',
-        locationId:product?suggestedLocation(product.id):'',
+        locationId,
       };
-      const needReview=!product || batch.requiresReview || !batch.lot || !batch.expiry || !candidate.locationId;
-      if(needReview) {
+      if(batch.requiresReview) {
         scanGate.current.requireReview();
         setScanReview(candidate);
         const detail=scan.message??(batch.requiresReview?'Barcode มีคำเตือน · กรุณายืนยันข้อมูลก่อนเพิ่ม':'ตรวจ LOT วันหมดอายุและตำแหน่งก่อนเพิ่ม');
