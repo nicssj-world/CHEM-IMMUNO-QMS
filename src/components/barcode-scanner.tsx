@@ -30,6 +30,10 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
   const codeLabel = invoiceMode ? 'เลข Invoice' : isQr ? 'QR' : 'Barcode';
   const video = useRef<HTMLVideoElement>(null);
   const controls = useRef<IScannerControls | null>(null);
+  // Camera decoding is registered once. Always dispatch to the newest parent
+  // handler so changing the Step 2 Location takes effect without restarting video.
+  const onScanRef = useRef(onScan);
+  useEffect(() => { onScanRef.current = onScan; }, [onScan]);
   const last = useRef<{ raw: string; at: number } | null>(null);
   const manualInput = useRef<HTMLInputElement>(null);
   const photoInput = useRef<HTMLInputElement>(null);
@@ -61,7 +65,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
       navigator.vibrate?.(60);
       setStatus(invoiceMode ? 'อ่านรหัสแล้ว · ตรวจเลข Invoice' : 'อ่านแล้ว · สแกนชิ้นถัดไปได้เลย');
       acceptingRef.current = true;
-      try { await onScan(raw, symbology); }
+      try { await onScanRef.current(raw, symbology); }
       finally { acceptingRef.current = false; }
       return;
     }
@@ -70,7 +74,7 @@ export function BarcodeScanner({ onScan, continuous = false, dock = false, feedb
     stop();
     setStatus(invoiceMode ? 'อ่านเลข Invoice แล้ว · ตรวจสอบกับเอกสาร' : isQr ? 'อ่าน QR แล้ว · กำลังเปิดตำแหน่ง' : 'อ่าน Barcode แล้ว · ตรวจ Product, LOT และวันหมดอายุก่อนบันทึก');
     acceptingRef.current = true;
-    try { await onScan(raw, symbology); }
+    try { await onScanRef.current(raw, symbology); }
     finally { acceptingRef.current = false; }
   }
 
