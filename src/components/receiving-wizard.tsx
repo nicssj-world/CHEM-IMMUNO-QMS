@@ -18,6 +18,7 @@ import { createReceivingWizardDraft, saveReceivingWizardDraft, finalizeReceiving
 import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment, appendWizardScan,
   type WizardDraft, type WizardHeader, type WizardLine, type WizardLot, type WizardLocation, type WizardProduct } from '@/lib/receiving-wizard';
 import { scanBatchFields } from '@/lib/barcode';
+import { ScanIntakeGate } from '@/lib/scan-intake-gate';
 import { userMessage } from '@/lib/messages';
 
 type Vendor = { id: string; name: string };
@@ -71,6 +72,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const [locationPath,setLocationPath]=useState<string|null>(null);
   const [sessionLocationId,setSessionLocationId]=useState('');
   const [scanBusy,setScanBusy]=useState(false);
+  const scanGate=useRef(new ScanIntakeGate());
   const [selectedEvidence,setSelectedEvidence]=useState<File|null>(null);
   const [imagePreview,setImagePreview]=useState<string|null>(null);
   const [completedInvoiceId,setCompletedInvoiceId]=useState('');
@@ -194,7 +196,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   }
 
   async function onScan(raw:string,symbology:string) {
-    if(scanBusy||pending)return;
+    if(pending || !scanGate.current.begin())return;
     setScanBusy(true);
     setLocationPath(null);
     setError('');
@@ -215,6 +217,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       };
       const needReview=!product || batch.requiresReview || !batch.lot || !batch.expiry || !candidate.locationId;
       if(needReview) {
+        scanGate.current.requireReview();
         setScanReview(candidate);
         const detail=scan.message??(batch.requiresReview?'Barcode มีคำเตือน · กรุณายืนยันข้อมูลก่อนเพิ่ม':'ตรวจ LOT วันหมดอายุและตำแหน่งก่อนเพิ่ม');
         setNotice(detail);
@@ -223,19 +226,22 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       }
       // Same safe merge, quantity and expiry guards as the original ReceiveWorkbench.
       const ok=await addScannedPackage(candidate);
-      if(!ok)setScanReview(candidate);
+      if(!ok){scanGate.current.requireReview();setScanReview(candidate);}
     } catch(cause) {
       const message=userMessage(cause instanceof Error?cause.message:null,'สแกนไม่สำเร็จ');
       setError(message);
       sayScan('error','สแกนไม่สำเร็จ',message);
-    } finally {setScanBusy(false);}
+    } finally {scanGate.current.finish();setScanBusy(false);}
   }
   async function addReviewedScan() {
-    if(!scanReview)return;
+    if(!scanReview || !scanGate.current.beginReviewedCommit())return;
     setScanBusy(true);
-    try {await addScannedPackage(scanReview,true);}
+    try {
+      const added=await addScannedPackage(scanReview,true);
+      if(added)scanGate.current.completeReview();
+    }
     catch(cause){const msg=userMessage(cause instanceof Error?cause.message:null,'ตรวจ LOT ไม่สำเร็จ');setError(msg);sayScan('error','ตรวจ LOT ไม่สำเร็จ',msg);}
-    finally{setScanBusy(false);}
+    finally{scanGate.current.finish();setScanBusy(false);}
   }
   async function proposeMapping() {
     if(!scanReview?.productId)return;
@@ -422,8 +428,8 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           aria-label="ตรวจสอบ Barcode ก่อนเพิ่มลงร่าง">
           <div className="flex flex-wrap justify-between items-start gap-2">
             <div><strong className="block">ตรวจสอบ Barcode ก่อนเพิ่ม</strong>
-              <p className="text-xs">ข้อมูลที่ยังไม่ยืนยันจะไม่เพิ่มจำนวนรับเข้า · กรุณาตรวจสอบกับฉลากจริง</p></div>
-            <button className="button secondary shrink-0" type="button" onClick={()=>setScanReview(null)}>ยกเลิกผลสแกนนี้</button>
+              <p className="text-xs">ข้อมูลที่ยังไม่ยืนยันจะไม่เพิ่มจำนวนรับเข้า · กล้องจะไม่รับรหัสใหม่มาทับจนกว่าจะกดยืนยันหรือยกเลิกผลสแกนนี้</p></div>
+            <button className="button secondary shrink-0" type="button" onClick={()=>{scanGate.current.completeReview();setScanReview(null);}}>ยกเลิกผลสแกนนี้</button>
           </div>
           <div className="text-xs grid gap-1 break-all">
             <p><strong>Raw:</strong> <code>{scanReview.raw}</code></p>
