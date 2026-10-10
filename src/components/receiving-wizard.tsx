@@ -148,6 +148,11 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     setWizardLines(current=>current.map(line=>line.id===id?update(line):line));
   }
   function alterLot(lineId:string,lotId:string,change:Partial<WizardLot>) {
+    // Choosing the first Location for a manual LOT also arms continuous scanning.
+    // Later per-LOT overrides must not silently change an explicit session choice.
+    const chosenLocation=change.locationId;
+    if(chosenLocation && locationsById.has(chosenLocation))
+      setSessionLocationId(current=>current || chosenLocation);
     alterLine(lineId,line=>({...line,packages:line.packages.map(pkg=>pkg.id===lotId?{...pkg,...change}:pkg)}));
   }
   function addProduct(productId:string) {
@@ -170,6 +175,13 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     if(sessionLocationId && locationsById.has(sessionLocationId))return sessionLocationId;
     return preselectLocation(product.default_location_id,product.warehouse_id,locations,recentLocationByProduct[productId]);
   }
+  function nextLotLocation(line:WizardLine):string {
+    // Keep the explicit scanning Location; otherwise reuse this Product's
+    // latest LOT before trying its registered default / receipt history.
+    if(sessionLocationId && locationsById.has(sessionLocationId))return sessionLocationId;
+    const previous=[...line.packages].reverse().find(pkg=>locationsById.has(pkg.locationId));
+    return previous?.locationId ?? suggestedLocation(line.productId);
+  }
   async function addScannedPackage(candidate:ScanReview,rememberLocation=false):Promise<boolean> {
     if(!candidate.productId||!productsById.has(candidate.productId)){
       sayScan('warn','ยังไม่ได้เลือกน้ำยา','เลือกน้ำยาจากทะเบียนก่อน');return false;
@@ -186,7 +198,8 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       return false;
     }
     setWizardLines(merged.lines);
-    if(rememberLocation && candidate.locationId)setSessionLocationId(candidate.locationId);
+    if(rememberLocation && candidate.locationId)
+      setSessionLocationId(current=>current || candidate.locationId);
     setError('');
     setNotice('เพิ่มผลสแกนลงร่างแล้ว · ยังไม่เพิ่ม Stock');
     setScanReview(null);
@@ -417,12 +430,18 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       <p className="muted text-xs">ภาพ Invoice หรือเอกสารส่งของสามารถแนบได้หลังยืนยันรับเข้า และยังเปิดดู/แนบเพิ่มได้จาก Invoice เดิม</p>
       <div className="contents">
         <h3 className="font-bold">เพิ่มน้ำยาจาก Barcode</h3>
-        <label className="field min-w-0">ตำแหน่งจัดเก็บสำหรับการสแกนรอบนี้ (ถ้ามี)
-          <select className="input" value={sessionLocationId} onChange={e=>setSessionLocationId(e.target.value)}>
+        <label className="field min-w-0">ตำแหน่งสำหรับการสแกนต่อเนื่อง
+          <select className="input" value={sessionLocationId} onChange={e=>{
+            const locationId=e.target.value;
+            setSessionLocationId(locationId);
+            // Apply an explicitly selected shared Location to a scan already
+            // waiting for review, not only to the next decoded barcode.
+            if(locationId)setScanReview(current=>current?{...current,locationId}:current);
+          }}>
             <option value="">เลือกอัตโนมัติจาก Product / ครั้งก่อน</option>
             {locations.map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code?loc.parent_code+' › ':''}{loc.code} · {loc.name}</option>)}
           </select>
-          <span className="muted text-xs">เลือกครั้งเดียวเพื่อใช้กับการสแกนถัดไป · แต่ละ LOT ยังเปลี่ยนตำแหน่งเองได้</span>
+          <span className="muted text-xs">เลือกครั้งเดียว ระบบใช้ตำแหน่งนี้กับน้ำยาที่สแกนถัดไปทุกตัว · หากเลือกจาก LOT แรก ระบบจะจำให้เอง · เปลี่ยนเฉพาะ LOT ได้โดยไม่เปลี่ยนตำแหน่งหลัก</span>
         </label>
         <BarcodeScanner onScan={onScan} dock continuous feedback={scanFeedback}
           summary={<span className="text-sm font-semibold">ร่าง {totals.lots} LOT · {totals.received.toLocaleString('th-TH')} หน่วย</span>}/>
@@ -524,7 +543,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
             </div>)}
           </div>
           <button className="button secondary justify-self-start" type="button" disabled={pending}
-            onClick={()=>alterLine(line.id,old=>({...old,packages:[...old.packages,makeLot(product?.default_location_id && locationsById.has(product.default_location_id)?product.default_location_id:'')]}))}>+ เพิ่ม LOT</button>
+            onClick={()=>alterLine(line.id,old=>({...old,packages:[...old.packages,makeLot(nextLotLocation(old))]}))}>+ เพิ่ม LOT</button>
           <p className="muted text-sm">ตาม Invoice {line.orderedQuantity||'—'} · รับจริง {amount} · ค้างรับ {outstanding}</p>
         </article>;
       })}
