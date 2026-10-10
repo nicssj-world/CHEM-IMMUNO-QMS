@@ -328,6 +328,42 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(categoryButton('OPERATIONS'), 'staying inside OPERATIONS keeps it open').toHaveAttribute('aria-expanded', 'true');
   await expect(sidebar.getByRole('link', { name: 'รับเข้า', exact: true })).toHaveAttribute('aria-current', 'page');
 
+  // Regression: new Invoice Wizard Step 1 -> decoded GS1 Data Matrix Step 2 ->
+  // LOT/expiry auto-fill, pending-review anti-overwrite, Step 3 summary.
+  // All data remains a draft; this test must not create a real Invoice or Stock.
+  await expect(page.getByRole('heading', { name: 'Step 1 · ส่วนหัว Invoice' })).toBeVisible();
+  await page.getByRole('combobox', { name: /ผู้ขาย/ }).first().selectOption(vendor.data as string);
+  await page.locator('#receive-invoice-number').fill('E2E-WIZARD-MATRIX-1');
+  await page.locator('input[type="date"]').first().fill('2026-10-09');
+  await page.getByRole('button', { name: /ถัดไป · รับน้ำยา/ }).click();
+  await expect(page.getByRole('heading', { name: 'Step 2 · รับเข้าน้ำยา' })).toBeVisible({timeout: 15_000});
+  const matrixA = '(01)00012345678905(17)271231(10)E2E-MATRIX-A';
+  await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill(matrixA);
+  await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
+  const pendingMatrix = page.getByRole('region', { name: 'ตรวจสอบ Barcode ก่อนเพิ่มลงร่าง' });
+  await expect(pendingMatrix).toBeVisible({timeout:15_000});
+  await expect(pendingMatrix.getByRole('textbox', { name: /LOT/ })).toHaveValue('E2E-MATRIX-A');
+  await expect(pendingMatrix.locator('input[type="date"]')).toHaveValue('2027-12-31');
+  // A different decoded frame must never overwrite a LOT the operator has not accepted.
+  await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill('(01)00012345678905(17)280101(10)E2E-MATRIX-B');
+  await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
+  await expect(pendingMatrix.getByRole('textbox', { name: /LOT/ })).toHaveValue('E2E-MATRIX-A');
+  await pendingMatrix.getByRole('combobox', { name: /ตำแหน่งจัดเก็บ/ }).selectOption(location.data as string);
+  await pendingMatrix.getByRole('button', { name: 'ตรวจสอบและเพิ่มลงร่าง' }).click();
+  await expect(pendingMatrix).toHaveCount(0);
+  const wizardRow = page.locator('article').filter({hasText:'Synthetic CHE one'}).first();
+  await expect(wizardRow.getByRole('textbox', { name: /LOT/ })).toHaveValue('E2E-MATRIX-A');
+  await expect(wizardRow.locator('input[type="date"]')).toHaveValue('2027-12-31');
+  await wizardRow.getByRole('spinbutton', { name: /จำนวนตาม Invoice/ }).fill('2');
+  await page.getByRole('button', { name: /ถัดไป · ตรวจสอบ/ }).click();
+  await expect(page.getByRole('heading', { name: 'Step 3 · ตรวจสอบก่อนยืนยัน' })).toBeVisible({timeout:15_000});
+  await expect(page.getByText(/LOT E2E-MATRIX-A/)).toBeVisible();
+  await expect(page.getByText('รับเข้าจริง').first()).toBeVisible();
+  const accidentalPosted = await admin.from('ci_invoices').select('id').eq('invoice_number','E2E-WIZARD-MATRIX-1');
+  expect(accidentalPosted.error).toBeNull();
+  expect(accidentalPosted.data).toHaveLength(0);
+
+
   // Then to /environment: MONITORING opens automatically, OPERATIONS closes, and the active page is never hidden.
   await page.goto('/environment?warehouse=CHE');
   await expect(categoryButton('MONITORING'), 'navigating to Environment auto-opens MONITORING').toHaveAttribute('aria-expanded', 'true');
@@ -990,7 +1026,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.goto('/products?warehouse=CHE');
   await expect(page.getByRole('link', { name: 'เพิ่มน้ำยา' })).toHaveCount(0);
   await page.goto('/receive?warehouse=CHE');
-  await expect(page.getByRole('heading', { name: 'สร้าง Invoice' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Step 1 · ส่วนหัว Invoice' })).toBeVisible();
   await page.goto('/scan/review?warehouse=CHE');
   await expect(page.getByRole('button', { name: 'อนุมัติ' })).toHaveCount(0);
   // CHE staff: locations are readable, but managing them (edit, deactivate, QR labels, rotation) is for supervisors and admins only.
