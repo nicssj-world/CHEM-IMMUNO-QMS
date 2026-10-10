@@ -5,26 +5,29 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { requireAccess, canSupervise } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { logUserMessage } from '@/lib/messages';
+import { isStockUnit } from '@/lib/units';
 
 function text(form: FormData, field: string) { return String(form.get(field) ?? '').trim(); }
-function fail(path: string, message: string): never { redirect(`${path}?error=${encodeURIComponent(message)}`); }
+function fail(path: string, message: string): never { redirect(`${path}?error=${encodeURIComponent(logUserMessage(path, message))}`); }
 
 export async function createProduct(form: FormData) {
   const access = await requireAccess();
-  const parsed = z.object({ warehouse_id: z.coerce.number().int(), product_type: z.enum(['reagent','calibrator','control','consumable']), source_name: z.string().min(1).max(300), display_name: z.string().min(1).max(300), packing_size_raw: z.string().max(300), current_ref: z.string().min(1), manufacturer_barcode: z.string().min(1) }).safeParse({
-    warehouse_id: text(form,'warehouse_id'), product_type: text(form,'product_type'), source_name: text(form,'source_name'), display_name: text(form,'display_name'), packing_size_raw: text(form,'packing_size_raw'), current_ref: text(form,'current_ref'), manufacturer_barcode: text(form,'manufacturer_barcode'),
+  const parsed = z.object({ warehouse_id: z.coerce.number().int(), product_type: z.enum(['reagent','calibrator','control','consumable']), source_name: z.string().min(1).max(300), display_name: z.string().min(1).max(300), packing_size_raw: z.string().max(300), current_ref: z.string().min(1), manufacturer_barcode: z.string().min(1), default_location_id: z.string().max(64) }).safeParse({
+    warehouse_id: text(form,'warehouse_id'), product_type: text(form,'product_type'), source_name: text(form,'source_name'), display_name: text(form,'display_name'), packing_size_raw: text(form,'packing_size_raw'), current_ref: text(form,'current_ref'), manufacturer_barcode: text(form,'manufacturer_barcode'), default_location_id: text(form,'default_location_id'),
   });
-  if (!parsed.success) fail('/products/new','กรอกข้อมูลสินค้าให้ครบและถูกต้อง');
+  if (!parsed.success) fail('/products/new','กรอกข้อมูลน้ำยาให้ครบและถูกต้อง');
   const warehouse = access.warehouses.find(w => Number(w.id) === parsed.data.warehouse_id);
-  if (!warehouse || !canSupervise(warehouse.role)) fail('/products/new','ไม่มีสิทธิ์จัดการสินค้าคลังนี้');
+  if (!warehouse || !canSupervise(warehouse.role)) fail('/products/new','ไม่มีสิทธิ์จัดการน้ำยาคลังนี้');
   const client = await createClient();
   if (!client) fail('/products/new','ยังไม่ได้ตั้งค่า Supabase');
   const { data: id, error } = await client.rpc('ci_create_product',{ p_data: {
     warehouse_id: parsed.data.warehouse_id, product_type: parsed.data.product_type, source_name: parsed.data.source_name,
     display_name: parsed.data.display_name, packing_size_raw: parsed.data.packing_size_raw || null,
     current_ref: parsed.data.current_ref, manufacturer_barcode: parsed.data.manufacturer_barcode,
+    default_location_id: parsed.data.default_location_id || null,
   }});
-  if (error || !id) fail('/products/new',error?.message ?? 'สร้างสินค้าไม่สำเร็จ');
+  if (error || !id) fail('/products/new',error?.message ?? 'สร้างน้ำยาไม่สำเร็จ');
   revalidatePath('/products');
   redirect(`/products/${id}`);
 }
@@ -44,7 +47,9 @@ export async function updateProduct(form: FormData) {
   const id = text(form,'id');
   const client = await createClient();
   if (!client) fail(`/products/${id}`,'ยังไม่ได้ตั้งค่า Supabase');
-  const data = { display_name: text(form,'display_name'), packing_size_raw: text(form,'packing_size_raw') || null, product_type: text(form,'product_type'), base_stock_unit: text(form,'base_stock_unit') || 'pack', active: form.get('active') === 'on' };
+  const unit = text(form,'base_stock_unit') || 'pack';
+  if (!isStockUnit(unit)) fail(`/products/${id}`,'หน่วยนับไม่อยู่ในรายการที่กำหนด กรุณาเลือกจากรายการ');
+  const data = { display_name: text(form,'display_name'), packing_size_raw: text(form,'packing_size_raw') || null, product_type: text(form,'product_type'), base_stock_unit: unit, active: form.get('active') === 'on', default_location_id: text(form,'default_location_id') || null };
   const { error } = await client.rpc('ci_update_product',{ p_id: id, p_data: data });
   if (error) fail(`/products/${id}`,error.message);
   revalidatePath(`/products/${id}`);

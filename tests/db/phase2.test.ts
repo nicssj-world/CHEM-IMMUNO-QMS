@@ -27,7 +27,7 @@ test('Phase 2 PostgreSQL: mapping, evidence, assessed receipts, reorder and RLS'
     const imm=await rpc<string>(ADMIN,'ci_create_product',[{warehouse_id:2,product_type:'reagent',source_name:'IMM',current_ref:'0003',manufacturer_barcode:'I-1'}],['jsonb']);
     const location=await rpc<string>(ADMIN,'ci_create_location',[1,'A','A'],['smallint','text','text']);
     const immLocation=await rpc<string>(ADMIN,'ci_create_location',[2,'B','B'],['smallint','text','text']);
-    const vendor=await rpc<string>(ADMIN,'ci_create_vendor',['Synthetic vendor'],['text']);
+    const vendor=await rpc<string>(ADMIN,'ci_create_vendor',[{vendorCode:'V-SYN',name:'Synthetic vendor'}],['jsonb']);
     await t.test('proposed identifier does not resolve; approval is role-bound and conflict-safe',async()=>{
       const id=await rpc<string>(STAFF,'ci_propose_identifier_mapping',[product,'GTIN','00012345678905',']C10100012345678905'],['uuid','text','text','text']);
       const before=await asUser(STAFF,c=>c.query("select count(*)::int n from public.ci_product_identifiers where kind='GTIN'"));
@@ -93,11 +93,9 @@ test('Phase 2 PostgreSQL: mapping, evidence, assessed receipts, reorder and RLS'
         assert.equal(Number(row.rows[0].suggested_order),0);
       }finally{await owner.end();}
     });
-    await t.test('vendor metrics remain objective; score and decision stay null',async()=>{
-      const evaluation=await rpc<string>(SUPERVISOR,'ci_save_vendor_evaluation',[vendor,1,2026,{notes:'Synthetic evidence'}],['uuid','smallint','integer','jsonb']);
-      const row=await asUser(SUPERVISOR,c=>c.query('select score,decision,evidence from public.ci_vendor_evaluations where id=$1',[evaluation]));
-      assert.equal(row.rows[0].score,null);assert.equal(row.rows[0].decision,null);
-      assert.equal(Number(row.rows[0].evidence.objective_metrics.receipt_count),1);
+    await t.test('vendor metrics stay objective and count the receipt',async()=>{
+      const row=await asUser(SUPERVISOR,c=>c.query('select receipt_count from public.ci_vendor_metrics where vendor_id=$1 and warehouse_id=1',[vendor]));
+      assert.equal(Number(row.rows[0].receipt_count),1);
     });
   }finally{await cleanup();}
 });

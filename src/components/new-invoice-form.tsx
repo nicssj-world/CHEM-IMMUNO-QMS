@@ -1,0 +1,217 @@
+'use client';
+
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { ChevronDown, Minus, Plus, ScanLine, X } from 'lucide-react';
+import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
+import { IntegerQuantityInput } from './integer-quantity-input';
+import { InvoiceReagentPicker } from './invoice-reagent-picker';
+import { SubmitButton } from './submit-button';
+import { resolveProductScan } from '@/app/actions/scanner';
+import { startInvoice } from '@/app/actions/inventory';
+import { saveReceiveDraft } from '@/lib/receive-draft';
+import { scanBatchFields } from '@/lib/barcode';
+import { invoiceNumberFromScan } from '@/lib/invoice-barcode';
+import { userMessage } from '@/lib/messages';
+
+type Product = { id: string; warehouse_id: number; product_code: string; display_name: string };
+type Vendor = { id: string; name: string };
+type Line = { key: string; productId: string; quantity: string; lot: string; expiry: string; raw?: string; scanned: boolean; open: boolean };
+
+const FORM_ID = 'new-invoice';
+const round = (value: number) => Math.round(value * 1000) / 1000;
+const incomplete = (line: Pick<Line, 'productId' | 'lot' | 'expiry'>) => !line.productId || !line.lot || !line.expiry;
+
+export function NewInvoiceForm({ vendors, products }: { vendors: Vendor[]; products: Product[] }) {
+  const router = useRouter();
+  const [lines, setLines] = useState<Line[]>([]);
+  const [feedback, setFeedback] = useState<ScanFeedback | null>(null);
+  const [flash, setFlash] = useState<{ key: string; n: number } | null>(null);
+  const [error, setError] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [invoiceScannerOpen, setInvoiceScannerOpen] = useState(false);
+  const [invoiceScanStatus, setInvoiceScanStatus] = useState('');
+  const [invoiceFeedback, setInvoiceFeedback] = useState<ScanFeedback | null>(null);
+  const invoiceInput = useRef<HTMLInputElement>(null);
+  // An existing vendor + invoice number reopens that invoice; its lines are not changed, so the user decides before leaving.
+  const [existing, setExisting] = useState<{ id: string; lines: Line[] } | null>(null);
+  const [pending, startTransition] = useTransition();
+  const submitting = useRef(false);
+  const productById = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
+  const rows = useRef(new Map<string, HTMLDivElement>());
+  const feedbackId = useRef(0);
+  // The camera callback keeps the onScan it started with, so read current lines through a ref.
+  const linesRef = useRef(lines);
+  useEffect(() => { linesRef.current = lines; }, [lines]);
+
+  // Briefly tint the row a scan just added or counted, so the eye finds it without reading.
+  useEffect(() => {
+    if (!flash || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    rows.current.get(flash.key)?.animate([{ backgroundColor: '#cdeee4' }, { backgroundColor: '#f4f8f8' }], { duration: 1400, easing: 'ease-out' });
+  }, [flash]);
+
+  const patch = (key: string, change: Partial<Line>) => setLines(prev => prev.map(l => (l.key === key ? { ...l, ...change } : l)));
+  const say = (tone: ScanFeedback['tone'], title: string, detail?: string) => setFeedback({ id: ++feedbackId.current, tone, title, detail });
+
+  async function onScan(raw: string, symbology: string) {
+    setError('');
+    try {
+      const result = await resolveProductScan(raw, symbology);
+      if (result.locationQr) { say('warn', 'นี่คือ QR ตำแหน่งจัดเก็บ', 'ไม่ใช่ Barcode น้ำยา · ไม่ได้เพิ่มรายการ'); return; }
+      const batch = scanBatchFields(result.parsed);
+      const trusted = !batch.requiresReview;
+      const lot = batch.lot;
+      const expiry = batch.expiry;
+      const productId = result.product?.id ?? '';
+      // Same product + LOT + expiry is the same batch: count another pack instead of adding a row, and lift that row to the top.
+      const current = linesRef.current;
+      const same = productId && lot ? current.find(l => l.productId === productId && l.lot === lot && l.expiry === expiry) : undefined;
+      const key = same?.key ?? crypto.randomUUID();
+      const quantity = same ? String(round(Number(same.quantity) + 1)) : '1';
+      setLines(prev => {
+        const existing = prev.find(l => l.key === key);
+        if (existing) return [...prev.filter(l => l.key !== key), { ...existing, quantity }];
+        return [...prev, { key, productId, quantity, lot, expiry, raw, scanned: true, open: incomplete({ productId, lot, expiry }) }];
+      });
+      setFlash({ key, n: feedbackId.current });
+      const code = result.product?.code;
+      if (!result.product) say('error', result.message ?? 'ไม่พบน้ำยาที่ตรงกับ Barcode', 'เพิ่มเป็นรายการว่างไว้ด้านล่างแล้ว');
+      else if (!trusted) say('warn', `${code} · Barcode มีคำเตือน`, 'กรอก LOT และวันหมดอายุเอง');
+      else if (same) say('ok', `${code} · รวม ×${quantity}`, `LOT ${lot} · นับเพิ่มอีก 1`);
+      else if (!lot || !expiry) say('warn', `${code} · ${result.product.name}`, 'Barcode ไม่มี LOT หรือวันหมดอายุ · กรอกเองได้');
+      else say('ok', `${code} · ${result.product.name}`, `LOT ${lot} · หมดอายุ ${expiry}`);
+    } catch (cause) { say('error', userMessage(cause instanceof Error ? cause.message : null, 'อ่าน Barcode ไม่สำเร็จ')); }
+  }
+
+  function onInvoiceScan(raw: string, symbology: string) {
+    const value = invoiceNumberFromScan(raw, symbology);
+    if (!value.ok) {
+      setInvoiceScanStatus(value.message);
+      setInvoiceFeedback({ id: ++feedbackId.current, tone: 'warn', title: 'รหัสนี้ใช้กรอกเลข Invoice ไม่ได้', detail: value.message });
+      return;
+    }
+    setInvoiceNumber(value.invoiceNumber);
+    setExisting(null);
+    setInvoiceScanStatus('กรอกเลข Invoice จาก Barcode แล้ว · ตรวจสอบกับเอกสารก่อนสร้าง Invoice');
+    setInvoiceScannerOpen(false);
+    setInvoiceFeedback(null);
+    invoiceInput.current?.focus();
+  }
+
+  function addManual() {
+    const key = crypto.randomUUID();
+    setLines(prev => [...prev, { key, productId: '', quantity: '1', lot: '', expiry: '', scanned: false, open: true }]);
+    setFlash({ key, n: Date.now() });
+  }
+
+  function openInvoice(invoiceId: string, usable: Line[]) {
+    saveReceiveDraft(invoiceId, usable.filter(l => l.lot.trim() && l.expiry).map(l => ({ productId: l.productId, quantity: l.quantity, lot: l.lot.trim(), expiry: l.expiry, raw: l.raw })));
+    router.push(`/receive?invoice=${invoiceId}`);
+  }
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitting.current) return;
+    setExisting(null);
+    setError('');
+    const form = new FormData(event.currentTarget);
+    const usable = lines.filter(l => l.productId && Number(l.quantity) > 0);
+    if (!usable.length) { setError('กรุณาสแกนหรือเพิ่มน้ำยาอย่างน้อยหนึ่งรายการ'); return; }
+    if (usable.length !== lines.length) {
+      setLines(prev => prev.map(l => (l.productId && Number(l.quantity) > 0 ? l : { ...l, open: true })));
+      setError('มีรายการที่ยังไม่ได้เลือกน้ำยาหรือจำนวน');
+      return;
+    }
+    submitting.current = true;
+    startTransition(async () => {
+      try {
+      const result = await startInvoice({
+        vendorId: String(form.get('vendor_id') ?? ''), invoiceNumber: String(form.get('invoice_number') ?? ''),
+        invoiceDate: String(form.get('invoice_date') ?? ''), poNumber: String(form.get('po_number') ?? ''),
+        lines: usable.map(l => ({ productId: l.productId, quantity: Number(l.quantity) })),
+      });
+      if (!result.ok) { setError(result.message); return; }
+      if (result.existing) { setExisting({ id: result.invoiceId, lines: usable }); return; }
+      openInvoice(result.invoiceId, usable);
+      } catch (cause) { setError(userMessage(cause instanceof Error ? cause.message : null, 'สร้าง Invoice ไม่สำเร็จ')); }
+      finally { submitting.current = false; }
+    });
+  }
+
+  const total = round(lines.reduce((sum, l) => sum + (Number(l.quantity) || 0), 0));
+  const needsCheck = lines.filter(incomplete).length;
+  const summary = <p className="text-sm font-semibold" aria-live="off">{lines.length ? <>รวมจำนวน {total} · {lines.length} รายการ{needsCheck > 0 && <span className="text-amber-800"> · ต้องตรวจ {needsCheck}</span>}</> : <span className="muted font-normal">ยังไม่มีรายการ</span>}</p>;
+
+  // BarcodeScanner owns a <form>, so this form cannot wrap it: controls attach through the form attribute instead.
+  return <div className="grid gap-5">
+    <form id={FORM_ID} onSubmit={submit} />
+    <div className="grid sm:grid-cols-2 gap-4">
+      <label className="field">ผู้ขาย<select form={FORM_ID} className="input" name="vendor_id" required defaultValue=""><option value="">เลือกผู้ขาย</option>{vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
+      <div className="grid gap-1">
+        <label className="field" htmlFor="ci-invoice-number">เลขที่ Invoice</label>
+        <div className="flex items-stretch gap-2">
+          <input id="ci-invoice-number" ref={invoiceInput} form={FORM_ID} className="input min-w-0 flex-1" name="invoice_number" value={invoiceNumber} onChange={event => { setInvoiceNumber(event.target.value); setInvoiceScanStatus(''); setExisting(null); }} autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" required />
+          <button type="button" className="button secondary shrink-0 min-h-11" aria-expanded={invoiceScannerOpen} aria-controls="ci-invoice-scanner" onClick={() => { setInvoiceScannerOpen(open => !open); setInvoiceScanStatus(''); setInvoiceFeedback(null); }}>
+            <ScanLine size={18} aria-hidden /> <span>สแกน</span>
+          </button>
+        </div>
+        {invoiceScanStatus && <p role="status" className="text-xs muted">{invoiceScanStatus}</p>}
+      </div>
+      <label className="field">วันที่ Invoice<input form={FORM_ID} className="input" name="invoice_date" type="date" required /></label>
+      <label className="field">เลขที่ PO (ถ้ามี)<input form={FORM_ID} className="input" name="po_number" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" /></label>
+    </div>
+    {invoiceScannerOpen && <section id="ci-invoice-scanner" className="surface grid gap-3 p-4" aria-label="สแกนเลขที่ Invoice">
+      <div className="flex items-center justify-between gap-3"><div><h3 className="font-bold">สแกนเลขที่ Invoice</h3><p className="muted text-xs">สแกน Barcode บนเอกสาร Invoice · ระบบกรอกเฉพาะช่องเลขที่ Invoice ไม่สร้าง Invoice อัตโนมัติ</p></div><button type="button" className="button secondary shrink-0" onClick={() => setInvoiceScannerOpen(false)} aria-label="ปิดเครื่องสแกน Invoice"><X size={18} aria-hidden /></button></div>
+      <BarcodeScanner purpose="invoice" showManual={false} autoStart continuous formats={['CODE_128', 'CODE_39', 'EAN_13', 'QR_CODE']} onScan={onInvoiceScan} feedback={invoiceFeedback} />
+      <p className="muted text-xs">ถ้ารหัสมี URL หรือข้อมูลอื่นที่ไม่ใช่เลข Invoice ให้พิมพ์เลขจากเอกสารแทนเพื่อป้องกันการกรอกผิด</p>
+    </section>}
+    <div className="grid gap-3">
+      <div><h3 className="font-bold">รายการน้ำยา <span className="text-[#b42318]" aria-hidden="true">*</span></h3><p className="muted text-sm mt-1">ต้องมีอย่างน้อย 1 รายการ · สแกน Datamatrix ของน้ำยาแต่ละชิ้น ระบบจะเพิ่มรายการและกรอก LOT / วันหมดอายุให้ · กล้องเปิดค้างสแกนต่อเนื่องได้ · สแกน LOT เดิมซ้ำจะเพิ่มจำนวน (ถือ Barcode ค้างไว้นับครั้งเดียว ต้องเอาออกจากกรอบก่อนสแกนชิ้นใหม่)</p></div>
+      <BarcodeScanner onScan={onScan} continuous dock feedback={feedback} summary={summary} />
+      <div className="grid gap-2">
+        {[...lines].reverse().map(line => {
+          const product = productById.get(line.productId);
+          const label = product?.product_code ?? 'รายการที่ยังไม่เลือกน้ำยา';
+          const quantity = Number(line.quantity) || 0;
+          return <div key={line.key} ref={el => { if (el) rows.current.set(line.key, el); else rows.current.delete(line.key); }} className={`rounded-xl border bg-surface-2 ${incomplete(line) ? 'border-amber-400' : 'border-transparent'}`}>
+            <div className="flex items-center gap-2 p-2 pl-3">
+              <button type="button" className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left cursor-pointer" onClick={() => patch(line.key, { open: !line.open })} aria-expanded={line.open} aria-label={`${line.open ? 'ย่อ' : 'แก้ไข'} ${label}`}>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2"><strong className="truncate text-sm">{label}</strong></span>
+                  {product && <span className="block truncate text-xs muted">{product.display_name}</span>}
+                  <span className="block text-xs">LOT {line.lot || <span className="text-amber-800">ยังไม่ระบุ</span>} · หมดอายุ {line.expiry || <span className="text-amber-800">ยังไม่ระบุ</span>}</span>
+                </span>
+                <ChevronDown size={18} aria-hidden className={`shrink-0 muted transition-transform ${line.open ? 'rotate-180' : ''}`} />
+              </button>
+              <div className="flex shrink-0 items-center rounded-lg border border-field-line bg-white">
+                <button type="button" className="grid size-11 place-items-center disabled:opacity-35 cursor-pointer" disabled={quantity <= 1} onClick={() => patch(line.key, { quantity: String(round(quantity - 1)) })} aria-label={`ลดจำนวน ${label}`}><Minus size={16} aria-hidden /></button>
+                <span className="min-w-8 text-center font-bold tabular-nums" aria-label={`จำนวน ${line.quantity}`}>{line.quantity}</span>
+                <button type="button" className="grid size-11 place-items-center cursor-pointer" onClick={() => patch(line.key, { quantity: String(round(quantity + 1)) })} aria-label={`เพิ่มจำนวน ${label}`}><Plus size={16} aria-hidden /></button>
+              </div>
+            </div>
+            {line.open && <div className="grid gap-3 border-t border-line p-3">
+              <div className="grid sm:grid-cols-[minmax(0,1fr)_120px] gap-3">
+                <InvoiceReagentPicker products={products} value={line.productId} onChange={productId => patch(line.key, { productId })} />
+                <label className="field">จำนวน<IntegerQuantityInput form={FORM_ID} className="input" min="1" value={line.quantity} onChange={e => patch(line.key, { quantity: e.target.value })} required /></label>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <label className="field">LOT<input form={FORM_ID} className="input" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" value={line.lot} onChange={e => patch(line.key, { lot: e.target.value })} /></label>
+                <label className="field">วันหมดอายุ<input form={FORM_ID} className="input" type="date" value={line.expiry} onChange={e => patch(line.key, { expiry: e.target.value })} />{line.expiry && <span className="muted text-xs">ตามฉลาก (ค.ศ.): {line.expiry}</span>}</label>
+              </div>
+              {line.scanned && (!line.lot || !line.expiry) && <p className="text-xs muted">ไม่พบ LOT หรือวันหมดอายุใน Barcode · กรอกเอง หรือปล่อยว่างแล้วบันทึกตอนรับเข้า</p>}
+              {line.raw && <p className="muted text-xs break-all">Scan: {line.raw}</p>}
+              <div className="flex flex-wrap gap-2"><button type="button" className="button secondary" onClick={() => patch(line.key, { open: false })}>เสร็จ</button><button type="button" className="button secondary text-[#a83442]" onClick={() => setLines(prev => prev.filter(l => l.key !== line.key))}>ลบรายการนี้</button></div>
+            </div>}
+          </div>;
+        })}
+      </div>
+      {!lines.length && <p className="muted text-sm rounded-xl border border-dashed border-field-line p-4">ยังไม่มีรายการ · สแกน Datamatrix หรือเพิ่มน้ำยาด้วยตนเอง</p>}
+      <div><button type="button" className="button secondary" onClick={addManual}>+ เพิ่มน้ำยาด้วยตนเอง</button></div>
+    </div>
+    <div className="sticky-action grid gap-2">
+      {error && <p className="error" role="alert">{error}</p>}
+      {existing && <div className="notice grid gap-3" role="alert"><p><strong>เลขที่ Invoice นี้ของผู้ขายรายนี้มีอยู่แล้ว</strong> · ระบบไม่ได้เพิ่มรายการใหม่เข้า Invoice เดิม ถ้าเปิด Invoice เดิม จะใช้ได้เฉพาะแพ็กเกจที่สแกนซึ่งมีน้ำยาตรงกับรายการใน Invoice นั้น</p><div className="flex flex-wrap gap-2"><button type="button" className="button" onClick={() => openInvoice(existing.id, existing.lines)}>เปิด Invoice เดิม</button><button type="button" className="button secondary" onClick={() => setExisting(null)}>แก้เลขที่ Invoice</button></div></div>}
+      <SubmitButton label={`สร้าง Invoice และเริ่มรับ${lines.length ? ` (${lines.length} รายการ)` : ''}`} pendingLabel="กำลังสร้าง Invoice…" pending={pending} form={FORM_ID} />
+    </div>
+  </div>;
+}
