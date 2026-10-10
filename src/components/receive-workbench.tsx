@@ -256,7 +256,7 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
       const added=appendReceiptPackage(packagesRef.current,candidate,lines);
       if (!added.ok) {setMessage('ยอดค้างรับเปลี่ยน กรุณาตรวจร่างอีกครั้ง');return;}
       setPack(added.packages);
-      setSessionLocationId(candidate.locationId);
+      setSessionLocationId(current=>current || candidate.locationId);
       setScan(null);
       setShowScanDetails(false);
       setDraft({invoiceLineId:'',quantity:'1',lot:'',expiry:'',locationId:''});
@@ -317,11 +317,15 @@ export function ReceiveWorkbench({ invoiceId, userId, idempotencyKey, lines, pro
     <section className="surface p-5 sm:p-7 grid gap-4"><h2 className="font-bold text-lg">ภาพ Invoice / เอกสารส่งของ</h2><p className="muted text-sm">เก็บใน Storage ส่วนตัว · จำกัด 10 MB · อนุญาตรูปภาพหรือ PDF</p><div className="grid sm:grid-cols-2 gap-3"><label className="field">ถ่ายภาพด้วยกล้อง<input className="input" type="file" accept="image/*" capture="environment" onChange={e => chooseImage(e.target.files?.[0])}/></label><label className="field">เลือกจากรูปภาพ/ไฟล์<input className="input" type="file" accept="image/*,application/pdf" onChange={e => chooseImage(e.target.files?.[0])}/></label></div>{imagePreview && <Image src={imagePreview} alt="ตัวอย่างเอกสารก่อนอัปโหลด" width={500} height={300} unoptimized className="max-h-64 max-w-full object-contain rounded-lg"/>}{attachments.length>0 && <div className="grid gap-2">{attachments.map(item=><div className="flex flex-wrap gap-2 items-center" key={item.id}><a className="button secondary" href={`/attachments/${item.id}`} target="_blank" rel="noopener noreferrer">ดูเอกสาร {item.uploaded_at}</a><button className="button danger" type="button" disabled={busy} onClick={() => void removeImage(item.id)}>ลบก่อนยืนยัน</button></div>)}<p className="muted text-xs">หากต้องการเปลี่ยนภาพ ให้ลบภาพที่อัปโหลดก่อน</p></div>}<p role="status" className="muted text-sm">{photoStatus}</p><div className="flex gap-2 flex-wrap"><button className="button" type="button" disabled={!image || busy || attachments.length>0} onClick={() => void uploadImage()}>บันทึกภาพ</button><button className="button secondary" type="button" disabled={!image} onClick={() => chooseImage()}>นำภาพที่เลือกออก</button></div></section>
     <section id="ci-receive-entry" className="surface p-4 sm:p-7 grid gap-4 scroll-mt-4"><div><h2 className="font-bold text-lg">สแกนน้ำยาและจัดร่างรับเข้า</h2><p className="muted text-sm">ระบบเลือกรหัสน้ำยา CHE/IMM อัตโนมัติ · การสแกนยังไม่เพิ่ม Stock</p></div>
       <label className="field">ตำแหน่งจัดเก็บสำหรับการสแกนรอบนี้ (ถ้ามี)
-        <select className="input min-h-11" value={sessionLocationId} onChange={e => setSessionLocationId(e.target.value)}>
+        <select className="input min-h-11" value={sessionLocationId} onChange={e => {
+          const locationId=e.target.value;
+          setSessionLocationId(locationId);
+          if(locationId)setDraft(current=>({...current,locationId}));
+        }}>
           <option value="">เลือกอัตโนมัติจาก Product / ครั้งก่อน</option>
           {locations.map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code ? loc.parent_code+' › ' : ''}{loc.code} · {loc.name}</option>)}
         </select>
-        <span className="muted text-xs">เลือกครั้งเดียวเพื่อใช้กับการสแกนถัดไป · เปลี่ยนตำแหน่งของแต่ละ LOT ในร่างได้</span>
+        <span className="muted text-xs">เลือกครั้งเดียว ระบบใช้กับน้ำยาที่สแกนถัดไปทุกตัวโดยไม่ต้องเปิดกล้องใหม่ · เปลี่ยนแต่ละ LOT ในร่างได้</span>
       </label>
       <BarcodeScanner onScan={onScan} continuous dock feedback={scanFeedback} summary={<span className="text-sm font-semibold">ร่าง {packages.length} LOT/ตำแหน่ง · {totalUnits.toLocaleString('th-TH')} หน่วย</span>}/>
       {scan && <div className="notice grid gap-1 text-sm"><p><strong>Raw:</strong> <code className="break-all">{scan.parsed.raw}</code></p><p>{scan.productCode ?? 'ไม่พบน้ำยา'} · {scan.parsed.standard} · {scan.parsed.symbology}</p><p>REF (240): {scan.parsed.additionalProductId ?? '—'} · GTIN (01): {scan.parsed.gtin ?? '—'}</p><p>LOT: {scan.parsed.lot ?? 'ต้องกรอก'} · Expiry: {scan.parsed.expiry ?? 'ต้องกรอก'}</p>{scan.parsed.warnings.map((warning,i) => <p key={i} role="alert">⚠ {warning}</p>)}</div>}
