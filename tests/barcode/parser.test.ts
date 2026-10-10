@@ -100,3 +100,19 @@ test('batch trust keeps validated HIBC LOT/expiry despite unrelated supplement w
   assert.deepEqual(scanBatchFields({...parsed, warnings:['Invalid HIBC 16D manufacture date']}),
     {lot:'10X3',expiry:'2020-01-31',requiresReview:false});
 });
+
+test('GS1 AI 17 day 00 is the last calendar day of the encoded month', () => {
+  assert.equal(parseBarcode('(01)00012345678905(17)280200(10)FEB').expiry, '2028-02-29');
+  assert.equal(parseBarcode('(01)00012345678905(17)270200(10)FEB').expiry, '2027-02-28');
+  assert.equal(parseBarcode('(01)00012345678905(17)271200(10)DEC').expiry, '2027-12-31');
+  assert.equal(parseBarcode('(01)00012345678905(17)271300(10)BAD').expiry, undefined);
+});
+
+test('GS1 trailing unknown AI retains decoded batch for explicit review only', () => {
+  const parsed = parseBarcode('010087519700639110N29106\\x1d172710311126032424009040765190999');
+  assert.equal(parsed.lot, 'N29106');
+  assert.equal(parsed.expiry, '2027-10-31');
+  assert.ok(parsed.warnings.some(w => w.startsWith('Unknown or malformed AI')));
+  assert.deepEqual(scanBatchFields(parsed), {lot:'N29106',expiry:'2027-10-31',requiresReview:true});
+  assert.deepEqual(scanBatchFields({...parsed,warnings:['Duplicate AI 17']}), {lot:'',expiry:'',requiresReview:true});
+});
