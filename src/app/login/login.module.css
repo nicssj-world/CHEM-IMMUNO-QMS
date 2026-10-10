@@ -100,7 +100,7 @@
 }
 .introTitle {
   margin: 6px 0 0;
-  font-size: clamp(1.45rem, 2.7vw, 2.35rem);
+  font-size: clamp(1.45rem, 2.15vw, 1.9rem);
   line-height: 1.18;
   font-weight: 800;
   letter-spacing: -.04em;
@@ -325,7 +325,7 @@
 @media (max-width: 1120px) {
   .stage { grid-template-columns: minmax(0, 280px) minmax(0, 540px); justify-content: center; }
   .labScene { width: 43vw; right: -110px; opacity: .42; }
-  .introTitle { font-size: clamp(1.35rem, 2.5vw, 1.95rem); }
+  .introTitle { font-size: clamp(1.3rem, 2.1vw, 1.65rem); }
 }
 @media (max-width: 830px) {
   .page { padding: 34px 22px; overflow-x: hidden; overflow-y: auto; }
