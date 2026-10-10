@@ -371,9 +371,12 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           {invoiceScanStatus&&<p className="muted text-xs" role="status">{invoiceScanStatus}</p>}
         </div>
         <label className="field receive-date-field min-w-0"><span>วันที่ Invoice <span className="text-[#b42318]">*</span></span>
-          <input className="input block min-w-0 max-w-full" type="date"
-            value={header.invoiceDate} onChange={e=>setHeader({...header,invoiceDate:e.target.value})}
-            aria-required="true"/></label>
+          <span className="input receive-date-shell">
+            <input className="receive-native-date" type="date"
+              value={header.invoiceDate} onChange={e=>setHeader({...header,invoiceDate:e.target.value})}
+              aria-required="true"/>
+          </span>
+        </label>
         <label className="field min-w-0">เลขที่ PO (ถ้ามี)
           <input className="input" value={header.poNumber} onChange={e=>setHeader({...header,poNumber:e.target.value})} maxLength={200}/></label>
       </div>
@@ -435,8 +438,11 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
               <input className="input" autoCapitalize="characters" value={scanReview.lot}
                 onChange={e=>setScanReview(previous=>previous?{...previous,lot:e.target.value}:previous)}/></label>
             <label className="field receive-date-field min-w-0">หมดอายุ *
-              <input type="date" className="input block min-w-0 max-w-full" value={scanReview.expiry}
-                onChange={e=>setScanReview(previous=>previous?{...previous,expiry:e.target.value}:previous)}/></label>
+              <span className="input receive-date-shell">
+                <input type="date" className="receive-native-date" value={scanReview.expiry}
+                  onChange={e=>setScanReview(previous=>previous?{...previous,expiry:e.target.value}:previous)}/>
+              </span>
+            </label>
             <label className="field min-w-0">ตำแหน่งจัดเก็บ *
               <select className="input" value={scanReview.locationId}
                 onChange={e=>setScanReview(previous=>previous?{...previous,locationId:e.target.value}:previous)}>
@@ -485,8 +491,11 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
                   <input className="input" autoCapitalize="characters" autoComplete="off" value={pkg.lot}
                     onChange={e=>alterLot(line.id,pkg.id,{lot:e.target.value})}/></label>
                 <label className="field receive-date-field min-w-0"><span>วันหมดอายุ <span className="text-[#b42318]">*</span></span>
-                  <input className="input block min-w-0 max-w-full" type="date" value={pkg.expiry}
-                    onChange={e=>alterLot(line.id,pkg.id,{expiry:e.target.value})}/></label>
+                  <span className="input receive-date-shell">
+                    <input className="receive-native-date" type="date" value={pkg.expiry}
+                      onChange={e=>alterLot(line.id,pkg.id,{expiry:e.target.value})}/>
+                  </span>
+                </label>
                 <label className="field min-w-0"><span>ตำแหน่งจัดเก็บ <span className="text-[#b42318]">*</span></span>
                   <select className="input" value={pkg.locationId}
                     onChange={e=>alterLot(line.id,pkg.id,{locationId:e.target.value})}>

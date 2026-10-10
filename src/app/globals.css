@@ -48,24 +48,45 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .input { width: 100%; min-height: 46px; padding: 10px 13px; border: 1px solid #bfd0d8; border-radius: 10px; background: #fff; color: var(--ink); }
 .input:disabled { background: #eaf0f2; }
 
-/* iOS Safari's native date picker has an intrinsic inline size. The default
- * auto track in .field can expand past the receiving card even when its input
- * has min-width:0. Fix the grid track as well as the control. Keep the native
- * calendar picker intact (no appearance:none). */
+/* iOS Safari's native date input can paint beyond its CSS width even with
+ * min-width:0. Put the visible border on a dimensionally bounded outer shell,
+ * and let the native picker grow within a zero-basis flex slot.
+ * This preserves the native calendar and keyboard handling. */
 .field.receive-date-field {
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   max-width: 100%;
 }
-.field.receive-date-field > input[type="date"] {
-  display: block;
+.field.receive-date-field > .receive-date-shell {
+  display: flex;
+  align-items: stretch;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  inline-size: 100%;
-  min-inline-size: 0;
-  max-inline-size: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+.field.receive-date-field .receive-native-date {
+  display: block;
+  flex: 1 1 0%;
+  box-sizing: border-box;
+  width: 0;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  border: 0;
+  padding: 10px 13px;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+}
+.field.receive-date-field > .receive-date-shell:focus-within {
+  outline: 3px solid #0b7f7a;
+  outline-offset: 2px;
+}
+.field.receive-date-field .receive-native-date:focus-visible {
+  outline: none;
 }
 
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 9px 16px; border-radius: 10px; border: 1px solid transparent; background: var(--blue); color: white; font-weight: 700; cursor: pointer; text-decoration: none; }
