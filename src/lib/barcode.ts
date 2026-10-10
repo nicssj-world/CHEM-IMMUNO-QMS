@@ -26,10 +26,16 @@ function date(year: number, month: number, day: number): string | undefined {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-function yymmdd(value: string): string | undefined {
+function yymmdd(value: string, endOfMonthForDayZero = false): string | undefined {
   if (!/^\d{6}$/.test(value)) return;
   const yy = Number(value.slice(0, 2));
-  return date(yy >= 50 ? 1900 + yy : 2000 + yy, Number(value.slice(2, 4)), Number(value.slice(4, 6)));
+  const year = yy >= 50 ? 1900 + yy : 2000 + yy;
+  const month = Number(value.slice(2, 4));
+  const day = Number(value.slice(4, 6));
+  if (endOfMonthForDayZero && day === 0 && month >= 1 && month <= 12) {
+    return date(year, month, new Date(Date.UTC(year, month, 0)).getUTCDate());
+  }
+  return date(year, month, day);
 }
 
 function hibcExpiry(format: string, value: string): string | undefined {
@@ -88,7 +94,7 @@ function parseGs1(payload: string, result: ParsedBarcode) {
     if (ai === '240') result.additionalProductId = value;
     if (ai === '11') result.productionDate = yymmdd(value);
     if (ai === '17') {
-      result.expiry = yymmdd(value);
+      result.expiry = yymmdd(value, true);
       if (!result.expiry) { result.warnings.push('Invalid AI 17 expiry'); return; }
     }
   }
@@ -178,6 +184,15 @@ export function scanBatchFields(parsed: ParsedBarcode): { lot: string; expiry: s
     !warning.startsWith('Unsupported HIBC supplemental field: ') &&
     warning !== 'Invalid HIBC 16D manufacture date'
   );
-  if (significantWarnings.length) return { lot: '', expiry: '', requiresReview: true };
+  // Preserve independently parsed LOT/expiry for human verification if a later,
+  // unrelated GS1 AI is unknown. Never auto-accept a barcode with warnings.
+  // Invalid dates, duplicate AIs and missing boundaries remain untrusted.
+  if (significantWarnings.length) {
+    const trailingUnknownOnly = significantWarnings.every(warning => warning.startsWith('Unknown or malformed AI at offset '));
+    if (parsed.standard === 'GS1' && trailingUnknownOnly && parsed.lot && parsed.expiry) {
+      return { lot: parsed.lot, expiry: parsed.expiry, requiresReview: true };
+    }
+    return { lot: '', expiry: '', requiresReview: true };
+  }
   return { lot: parsed.lot ?? '', expiry: parsed.expiry ?? '', requiresReview: !parsed.lot || !parsed.expiry };
 }
