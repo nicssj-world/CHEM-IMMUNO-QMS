@@ -15,7 +15,7 @@ import { assessmentError, type AssessmentInput } from '@/lib/receipt-assessment'
 import { resolveProductScan, checkLotExpiryConflict, proposeScanMapping, registerInvoiceAttachment, type ProductScan } from '@/app/actions/scanner';
 import { preselectLocation } from '@/lib/receive-location';
 import { createReceivingWizardDraft, saveReceivingWizardDraft, finalizeReceivingWizard } from '@/app/actions/receiving-wizard';
-import { wizardHeaderError, wizardLineError, wizardTotals, remainingForLot, restoreWizardAssessment, appendWizardScan,
+import { wizardHeaderError, wizardLineError, wizardTotals, restoreWizardAssessment, appendWizardScan,
   type WizardDraft, type WizardHeader, type WizardLine, type WizardLot, type WizardLocation, type WizardProduct } from '@/lib/receiving-wizard';
 import { scannedReceivingDefaults } from '@/lib/receiving-scan-defaults';
 import { ScanIntakeGate } from '@/lib/scan-intake-gate';
@@ -27,7 +27,7 @@ type RecentDraft = {id:string;invoice_number:string;invoice_date:string;vendor_i
 type ScanReview = {raw:string;parsed:ProductScan['parsed'];productId:string;lot:string;expiry:string;quantity:string;locationId:string;};
 const scanFailureMessage = {
   invalid:'กรุณาตรวจ LOT วันหมดอายุ จำนวน และตำแหน่งให้ครบ',
-  capacity:'จำนวนรับจริงเกินจำนวนตาม Invoice · ต้องตรวจหรือแก้จำนวนตามเอกสารเอง',
+  capacity:'จำนวนรับจริงต่อ Product เกินขีดจำกัด 1,000,000 หน่วย',
   'lot-expiry-conflict':'LOT เดียวกันมีวันหมดอายุไม่ตรงกับร่างเดิม',
   review:'มี LOT ที่กรอกค้างไว้ · กรุณาตรวจและบันทึกให้ครบก่อนสแกนเพิ่ม',
 } as const;
@@ -37,7 +37,7 @@ type EvidenceHandoff={file:File;previewUrl:string|null};
 const pendingEvidenceOnDraftNavigation=new Map<string,EvidenceHandoff>();
 const TITLES=['ข้อมูล Invoice','รับเข้าน้ำยา','ตรวจสอบข้อมูล','ประเมินและยืนยัน'];
 const initialHeader={vendorId:'',invoiceNumber:'',invoiceDate:'',poNumber:''};
-const makeLot=(locationId=''):WizardLot=>({id:crypto.randomUUID(),quantity:'1',lot:'',expiry:'',locationId});
+const makeLot=(locationId=''):WizardLot=>({id:crypto.randomUUID(),quantity:'',lot:'',expiry:'',locationId});
 const makeLine=(productId:string,locationId=''):WizardLine=>({
   id:crypto.randomUUID(),productId,orderedQuantity:'',packages:[makeLot(locationId)],
 });
@@ -72,6 +72,27 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const [scanFeedback,setScanFeedback]=useState<ScanFeedback|null>(null);
   const scanFeedbackId=useRef(0);
   const [scanReview,setScanReview]=useState<ScanReview|null>(null);
+  const scanQuantityRef=useRef<HTMLInputElement>(null);
+  const scanReviewOpen=Boolean(scanReview);
+  useEffect(()=>{
+    if(!scanReviewOpen)return;
+    const previousOverflow=document.body.style.overflow;
+    document.body.style.overflow='hidden';
+    scanQuantityRef.current?.focus();
+    const onKeyDown=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'){
+        event.preventDefault();
+        scanGate.current.completeReview();
+        setScanReview(null);
+        setError('');
+      }
+    };
+    document.addEventListener('keydown',onKeyDown);
+    return ()=>{
+      document.removeEventListener('keydown',onKeyDown);
+      document.body.style.overflow=previousOverflow;
+    };
+  },[scanReviewOpen]);
   const [locationPath,setLocationPath]=useState<string|null>(null);
   const [sessionLocationId,setSessionLocationId]=useState('');
   const [scanBusy,setScanBusy]=useState(false);
@@ -174,7 +195,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     if(lines.length>=250){setError('เพิ่มน้ำยาได้ไม่เกิน 250 รายการ');return;}
     const product=productsById.get(productId);
     if(!product)return;
-    setWizardLines(old=>[...old,makeLine(productId,suggestedLocation(productId))]);
+    setWizardLines(old=>[makeLine(productId,suggestedLocation(productId)),...old]);
     setNotice('');
     setError('');
   }
@@ -189,7 +210,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     // Keep the explicit scanning Location; otherwise reuse this Product's
     // latest LOT before trying its registered default / receipt history.
     if(sessionLocationId && locationsById.has(sessionLocationId))return sessionLocationId;
-    const previous=[...line.packages].reverse().find(pkg=>locationsById.has(pkg.locationId));
+    const previous=line.packages.find(pkg=>locationsById.has(pkg.locationId));
     return previous?.locationId ?? suggestedLocation(line.productId);
   }
   async function addScannedPackage(candidate:ScanReview,rememberLocation=false):Promise<boolean> {
@@ -198,7 +219,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     }
     const merged=appendWizardScan(linesRef.current,candidate,()=>crypto.randomUUID());
     if(!merged.ok) {
-      sayScan('warn',merged.reason==='capacity'?'ยอดเกิน Invoice':'ตรวจรายละเอียด',scanFailureMessage[merged.reason]);
+      sayScan('warn','ตรวจรายละเอียด',scanFailureMessage[merged.reason]);
       setError(scanFailureMessage[merged.reason]);
       return false;
     }
@@ -213,8 +234,8 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     setError('');
     setNotice('เพิ่มผลสแกนลงร่างแล้ว · ยังไม่เพิ่ม Stock');
     setScanReview(null);
-    sayScan('ok',merged.merged?'นับเพิ่ม 1 แพ็กเกจ':'เพิ่ม LOT ใหม่',
-      `${productsById.get(candidate.productId)?.product_code} · LOT ${candidate.lot}`);
+    sayScan('ok',merged.merged?'เพิ่มจำนวนให้ LOT เดิม':'เพิ่มรายการรับเข้า',
+      `${productsById.get(candidate.productId)?.product_code} · LOT ${candidate.lot} · ${candidate.quantity} หน่วย`);
     return true;
   }
 
@@ -236,20 +257,19 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       const batch=scannedReceivingDefaults(scan.parsed,Boolean(product),Boolean(locationId));
       const candidate:ScanReview={
         raw,parsed:scan.parsed,productId:product?.id??'',
-        lot:batch.lot,expiry:batch.expiry,quantity:'1',
+        lot:batch.lot,expiry:batch.expiry,quantity:'',
         locationId,
       };
-      if(batch.requiresReview) {
-        scanGate.current.requireReview();
-        setScanReview(candidate);
-        const detail=scan.message??(batch.requiresReview?'Barcode มีคำเตือน · กรุณายืนยันข้อมูลก่อนเพิ่ม':'ตรวจ LOT วันหมดอายุและตำแหน่งก่อนเพิ่ม');
-        setNotice(detail);
-        sayScan('warn','ตรวจรายละเอียด',detail);
-        return;
-      }
-      // Same safe merge, quantity and expiry guards as the original ReceiveWorkbench.
-      const ok=await addScannedPackage(candidate);
-      if(!ok){scanGate.current.requireReview();setScanReview(candidate);}
+      // ALWAYS require a quantity confirmation, including fully decoded GS1
+      // symbols. No scan can silently add one unit to the draft.
+      scanGate.current.requireReview();
+      setScanReview(candidate);
+      const detail=scan.message??(batch.requiresReview
+        ? 'ตรวจ Product, LOT, วันหมดอายุและตำแหน่งก่อนระบุจำนวนรับจริง'
+        : 'อ่านข้อมูลสำเร็จ · กรุณาระบุจำนวนรับจริงและกดยืนยัน');
+      setNotice(detail);
+      sayScan(batch.requiresReview?'warn':'ok',
+        batch.requiresReview?'ตรวจรายละเอียดที่สแกน':'อ่าน Data Matrix สำเร็จ',detail);
     } catch(cause) {
       const message=userMessage(cause instanceof Error?cause.message:null,'สแกนไม่สำเร็จ');
       setError(message);
@@ -365,7 +385,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   }
 
   const summary=<div className="grid grid-cols-3 gap-2">
-    {[{label:'จำนวนตาม Invoice',value:totals.ordered},{label:'รับเข้าจริง',value:totals.received},{label:'ค้างรับ',value:totals.pending}].map(entry=>
+    {[{label:'น้ำยา',value:totals.products},{label:'LOT',value:totals.lots},{label:'จำนวนรับจริง',value:totals.received}].map(entry=>
       <div key={entry.label} className="min-w-0 rounded-lg bg-surface-2 p-3 text-center">
         <span className="text-xs muted block">{entry.label}</span>
         <strong className="block text-xl tabular-nums">{entry.value.toLocaleString('th-TH')}</strong>
@@ -462,7 +482,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
 
     {step===2 && <section className="surface p-4 sm:p-7 grid gap-4">
       <div><h2 className="font-bold text-lg">Step 2 · รับเข้าน้ำยา</h2>
-        <p className="muted text-sm">สแกนต่อเนื่องได้ทันที · ระบุจำนวนตาม Invoice เพียงครั้งเดียวก่อนถัดไป · จำนวนรับจริงนับแยก LOT · รับบางส่วนได้</p></div>
+        <p className="muted text-sm">สแกนแล้วตรวจรายละเอียดใน Popup · ระบุเฉพาะจำนวนรับจริง · รายการล่าสุดแสดงด้านบน</p></div>
       <div className="rounded-lg bg-surface-2 p-3 text-sm"><strong>Invoice {header.invoiceNumber}</strong> · {vendorsById.get(header.vendorId)?.name??'—'}</div>
       <div className="contents">
         <h3 className="font-bold">เพิ่มน้ำยาจาก Barcode</h3>
@@ -482,48 +502,63 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         <BarcodeScanner onScan={onScan} dock continuous feedback={scanFeedback}
           summary={<span className="text-sm font-semibold">ร่าง {totals.lots} LOT · {totals.received.toLocaleString('th-TH')} หน่วย</span>}/>
         {locationPath && <Link className="button secondary justify-self-start" href={locationPath}>เปิดตำแหน่งที่สแกน</Link>}
-        {scanReview && <section className="rounded-xl border border-amber-300 bg-amber-50 p-3 grid gap-3 text-slate-900 min-w-0"
-          aria-label="ตรวจสอบ Barcode ก่อนเพิ่มลงร่าง">
-          <div className="flex flex-wrap justify-between items-start gap-2">
-            <div><strong className="block">ตรวจสอบ Barcode ก่อนเพิ่ม</strong>
-              <p className="text-xs">ข้อมูลที่ยังไม่ยืนยันจะไม่เพิ่มจำนวนรับเข้า · กล้องจะไม่รับรหัสใหม่มาทับจนกว่าจะกดยืนยันหรือยกเลิกผลสแกนนี้</p></div>
-            <button className="button secondary shrink-0" type="button" onClick={()=>{scanGate.current.completeReview();setScanReview(null);}}>ยกเลิกผลสแกนนี้</button>
-          </div>
-          <div className="text-xs grid gap-1 break-all">
-            <p><strong>Raw:</strong> <code>{scanReview.raw}</code></p>
-            <p>{scanReview.parsed.standard} · {scanReview.parsed.symbology} · REF (240): {scanReview.parsed.additionalProductId??'—'}</p>
-            <p>GTIN (01): {scanReview.parsed.gtin??'—'} · LOT: {scanReview.parsed.lot??'ต้องกรอก'} · Expiry: {scanReview.parsed.expiry??'ต้องกรอก'}</p>
-            {scanReview.parsed.warnings.map((warning,i)=><p role="alert" key={i}>⚠ {warning}</p>)}
-          </div>
-          <InvoiceReagentPicker products={products} value={scanReview.productId}
-            onChange={productId=>setScanReview(previous=>previous?{...previous,productId,locationId:suggestedLocation(productId)}:previous)}/>
-          <div className="grid sm:grid-cols-2 gap-3 min-w-0">
-            <label className="field min-w-0">LOT *
-              <input className="input" autoCapitalize="characters" value={scanReview.lot}
-                onChange={e=>setScanReview(previous=>previous?{...previous,lot:e.target.value}:previous)}/></label>
-            <label className="field receive-date-field min-w-0">หมดอายุ *
-              <span className="input receive-date-shell">
-                <input type="date" className="receive-native-date" value={scanReview.expiry}
-                  onChange={e=>setScanReview(previous=>previous?{...previous,expiry:e.target.value}:previous)}/>
-              </span>
-            </label>
-            <label className="field min-w-0">ตำแหน่งจัดเก็บ *
-              <select className="input" value={scanReview.locationId}
-                onChange={e=>setScanReview(previous=>previous?{...previous,locationId:e.target.value}:previous)}>
-                <option value="">เลือกตำแหน่ง</option>
-                {locations.map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code?loc.parent_code+' › ':''}{loc.code} · {loc.name}</option>)}
-              </select></label>
-            <label className="field min-w-0">จำนวนรับจริง *
-              <IntegerQuantityInput className="input" min="1" value={scanReview.quantity}
-                onChange={e=>setScanReview(previous=>previous?{...previous,quantity:e.target.value}:previous)}/></label>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="button" disabled={scanBusy||pending||!scanReview.productId}
-              onClick={()=>void addReviewedScan()}>ตรวจสอบและเพิ่มลงร่าง</button>
-            <button type="button" className="button secondary" disabled={scanBusy||!scanReview.productId}
-              onClick={()=>void proposeMapping()}>เสนอการจับคู่ Barcode</button>
-          </div>
-        </section>}
+        {scanReview && <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/65 px-3 py-4 sm:px-6 sm:py-8">
+          <section role="dialog" aria-modal="true" aria-labelledby="receiving-scan-dialog-title"
+            className="w-full max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl sm:p-6 grid gap-4 text-slate-900">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 id="receiving-scan-dialog-title" className="font-bold text-lg">ตรวจสอบน้ำยาที่สแกน</h3>
+                <p className="text-sm text-slate-600">ระบุจำนวนรับจริงก่อนเพิ่มรายการ · ยังไม่บันทึก Stock</p>
+              </div>
+              <button className="button secondary shrink-0" type="button" disabled={scanBusy}
+                aria-label="ปิด Popup ผลสแกน" onClick={()=>{scanGate.current.completeReview();setScanReview(null);setError('');}}>
+                <X size={18} aria-hidden/>
+              </button>
+            </div>
+            <div className="rounded-xl bg-slate-100 p-3 grid gap-1 text-sm">
+              <strong>{productsById.get(scanReview.productId)?.product_code??'ยังไม่พบ Product ที่จับคู่'}</strong>
+              <span>{productsById.get(scanReview.productId)?.display_name??'เลือก Product จากทะเบียนด้านล่าง'}</span>
+              <span className="break-all text-xs text-slate-600">REF (240): {scanReview.parsed.additionalProductId??'—'} · GTIN (01): {scanReview.parsed.gtin??'—'}</span>
+              <span className="break-all text-xs text-slate-500">Barcode: {scanReview.raw}</span>
+            </div>
+            {scanReview.parsed.warnings.map((warning,n)=><p className="text-sm text-amber-800" role="alert" key={n}>⚠ {warning}</p>)}
+            <InvoiceReagentPicker products={products} value={scanReview.productId}
+              onChange={productId=>setScanReview(previous=>previous?{...previous,productId,locationId:suggestedLocation(productId)}:previous)}/>
+            <div className="grid sm:grid-cols-2 gap-3 min-w-0">
+              <label className="field min-w-0">LOT <span className="text-red-700">*</span>
+                <input className="input" autoCapitalize="characters" value={scanReview.lot}
+                  onChange={e=>setScanReview(previous=>previous?{...previous,lot:e.target.value}:previous)}/></label>
+              <label className="field receive-date-field min-w-0">วันหมดอายุ <span className="text-red-700">*</span>
+                <span className="input receive-date-shell">
+                  <input type="date" className="receive-native-date" value={scanReview.expiry}
+                    onChange={e=>setScanReview(previous=>previous?{...previous,expiry:e.target.value}:previous)}/>
+                </span>
+              </label>
+              <label className="field min-w-0">ตำแหน่งจัดเก็บ <span className="text-red-700">*</span>
+                <select className="input" value={scanReview.locationId}
+                  onChange={e=>setScanReview(previous=>previous?{...previous,locationId:e.target.value}:previous)}>
+                  <option value="">เลือกตำแหน่ง</option>
+                  {locations.map(loc=><option key={loc.id} value={loc.id}>{loc.parent_code?loc.parent_code+' › ':''}{loc.code} · {loc.name}</option>)}
+                </select>
+              </label>
+              <label className="field min-w-0"><span>จำนวนรับจริง <span className="text-red-700">*</span></span>
+                <IntegerQuantityInput ref={scanQuantityRef} className="input min-h-12 text-lg font-semibold"
+                  min="1" max="1000000" placeholder="กรอกจำนวนที่รับจริง" value={scanReview.quantity}
+                  onChange={e=>setScanReview(previous=>previous?{...previous,quantity:e.target.value}:previous)}/>
+              </label>
+            </div>
+            {error && <p role="alert" className="error text-sm">{error}</p>}
+            <div className="flex flex-wrap gap-2 justify-end">
+              <button type="button" className="button secondary" disabled={scanBusy}
+                onClick={()=>void proposeMapping()}>เสนอจับคู่ Barcode</button>
+              <button type="button" className="button min-h-12"
+                disabled={scanBusy||pending||!scanReview.productId||!scanReview.lot.trim()||!scanReview.expiry||
+                  !scanReview.locationId||!Number.isSafeInteger(Number(scanReview.quantity))||
+                  Number(scanReview.quantity)<1||Number(scanReview.quantity)>1000000}
+                onClick={()=>void addReviewedScan()}>{scanBusy?'กำลังตรวจสอบ…':'ยืนยันจำนวนและเพิ่มรายการ'}</button>
+            </div>
+          </section>
+        </div>}
         <h3 className="font-bold">หรือเพิ่มน้ำยาด้วยตนเอง</h3>
         <InvoiceReagentPicker products={products} value="" onChange={addProduct}/>
       </div>
