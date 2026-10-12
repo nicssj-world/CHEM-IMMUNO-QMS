@@ -32,6 +32,8 @@ const scanFailureMessage = {
   review:'มี LOT ที่กรอกค้างไว้ · กรุณาตรวจและบันทึกให้ครบก่อนสแกนเพิ่ม',
 } as const;
 
+// Temporary client-only handoff for the initial draft URL remount. Never written to DB.
+const pendingEvidenceOnDraftNavigation=new Map<string,File>();
 const TITLES=['ข้อมูล Invoice','รับเข้าน้ำยา','ตรวจสอบข้อมูล','ประเมินและยืนยัน'];
 const initialHeader={vendorId:'',invoiceNumber:'',invoiceDate:'',poNumber:''};
 const makeLot=(locationId=''):WizardLot=>({id:crypto.randomUUID(),quantity:'1',lot:'',expiry:'',locationId});
@@ -77,18 +79,30 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const [imagePreview,setImagePreview]=useState<string|null>(null);
   const [completedInvoiceId,setCompletedInvoiceId]=useState('');
   const [evidenceBusy,setEvidenceBusy]=useState(false);
-  const evidenceUrlRef=useRef<string|null>(null);
-  useEffect(()=>()=>{if(evidenceUrlRef.current)URL.revokeObjectURL(evidenceUrlRef.current);},[]);
+  useEffect(()=>{
+    // Keyed wizard remounts on Step 1 -> Step 2 URL change.
+    const id=initialDraft?.id;
+    if(!id)return;
+    const file=pendingEvidenceOnDraftNavigation.get(id);
+    if(!file)return;
+    pendingEvidenceOnDraftNavigation.delete(id);
+    setSelectedEvidence(file);
+  },[initialDraft?.id]);
+  useEffect(()=>{
+    if(!selectedEvidence?.type.startsWith('image/')){
+      setImagePreview(null);
+      return;
+    }
+    const url=URL.createObjectURL(selectedEvidence);
+    setImagePreview(url);
+    return ()=>URL.revokeObjectURL(url);
+  },[selectedEvidence]);
   function chooseEvidence(file:File|null){
     if(file && (file.size>10*1024*1024 ||
        !(file.type.startsWith('image/') || file.type==='application/pdf'))){
       setError('เลือกภาพหรือ PDF ขนาดไม่เกิน 10 MB');
       return;
     }
-    if(evidenceUrlRef.current)URL.revokeObjectURL(evidenceUrlRef.current);
-    const nextUrl=file?.type.startsWith('image/')?URL.createObjectURL(file):null;
-    evidenceUrlRef.current=nextUrl;
-    setImagePreview(nextUrl);
     setSelectedEvidence(file);
     setError('');
   }
@@ -300,6 +314,10 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
             router.replace('/receive?invoice='+encodeURIComponent(result.id));
             return;
           }
+          if(selectedEvidence){
+            pendingEvidenceOnDraftNavigation.clear();
+            pendingEvidenceOnDraftNavigation.set(result.id,selectedEvidence);
+          }
           setDraftId(result.id);
           // Advance immediately: App Router can preserve this client instance
           // when only the draft search parameter changes.
@@ -368,7 +386,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
 
     {step===1 && <section className="surface p-4 sm:p-7 grid gap-4">
       <div><h2 className="font-bold text-lg">Step 1 · ส่วนหัว Invoice</h2>
-        <p className="muted text-sm">กรอกเฉพาะส่วนหัว ไม่มีรายการน้ำยาและยังไม่เพิ่ม Stock · กดถัดไปเพื่อเก็บ Draft และรับน้ำยา</p></div>
+        <p className="muted text-sm">กรอกข้อมูล Invoice และแนบภาพหรือเอกสารส่งของได้ (ถ้ามี) · ยังไม่เพิ่ม Stock · กดถัดไปเพื่อเก็บ Draft และรับน้ำยา</p></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
         <label className="field min-w-0"><span>ผู้ขาย <span className="text-[#b42318]">*</span></span>
           <select className="input" value={header.vendorId} onChange={e=>setHeader({...header,vendorId:e.target.value})} aria-required="true">
@@ -415,6 +433,25 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           formats={['CODE_128','CODE_39','EAN_13','QR_CODE']}
           onScan={onInvoiceScan} feedback={invoiceFeedback}/>
       </section>}
+      <section className="rounded-xl border border-line p-4 grid gap-3 min-w-0" aria-label="ภาพ Invoice / เอกสารส่งของ">
+        <h3 className="font-bold">ภาพ Invoice / เอกสารส่งของ</h3>
+        <p className="muted text-sm">แนบภาพหรือ PDF ได้ตั้งแต่ Step 1 · ไฟล์จะอัปโหลดหลังยืนยัน Step 4 เท่านั้น</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <label className="field min-w-0">ถ่ายภาพด้วยกล้อง
+            <input className="input min-w-0" type="file" accept="image/*" capture="environment"
+              onChange={e=>chooseEvidence(e.target.files?.[0]??null)}/></label>
+          <label className="field min-w-0">เลือกจากรูปภาพ/PDF
+            <input className="input min-w-0" type="file" accept="image/*,application/pdf"
+              onChange={e=>chooseEvidence(e.target.files?.[0]??null)}/></label>
+        </div>
+        {imagePreview && <Image src={imagePreview} alt="ตัวอย่างเอกสารก่อนอัปโหลด"
+          width={500} height={300} unoptimized className="max-h-64 max-w-full object-contain rounded-lg"/>}
+        {selectedEvidence&&<div className="flex flex-wrap gap-2 items-center">
+          <span className="text-sm break-all">{selectedEvidence.name} · {(selectedEvidence.size/1024/1024).toFixed(2)} MB · รอแนบเมื่อยืนยัน</span>
+          <button type="button" className="button secondary" onClick={()=>chooseEvidence(null)}>นำไฟล์ที่เลือกออก</button>
+        </div>}
+        {selectedEvidence&&<p className="muted text-xs">ไฟล์นี้ยังอยู่เฉพาะในหน้าเว็บบนอุปกรณ์นี้ ไม่ได้บันทึกพร้อม Draft · หากรีเฟรชหรือออกจากหน้านี้ก่อนยืนยัน ต้องเลือกไฟล์ใหม่</p>}
+      </section>
       <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
         {canAddVendor&&<Link href="/vendors/new?return=%2Freceive" className="underline">ไม่มีผู้ขายในรายการ? เพิ่มผู้ขายใหม่</Link>}
         {locationManageHref&&<Link href={locationManageHref} className="underline">จัดการตำแหน่งจัดเก็บ</Link>}
@@ -427,7 +464,6 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       <div><h2 className="font-bold text-lg">Step 2 · รับเข้าน้ำยา</h2>
         <p className="muted text-sm">สแกนต่อเนื่องได้ทันที · ระบุจำนวนตาม Invoice เพียงครั้งเดียวก่อนถัดไป · จำนวนรับจริงนับแยก LOT · รับบางส่วนได้</p></div>
       <div className="rounded-lg bg-surface-2 p-3 text-sm"><strong>Invoice {header.invoiceNumber}</strong> · {vendorsById.get(header.vendorId)?.name??'—'}</div>
-      <p className="muted text-xs">ภาพ Invoice หรือเอกสารส่งของสามารถแนบได้หลังยืนยันรับเข้า และยังเปิดดู/แนบเพิ่มได้จาก Invoice เดิม</p>
       <div className="contents">
         <h3 className="font-bold">เพิ่มน้ำยาจาก Barcode</h3>
         <label className="field min-w-0">ตำแหน่งสำหรับการสแกนต่อเนื่อง
@@ -547,25 +583,6 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           <p className="muted text-sm">ตาม Invoice {line.orderedQuantity||'—'} · รับจริง {amount} · ค้างรับ {outstanding}</p>
         </article>;
       })}
-      <section className="rounded-xl border border-line p-4 grid gap-3 min-w-0">
-        <h3 className="font-bold">ภาพ Invoice / เอกสารส่งของ</h3>
-        <p className="muted text-sm">ถ่ายภาพหรือเลือก PDF ได้ตั้งแต่ Step 2 · ไฟล์จะอัปโหลดหลังยืนยัน Step 4 โดยไม่สร้าง Invoice ก่อนเวลา</p>
-        <div className="grid sm:grid-cols-2 gap-3">
-          <label className="field min-w-0">ถ่ายภาพด้วยกล้อง
-            <input className="input min-w-0" type="file" accept="image/*" capture="environment"
-              onChange={e=>chooseEvidence(e.target.files?.[0]??null)}/></label>
-          <label className="field min-w-0">เลือกจากรูปภาพ/PDF
-            <input className="input min-w-0" type="file" accept="image/*,application/pdf"
-              onChange={e=>chooseEvidence(e.target.files?.[0]??null)}/></label>
-        </div>
-        {imagePreview && <Image src={imagePreview} alt="ตัวอย่างเอกสารก่อนอัปโหลด"
-          width={500} height={300} unoptimized className="max-h-64 max-w-full object-contain rounded-lg"/>}
-        {selectedEvidence&&<div className="flex flex-wrap gap-2 items-center">
-          <span className="text-sm break-all">{selectedEvidence.name} · {(selectedEvidence.size/1024/1024).toFixed(2)} MB · รอแนบเมื่อยืนยัน</span>
-          <button type="button" className="button secondary" onClick={()=>chooseEvidence(null)}>นำไฟล์ที่เลือกออก</button>
-        </div>}
-        {selectedEvidence&&<p className="muted text-xs">ไฟล์ที่เลือกยังอยู่บนอุปกรณ์นี้ ไม่ควรออกจากหน้านี้จนยืนยันเสร็จ · รายการน้ำยาและ LOT จะบันทึก Draft อัตโนมัติ</p>}
-      </section>
       {!lines.length && <p className="rounded-xl border border-dashed border-line p-4 muted text-sm">ยังไม่มีรายการ · สแกนหรือค้นหาน้ำยาเพื่อเริ่มรับเข้า</p>}
       {summary}
       <div className="flex flex-wrap gap-2 justify-between">
