@@ -21,7 +21,7 @@ export function ProductPicker({ path, warehouseCode, products, selectedId }: {
     setProductId(nextId);
     if(!nextId)return;
     const params=new URLSearchParams({warehouse:warehouseCode,product:nextId});
-    startTransition(()=>router.replace(`${path}?${params.toString()}`));
+    startTransition(()=>router.replace(`${path}?${params.toString()}`,{scroll:false}));
   }
 
   return <section className="surface p-4 sm:p-6 grid gap-3" aria-label="เลือกน้ำยาที่ต้องการ">
