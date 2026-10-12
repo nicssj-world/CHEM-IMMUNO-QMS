@@ -80,7 +80,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     document.body.style.overflow='hidden';
     scanQuantityRef.current?.focus();
     const onKeyDown=(event:KeyboardEvent)=>{
-      if(event.key==='Escape'){
+      if(event.key==='Escape' && !scanBusy){
         event.preventDefault();
         scanGate.current.completeReview();
         setScanReview(null);
@@ -92,7 +92,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       document.removeEventListener('keydown',onKeyDown);
       document.body.style.overflow=previousOverflow;
     };
-  },[scanReviewOpen]);
+  },[scanReviewOpen,scanBusy]);
   const [locationPath,setLocationPath]=useState<string|null>(null);
   const [sessionLocationId,setSessionLocationId]=useState('');
   const [scanBusy,setScanBusy]=useState(false);
@@ -232,9 +232,9 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     if(rememberLocation && candidate.locationId)
       setSessionLocationId(current=>current || candidate.locationId);
     setError('');
-    setNotice('เพิ่มผลสแกนลงร่างแล้ว · ยังไม่เพิ่ม Stock');
+    setNotice('เพิ่มจำนวนรับจริงลงร่างแล้ว · กล้องพร้อมสแกนชิ้นถัดไป · ยังไม่เพิ่ม Stock');
     setScanReview(null);
-    sayScan('ok',merged.merged?'เพิ่มจำนวนให้ LOT เดิม':'เพิ่มรายการรับเข้า',
+    sayScan('ok',merged.merged?'เพิ่มจำนวนแล้ว · สแกนต่อได้':'เพิ่มรายการแล้ว · สแกนต่อได้',
       `${productsById.get(candidate.productId)?.product_code} · LOT ${candidate.lot} · ${candidate.quantity} หน่วย`);
     return true;
   }
@@ -277,7 +277,10 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     } finally {scanGate.current.finish();setScanBusy(false);}
   }
   async function addReviewedScan() {
-    if(!scanReview || !scanGate.current.beginReviewedCommit())return;
+    if(!scanReview || !Number.isSafeInteger(Number(scanReview.quantity)) ||
+      Number(scanReview.quantity)<1 || Number(scanReview.quantity)>1000000 ||
+      !scanReview.productId || !scanReview.lot.trim() || !scanReview.expiry ||
+      !scanReview.locationId || !scanGate.current.beginReviewedCommit())return;
     setScanBusy(true);
     try {
       const added=await addScannedPackage(scanReview,true);
@@ -508,7 +511,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <h3 id="receiving-scan-dialog-title" className="font-bold text-lg">ตรวจสอบน้ำยาที่สแกน</h3>
-                <p className="text-sm text-slate-600">ระบุจำนวนรับจริงก่อนเพิ่มรายการ · ยังไม่บันทึก Stock</p>
+                <p className="text-sm text-slate-600">กรอกจำนวนรับจริงแล้วกดยืนยัน (หรือ Enter) · Popup จะปิดและกล้องพร้อมสแกนรายการถัดไปทันที</p>
               </div>
               <button className="button secondary shrink-0" type="button" disabled={scanBusy}
                 aria-label="ปิด Popup ผลสแกน" onClick={()=>{scanGate.current.completeReview();setScanReview(null);setError('');}}>
@@ -543,8 +546,14 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
               </label>
               <label className="field min-w-0"><span>จำนวนรับจริง <span className="text-red-700">*</span></span>
                 <IntegerQuantityInput ref={scanQuantityRef} className="input min-h-12 text-lg font-semibold"
-                  min="1" max="1000000" placeholder="กรอกจำนวนที่รับจริง" value={scanReview.quantity}
-                  onChange={e=>setScanReview(previous=>previous?{...previous,quantity:e.target.value}:previous)}/>
+                  min="1" max="1000000" enterKeyHint="done" placeholder="กรอกจำนวนที่รับจริง" value={scanReview.quantity}
+                  onChange={e=>setScanReview(previous=>previous?{...previous,quantity:e.target.value}:previous)}
+                  onKeyDown={event=>{
+                    if(event.key==='Enter'){
+                      event.preventDefault();
+                      void addReviewedScan();
+                    }
+                  }}/>
               </label>
             </div>
             {error && <p role="alert" className="error text-sm">{error}</p>}
@@ -555,7 +564,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
                 disabled={scanBusy||pending||!scanReview.productId||!scanReview.lot.trim()||!scanReview.expiry||
                   !scanReview.locationId||!Number.isSafeInteger(Number(scanReview.quantity))||
                   Number(scanReview.quantity)<1||Number(scanReview.quantity)>1000000}
-                onClick={()=>void addReviewedScan()}>{scanBusy?'กำลังตรวจสอบ…':'ยืนยันจำนวนและเพิ่มรายการ'}</button>
+                onClick={()=>void addReviewedScan()}>{scanBusy?'กำลังตรวจสอบ…':'ยืนยันและสแกนต่อ'}</button>
             </div>
           </section>
         </div>}
