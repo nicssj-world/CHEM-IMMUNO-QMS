@@ -5,7 +5,7 @@ import { requireAccess, canMutate } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { logUserMessage } from '@/lib/messages';
 import { assessmentError, toAssessmentPayload, type AssessmentInput } from '@/lib/receipt-assessment';
-import { wizardHeaderError, wizardLineError, type WizardHeader, type WizardLine, type WizardProduct, type WizardLocation } from '@/lib/receiving-wizard';
+import { wizardHeaderError, wizardLineError, invoiceLinesFromActualReceipts, type WizardHeader, type WizardLine, type WizardProduct, type WizardLocation } from '@/lib/receiving-wizard';
 
 export type WizardActionResult =
   | { ok: true; id: string; existingInvoice?: boolean }
@@ -46,7 +46,7 @@ export async function saveReceivingWizardDraft(
   const {access,client}=await authorizedClient();
   if (!client || !access.warehouses.some(w=>canMutate(w.role))) return {ok:false,message:'ไม่มีสิทธิ์บันทึกร่างรับเข้า'};
   const {error}=await client.rpc('ci_save_receive_draft',{
-    p_id:id,p_header:header,p_lines:lines,p_assessment:assessment,p_step:step,
+    p_id:id,p_header:header,p_lines:invoiceLinesFromActualReceipts(lines),p_assessment:assessment,p_step:step,
   });
   if (error) return {ok:false,message:logUserMessage('receive-save-draft',error,'ไม่สามารถบันทึกร่างได้')};
   if(!quiet)revalidatePath('/receive');
@@ -70,10 +70,11 @@ export async function finalizeReceivingWizard(
   if (!scopedProducts || !scopedLocations) return {ok:false,message:'ไม่สามารถตรวจสอบทะเบียนน้ำยาและตำแหน่งได้'};
   const lineProblem=wizardLineError(lines,scopedProducts,scopedLocations);
   if (lineProblem) return {ok:false,message:lineProblem};
-  // Saving is independently idempotent; final RPC creates Invoice, receipt, and assessment
+  // Server derives invoice ordered_quantity from actual received LOTs.
+  // The existing final RPC then creates Invoice, receipt, and assessment
   // in ONE PostgreSQL transaction and locks the draft against a second submit.
   const {error:saveError}=await client.rpc('ci_save_receive_draft',{
-    p_id:id,p_header:header,p_lines:lines,
+    p_id:id,p_header:header,p_lines:invoiceLinesFromActualReceipts(lines),
     p_assessment:toAssessmentPayload(assessment),p_step:4,
   });
   if (saveError) return {ok:false,message:logUserMessage('receive-save-final',saveError,'บันทึกร่างก่อนยืนยันไม่สำเร็จ')};
