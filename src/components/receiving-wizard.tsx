@@ -565,7 +565,6 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       {lines.map((line,index)=>{
         const product=productsById.get(line.productId);
         const amount=line.packages.reduce((total,p)=>total+(Number(p.quantity)||0),0);
-        const outstanding=Math.max(0,Number(line.orderedQuantity)-amount);
         return <article key={line.id} className="rounded-xl border border-line p-3 sm:p-4 grid gap-3">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0"><strong>{index+1}. {product?.product_code??'น้ำยา'}</strong>
@@ -573,11 +572,6 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
             <button className="button secondary text-[#a83442] shrink-0" disabled={pending} type="button"
               onClick={()=>setWizardLines(old=>old.filter(item=>item.id!==line.id))}>ลบ</button>
           </div>
-          <label className="field max-w-xs"><span>จำนวนตาม Invoice <span className="text-[#b42318]">*</span></span>
-            <span className="muted text-xs">กรอกจากเอกสาร · การสแกนไม่แก้ตัวเลขนี้อัตโนมัติ</span>
-            <IntegerQuantityInput className="input" min="1" value={line.orderedQuantity}
-              onChange={e=>alterLine(line.id,old=>({...old,orderedQuantity:e.target.value}))} aria-required="true"/>
-          </label>
           <div className="grid gap-3">
             {line.packages.map((pkg,lotIndex)=><div key={pkg.id} className="rounded-lg bg-surface-2 p-3 grid gap-3">
               <div className="flex items-center justify-between gap-2">
@@ -606,16 +600,14 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
                   <div className="flex gap-2 items-stretch min-w-0">
                     <IntegerQuantityInput id={'receive-qty-'+pkg.id} className="input min-w-0 flex-1" min="1"
                       value={pkg.quantity} onChange={e=>alterLot(line.id,pkg.id,{quantity:e.target.value})}/>
-                    <button type="button" className="button secondary shrink-0 px-2" disabled={pending || remainingForLot(line,pkg.id)<1}
-                      onClick={()=>alterLot(line.id,pkg.id,{quantity:String(remainingForLot(line,pkg.id))})}>รับครบ</button>
                   </div>
                 </div>
               </div>
             </div>)}
           </div>
           <button className="button secondary justify-self-start" type="button" disabled={pending}
-            onClick={()=>alterLine(line.id,old=>({...old,packages:[...old.packages,makeLot(nextLotLocation(old))]}))}>+ เพิ่ม LOT</button>
-          <p className="muted text-sm">ตาม Invoice {line.orderedQuantity||'—'} · รับจริง {amount} · ค้างรับ {outstanding}</p>
+            onClick={()=>alterLine(line.id,old=>({...old,packages:[makeLot(nextLotLocation(old)),...old.packages]}))}>+ เพิ่ม LOT</button>
+          <p className="muted text-sm font-medium">รับจริงรวม {amount.toLocaleString('th-TH')} หน่วย · {line.packages.length} LOT</p>
         </article>;
       })}
       {!lines.length && <p className="rounded-xl border border-dashed border-line p-4 muted text-sm">ยังไม่มีรายการ · สแกนหรือค้นหาน้ำยาเพื่อเริ่มรับเข้า</p>}
@@ -639,7 +631,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       </div>
       {lines.map(line=><div key={line.id} className="rounded-xl border border-line p-3 grid gap-2">
         <strong>{productsById.get(line.productId)?.product_code} · {productsById.get(line.productId)?.display_name}</strong>
-        <p className="muted text-sm">ตาม Invoice {line.orderedQuantity} · รับจริง {line.packages.reduce((n,p)=>n+Number(p.quantity),0)} · ค้างรับ {Math.max(0,Number(line.orderedQuantity)-line.packages.reduce((n,p)=>n+Number(p.quantity),0))}</p>
+        <p className="muted text-sm">รับจริง {line.packages.reduce((n,p)=>n+Number(p.quantity),0)} หน่วย · {line.packages.length} LOT</p>
         {line.packages.map(pkg=><div key={pkg.id} className="rounded-lg bg-surface-2 p-3 text-sm">
           <strong>LOT {pkg.lot}</strong> · {pkg.quantity} หน่วย
           <p className="muted">หมดอายุ {pkg.expiry} · {locationsById.get(pkg.locationId)?.name??'ไม่พบตำแหน่ง'}</p>
@@ -647,7 +639,6 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       </div>)}
       {summary}
       {selectedEvidence&&<p className="notice text-sm">เอกสารรอแนบ: {selectedEvidence.name} · จะอัปโหลดหลังยืนยันใน Step 4</p>}
-      {totals.pending>0 && <p className="notice text-sm" role="status">ยังมียอดค้างรับ {totals.pending} หน่วย · Invoice จะเปิดให้รับเพิ่มเติมภายหลัง</p>}
       <div className="flex flex-wrap gap-2 justify-between">
         <button className="button secondary" disabled={pending} type="button" onClick={()=>setStep(2)}>← แก้รายการรับเข้า</button>
         <button className="button" disabled={pending} type="button" onClick={()=>save(4)}>ถัดไป · ประเมิน →</button>
