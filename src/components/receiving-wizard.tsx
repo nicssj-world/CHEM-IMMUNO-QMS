@@ -73,6 +73,8 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const scanFeedbackId=useRef(0);
   const [scanReview,setScanReview]=useState<ScanReview|null>(null);
   const scanQuantityRef=useRef<HTMLInputElement>(null);
+  const [scanBusy,setScanBusy]=useState(false);
+  const scanGate=useRef(new ScanIntakeGate());
   const scanReviewOpen=Boolean(scanReview);
   useEffect(()=>{
     if(!scanReviewOpen)return;
@@ -95,8 +97,6 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   },[scanReviewOpen,scanBusy]);
   const [locationPath,setLocationPath]=useState<string|null>(null);
   const [sessionLocationId,setSessionLocationId]=useState('');
-  const [scanBusy,setScanBusy]=useState(false);
-  const scanGate=useRef(new ScanIntakeGate());
   // Keep the exact selected file and its preview URL across the keyed draft
   // remount. The previous wizard passes ownership of the URL to this instance.
   const [selectedEvidence,setSelectedEvidence]=useState<File|null>(()=>
