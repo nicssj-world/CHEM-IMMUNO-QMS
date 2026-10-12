@@ -23,8 +23,24 @@ export type WizardProduct = {
 };
 export type WizardLocation = { id: string; warehouse_id: number; code: string; name: string; parent_code?: string | null };
 
-/** Keep the identical LOT/location merging and invoice-cap guard used by
- * pre-wizard ReceiveWorkbench. Scanning MUST NEVER edit orderedQuantity.
+/** New Invoice wizard: only actually received quantities are entered by the operator.
+ * Preserve orderedQuantity in the saved JSON / RPC format as an internal derived
+ * compatibility field; old invoices and the existing-Invoice ReceiveWorkbench
+ * retain their historical partial-receipt accounting untouched.
+ */
+export function invoiceLinesFromActualReceipts(lines: readonly WizardLine[]): WizardLine[] {
+  return lines.map(line=>({
+    ...line,
+    orderedQuantity:String(line.packages.reduce((total,pkg)=>{
+      const quantity=Number(pkg.quantity);
+      return total+(Number.isSafeInteger(quantity)&&quantity>0?quantity:0);
+    },0)),
+  }));
+}
+
+/** Append only after explicit popup confirmation. The newest product and LOT
+ * move to the front, even if the scanned product/LOT was already in the draft.
+ * The legacy helper still validates LOT expiry/quantity without an invoice cap.
  */
 export function appendWizardScan(
   lines: readonly WizardLine[],
@@ -32,9 +48,7 @@ export function appendWizardScan(
   makeId: () => string,
 ): {ok:true;lines:WizardLine[];merged:boolean} | {ok:false;reason:'invalid'|'capacity'|'lot-expiry-conflict'|'review'} {
   const line=lines.find(l=>l.productId===next.productId);
-  const ordered=line?.orderedQuantity ?? '';
   const packages=line?.packages ?? [];
-  // Do not silently discard a partially edited/manual LOT or count it twice.
   const blank=packages.length===1 && !packages[0].lot && !packages[0].expiry && packages[0].quantity==='1';
   const source=blank?[]:packages;
   if(source.some(p=>!p.lot.trim()||!p.expiry||!p.locationId)) return {ok:false,reason:'review'};
@@ -42,13 +56,20 @@ export function appendWizardScan(
   const result=appendReceiptPackage(existing,{
     id:makeId(),invoiceLineId:next.productId,lot:next.lot,expiry:next.expiry,
     locationId:next.locationId,quantity:next.quantity,raw:next.raw,
-  },[{invoice_line_id:next.productId,remaining_quantity:ordered.trim()?Number(ordered):Number.MAX_SAFE_INTEGER}]);
+  },[{invoice_line_id:next.productId,remaining_quantity:Number.MAX_SAFE_INTEGER}]);
   if(!result.ok) return result;
-  const updated:WizardLine=line
-    ? {...line,packages:result.packages.map(({invoiceLineId:unused,...p})=>{void unused;return p;})}
-    : {id:makeId(),productId:next.productId,orderedQuantity:ordered,
-       packages:result.packages.map(({invoiceLineId:unused,...p})=>{void unused;return p;})};
-  return {ok:true,lines:line?lines.map(l=>l.id===line.id?updated:l):[...lines,updated],merged:result.merged};
+  const total=result.packages.reduce((sum,p)=>sum+Number(p.quantity),0);
+  if(!Number.isSafeInteger(total)||total>1_000_000)return {ok:false,reason:'capacity'};
+  const newIndex=result.packages.findIndex(p=>
+    p.lot.trim()===next.lot.trim()&&p.expiry===next.expiry&&p.locationId===next.locationId);
+  const sorted=newIndex>=0
+    ? [result.packages[newIndex],...result.packages.filter((_,i)=>i!==newIndex)]
+    : result.packages;
+  const updated:WizardLine={
+    id:line?.id??makeId(),productId:next.productId,orderedQuantity:String(total),
+    packages:sorted.map(({invoiceLineId:unused,...p})=>{void unused;return p;}),
+  };
+  return {ok:true,lines:[updated,...lines.filter(l=>l.productId!==next.productId)],merged:result.merged};
 }
 
 export function wizardHeaderError(header: WizardHeader): string | null {
@@ -70,8 +91,6 @@ export function wizardLineError(lines: readonly WizardLine[], products: readonly
   for (const line of lines) {
     if (!knownProducts.has(line.productId) || used.has(line.productId)) return 'โปรดเลือกน้ำยาที่อยู่ในทะเบียนและไม่ซ้ำรายการ';
     used.add(line.productId);
-    const ordered = Number(line.orderedQuantity);
-    if (!Number.isSafeInteger(ordered) || ordered < 1) return 'จำนวนตาม Invoice ต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป';
     let received = 0;
     for (const pkg of line.packages) {
       lots++;
@@ -86,19 +105,20 @@ export function wizardLineError(lines: readonly WizardLine[], products: readonly
       expiryByLot.set(key,pkg.expiry);
       received += count;
     }
-    if (received > ordered) return 'จำนวนรับเข้าจริงเกินจำนวนตาม Invoice';
+    if(!Number.isSafeInteger(received)||received<1||received>1_000_000)
+      return 'จำนวนรับจริงต่อ Product ต้องอยู่ระหว่าง 1 ถึง 1,000,000 หน่วย';
   }
   if (!lots) return 'กรุณาระบุจำนวนรับเข้าจริงอย่างน้อยหนึ่ง LOT';
   return null;
 }
 export function wizardTotals(lines: readonly WizardLine[]) {
-  const ordered = lines.reduce((sum,l)=>sum+(Number(l.orderedQuantity)||0),0);
-  const received = lines.reduce((sum,l)=>sum+l.packages.reduce((n,p)=>n+(p.lot.trim()&&p.expiry&&p.locationId?Number(p.quantity)||0:0),0),0);
-  return {ordered,received,pending:Math.max(0,ordered-received),lots:lines.reduce((sum,l)=>sum+l.packages.filter(p=>p.lot.trim()&&p.expiry&&p.locationId).length,0)};
-}
-export function remainingForLot(line: WizardLine, lotId: string) {
-  return Math.max(0,Number(line.orderedQuantity) -
-    line.packages.filter(p=>p.id!==lotId).reduce((n,p)=>n+(Number(p.quantity)||0),0));
+  const received=lines.reduce((sum,line)=>sum+line.packages.reduce((n,p)=>{
+    const quantity=Number(p.quantity);
+    return n+(p.lot.trim()&&p.expiry&&p.locationId&&Number.isSafeInteger(quantity)&&quantity>0?quantity:0);
+  },0),0);
+  const lots=lines.reduce((sum,line)=>sum+line.packages.filter(p=>
+    p.lot.trim()&&p.expiry&&p.locationId&&Number.isSafeInteger(Number(p.quantity))&&Number(p.quantity)>0).length,0);
+  return {received,lots,products:lines.length};
 }
 
 /** A failed Step 4 retry can contain the backend assessment payload. Restore the
