@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { groupStockByProduct } from '@/lib/stock-lot-view';
 
 type Client = NonNullable<Awaited<ReturnType<typeof createClient>>>;
 export type UnifiedStockRow = { product_id: string; product_code: string; display_name: string; lot_id: string; lot_number: string; expiry_date: string; location_id: string; location_code: string; balance: number };
@@ -39,4 +40,19 @@ export async function searchUnifiedProducts(client: Client, warehouseIds: readon
   }));
   result.data.sort((a,b) => a.product_code.localeCompare(b.product_code));
   return { data: result.data.slice((page - 1) * pageSize, page * pageSize), error: result.error };
+}
+
+/** Paginate by Product AFTER consolidating all permitted LOT x Location rows.
+ * This avoids splitting one reagent across multiple pages and showing misleading
+ * partial totals (the legacy stock search still remains intact).
+ */
+export async function searchGroupedStock(client: Client, warehouseIds: readonly number[], query: string, page: number, pageSize=20) {
+  const result=await collect<UnifiedStockRow>(warehouseIds,(id,offset)=>client.rpc('ci_search_stock',{
+    p_warehouse_id:id,p_query:query,p_limit:100,p_offset:offset,
+  }));
+  if(result.error)return {products:[],pageCount:0,totalProducts:0,totalLots:0,error:result.error};
+  const grouped=groupStockByProduct(result.data);
+  return {products:grouped.slice((page-1)*pageSize,page*pageSize),
+    pageCount:Math.ceil(grouped.length/pageSize),totalProducts:grouped.length,
+    totalLots:grouped.reduce((n,p)=>n+p.lots.length,0),error:null};
 }
