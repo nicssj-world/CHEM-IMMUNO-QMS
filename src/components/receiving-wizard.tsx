@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -36,6 +36,11 @@ const scanFailureMessage = {
 type EvidenceHandoff={file:File;previewUrl:string|null};
 const pendingEvidenceOnDraftNavigation=new Map<string,EvidenceHandoff>();
 const TITLES=['ข้อมูล Invoice','รับเข้าน้ำยา','ตรวจสอบข้อมูล','ประเมินและยืนยัน'];
+function completedInvoiceNavigationUrl(invoiceId:string):string {
+  // Called only after an explicit confirmation, never during React rendering.
+  return '/receive?invoice='+encodeURIComponent(invoiceId)+
+    '&saved='+encodeURIComponent('ยืนยันรับน้ำยาเรียบร้อย')+'&at='+Date.now().toString(36);
+}
 const initialHeader={vendorId:'',invoiceNumber:'',invoiceDate:'',poNumber:''};
 const makeLot=(locationId=''):WizardLot=>({id:crypto.randomUUID(),quantity:'',lot:'',expiry:'',locationId});
 const makeLine=(productId:string,locationId=''):WizardLine=>({
@@ -140,8 +145,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     return true;
   }
   function navigateCompleted(invoiceId:string){
-    router.replace('/receive?invoice='+encodeURIComponent(invoiceId)+
-      '&saved='+encodeURIComponent('ยืนยันรับน้ำยาเรียบร้อย')+'&at='+Date.now().toString(36));
+    router.replace(completedInvoiceNavigationUrl(invoiceId));
     router.refresh();
   }
   async function retryEvidenceUpload(){
@@ -155,9 +159,11 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const savedQueue=useRef<Promise<unknown>>(Promise.resolve());
   const sayScan=(tone:ScanFeedback['tone'],title:string,detail?:string)=>
     setScanFeedback({id:++scanFeedbackId.current,tone,title,detail});
-  const productsById=useMemo(()=>new Map(products.map(p=>[p.id,p])),[products]);
-  const locationsById=useMemo(()=>new Map(locations.map(p=>[p.id,p])),[locations]);
-  const vendorsById=useMemo(()=>new Map(vendors.map(p=>[p.id,p])),[vendors]);
+  // Small, read-only catalogs supplied by the server. Keep render pure;
+  // lookup maps do not carry state and do not change scan/stock decisions.
+  const productsById=new Map(products.map(p=>[p.id,p]));
+  const locationsById=new Map(locations.map(p=>[p.id,p]));
+  const vendorsById=new Map(vendors.map(p=>[p.id,p]));
   const totals=wizardTotals(lines);
 
   function onInvoiceScan(raw:string,symbology:string) {
