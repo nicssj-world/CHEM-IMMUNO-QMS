@@ -26,7 +26,7 @@ test('a viewer sees the read-only tabs, and a workspace with nothing visible is 
   assert.deepEqual(tabsOf(viewerOnly), {
     dashboard: ['/', '/attention'],
     inventory: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
-    operations: ['/receive'],
+    operations: ['/receive', '/invoices'],
     reports: ['/reports/monthly', '/movements'],
   });
 });
@@ -35,7 +35,7 @@ test('CHE staff can work (issue, transfer, count) but not adjust, dispose, audit
   assert.deepEqual(tabsOf(staffChe), {
     dashboard: ['/', '/attention'],
     inventory: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
-    operations: ['/receive', '/issue', '/transfer', '/counts'],
+    operations: ['/receive', '/invoices', '/issue', '/transfer', '/counts'],
     reports: ['/reports/monthly', '/movements'],
   });
 });
@@ -44,7 +44,7 @@ test('roles are per warehouse: a supervisor in one warehouse gets supervisor tab
   assert.deepEqual(tabsOf(mixed), {
     dashboard: ['/', '/attention'],
     inventory: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
-    operations: ['/receive', '/issue', '/transfer', '/counts', '/adjust', '/dispose'],
+    operations: ['/receive', '/invoices', '/issue', '/transfer', '/counts', '/adjust', '/dispose'],
     reports: ['/reports/monthly', '/movements', '/audit'],
     admin: ['/scan/review'],
   });
@@ -93,7 +93,7 @@ test('the mobile bottom bar is not changed by the new workspace', async () => {
 
 test('navigation does not relax any authorization: every tab keeps its previous role gate', () => {
   const previous: Record<string, string | undefined> = {
-    '/': undefined, '/attention': undefined, '/receive': undefined, '/issue': 'work', '/transfer': 'work', '/counts': 'work', '/adjust': 'supervise', '/dispose': 'supervise',
+    '/': undefined, '/attention': undefined, '/receive': undefined, '/invoices': undefined, '/issue': 'work', '/transfer': 'work', '/counts': 'work', '/adjust': 'supervise', '/dispose': 'supervise',
     '/products': undefined, '/stock': undefined, '/reorder': undefined, '/vendors': undefined, '/reports/monthly': undefined, '/movements': undefined,
     '/scan/review': 'supervise', '/locations': 'supervise', '/import': 'adminBoth', '/import/incremental': 'adminBoth', '/audit': 'supervise', '/admin/users': 'adminBoth',
   };
@@ -117,6 +117,8 @@ test('active tab uses the longest matching path and treats "/" as exact', () => 
   assert.equal(at('/'), 'dashboard:/');
   assert.equal(at('/attention'), 'dashboard:/attention');
   assert.equal(at('/stock'), 'inventory:/stock');
+  assert.equal(at('/invoices'), 'operations:/invoices');
+  assert.equal(at('/invoices/example'), 'operations:/invoices');
   assert.equal(at('/products/new'), 'inventory:/products');
   assert.equal(at('/products/0a1b2c'), 'inventory:/products');
   assert.equal(at('/vendors/new'), 'inventory:/vendors');
@@ -198,7 +200,7 @@ test('every category still carries its full set of visible links (rendering coll
   assert.deepEqual(Object.fromEntries(cats.map(c => [c.key, c.groups.flatMap(g => g.items.map(i => i.href))])), {
     home: ['/', '/attention'],
     stock: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
-    operations: ['/receive', '/issue', '/transfer', '/counts', '/adjust', '/dispose'],
+    operations: ['/receive', '/invoices', '/issue', '/transfer', '/counts', '/adjust', '/dispose'],
     reports: ['/reports/monthly', '/movements', '/audit'],
     system: ['/scan/review', '/import', '/import/incremental', '/admin/users'],
   });
@@ -235,7 +237,7 @@ test('toggleCategory opens a closed category, closes the open one, and never lea
 test('role-restricted links are hidden, and an empty category is dropped entirely', () => {
   assert.equal(category(viewerOnly, 'system'), undefined, 'a viewer has no visible System link, so System is not rendered');
   assert.deepEqual(categoryHrefs(viewerOnly, 'stock'), ['/stock', '/products', '/locations', '/reorder', '/vendors'], 'read-only tabs stay visible to a viewer');
-  assert.deepEqual(categoryHrefs(staffChe, 'operations'), ['/receive', '/issue', '/transfer', '/counts'], 'adjust/dispose need supervise');
+  assert.deepEqual(categoryHrefs(staffChe, 'operations'), ['/receive', '/invoices', '/issue', '/transfer', '/counts'], 'adjust/dispose need supervise');
   assert.deepEqual(categoryHrefs(mixed, 'system'), ['/scan/review'], 'a supervisor of one warehouse only sees the supervise-gated link');
 });
 
