@@ -136,6 +136,27 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.getByRole('textbox', { name: 'รหัสผ่าน' }).fill(password);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
   await expect(page.getByRole('heading', { name: /ภาพรวมคลัง/ })).toBeVisible();
+  // Searchable Product selection retains the exact GET Product ID and does
+  // not require native dropdown scrolling on the 375px mobile surface.
+  await page.goto('/issue');
+  const issueReagent = page.getByRole('combobox', { name: /น้ำยา/ }).first();
+  await issueReagent.fill('Synthetic CHE two');
+  await expect(page.getByRole('option', { name: /CHE-0002/ })).toBeVisible();
+  await page.getByRole('option', { name: /CHE-0002/ }).click();
+  await expect(page.locator('input[name="product"]')).toHaveValue(chemReagent2);
+  await page.getByRole('button', { name: 'ดู LOT ที่เบิกได้' }).click();
+  await expect(page).toHaveURL(/\/issue\?/);
+  await expect(page.locator('input[name="product"]')).toHaveValue(chemReagent2);
+  await page.goto('/transfer');
+  const transferReagent = page.getByRole('combobox', { name: /น้ำยา/ }).first();
+  await transferReagent.fill('CHE0001');
+  await expect(page.getByRole('option', { name: /CHE-0001/ })).toBeVisible();
+  await page.getByRole('option', { name: /CHE-0001/ }).click();
+  await expect(page.locator('input[name="product"]')).toHaveValue(chemProduct);
+  await page.getByRole('button', { name: 'ดู LOT ของน้ำยานี้' }).click();
+  await expect(page).toHaveURL(/\/transfer\?/);
+  await expect(page.locator('input[name="product"]')).toHaveValue(chemProduct);
+
   await expect(page.getByRole('link', { name: /^น้ำยาที่ใช้งาน 3/ })).toBeVisible();
   const dashboardMetricLabels = [
     'น้ำยาที่ใช้งาน', 'หมดสต็อก', 'ต่ำกว่า ROP', 'LOT หมดอายุแล้ว', 'หมดอายุใน 30 วัน', 'หมดอายุใน 90 วัน',
@@ -871,24 +892,25 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
   await expect(page.getByText(/ไม่พบน้ำยา/).first()).toBeVisible();
 
-  await page.goto(`/products/${chemProduct}`);
+  await page.goto(`/products/${chemProduct}?tab=details`);
   await expect(page.getByRole('heading', { name: 'Synthetic CHE one' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Identity' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Identifiers' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Related Products' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Platforms / Analyzer' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Stock / LOT' })).toBeVisible();
+  // The LOT / Stock panel now lives in the dedicated tab; keep the existing
+  // master-information checks here before editing the related reagent.
   await expect(page.getByRole('heading', { name: 'ROP / Suggested Order' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Provenance' })).toBeVisible();
   await expect(page.getByText('E2E-C1', { exact: true })).toBeVisible();
   const addRelation = page.getByRole('combobox', { name: 'ความสัมพันธ์จากน้ำยานี้' }).first();
   await addRelation.selectOption('uses_calibrator');
-  const targetSearch = page.getByLabel('ค้นหาเป้าหมาย').first();
-  await targetSearch.fill('Synthetic CHE calibrator');
-  const target = page.getByLabel('น้ำยาเป้าหมาย').first();
-  await expect(target.getByRole('option', { name: /CHE-0003/ })).toHaveCount(1);
-  await expect(target.getByRole('option', { name: /CHE-0002/ })).toHaveCount(0);
-  await target.selectOption(chemCalibrator);
+  const target = page.getByRole('combobox', { name: /น้ำยาเป้าหมาย/ }).first();
+  await target.fill('Synthetic CHE calibrator');
+  await expect(page.getByRole('option', { name: /CHE-0003/ })).toHaveCount(1);
+  await expect(page.getByRole('option', { name: /CHE-0002/ })).toHaveCount(0);
+  await page.getByRole('option', { name: /CHE-0003/ }).click();
+  await expect(page.locator('input[name="target_product_id"]').first()).toHaveValue(chemCalibrator);
   await page.getByRole('button', { name: 'เพิ่มความสัมพันธ์' }).click();
   await expect(page.locator('section.surface').filter({ hasText: 'Related Products' }).locator('span.badge').filter({ hasText: 'ใช้ Calibrator' })).toBeVisible();
   const relationRow = await admin.from('ci_product_relations').select('id').eq('source_product_id', chemProduct).eq('target_product_id', chemCalibrator).single();
@@ -896,11 +918,11 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.getByText('แก้ไข', { exact: true }).first().click();
   const editRelation = page.getByRole('combobox', { name: 'ความสัมพันธ์จากน้ำยานี้' }).first();
   await editRelation.selectOption('compatible_with');
-  const editSearch = page.getByLabel('ค้นหาเป้าหมาย').first();
-  await editSearch.fill('Synthetic CHE two');
-  const editTarget = page.getByLabel('น้ำยาเป้าหมาย').first();
-  await expect(editTarget.getByRole('option', { name: /CHE-0002/ })).toHaveCount(1);
-  await editTarget.selectOption(chemReagent2);
+  const editTarget = page.getByRole('combobox', { name: /น้ำยาเป้าหมาย/ }).first();
+  await editTarget.fill('Synthetic CHE two');
+  await expect(page.getByRole('option', { name: /CHE-0002/ })).toHaveCount(1);
+  await page.getByRole('option', { name: /CHE-0002/ }).click();
+  await expect(page.locator('input[name="target_product_id"]').first()).toHaveValue(chemReagent2);
   await page.getByRole('button', { name: 'บันทึกความสัมพันธ์' }).click();
   await expect(page.locator('section.surface').filter({ hasText: 'Related Products' }).locator('span.badge').filter({ hasText: 'ใช้ร่วมกันได้' })).toBeVisible();
   const updatedRelation = await admin.from('ci_product_relations').select('id,relation_type,target_product_id').eq('id', relationRow.data!.id).single();

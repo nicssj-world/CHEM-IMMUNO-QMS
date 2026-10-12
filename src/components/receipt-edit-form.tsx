@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { editReceipt } from '@/app/actions/inventory';
 import { IntegerQuantityInput } from '@/components/integer-quantity-input';
 import { ReceiptAssessmentFields } from '@/components/receipt-assessment-fields';
+import { InvoiceReagentPicker } from '@/components/invoice-reagent-picker';
 import { assessmentError, DEFAULT_ASSESSMENT, fromAssessmentRow, type AssessmentInput, type AssessmentRow } from '@/lib/receipt-assessment';
 
 type ProductOption = { id: string; product_code: string; display_name: string };
@@ -89,13 +90,16 @@ export function ReceiptEditForm({ receiptId, warehouseId, eventNumber, invoice, 
           const product = productById.get(chosen?.product_id ?? '');
           return <article key={line.key} className="rounded-xl border border-line p-4 grid gap-3">
             <div className="flex items-center justify-between gap-2"><strong>รายการ {index + 1}</strong><button type="button" className="button secondary min-h-10" disabled={draft.length <= 1 || pending} onClick={() => setDraft(current => current.filter(item => item.key !== line.key))}>นำรายการออก</button></div>
-            <label className="field">น้ำยาใน Invoice<select className="input" value={line.invoice_line_id} onChange={event => setDraft(current => current.map(item => item.key === line.key ? { ...item, invoice_line_id: event.target.value } : item))} required>
-              <option value="">เลือกน้ำยา</option>
-              {lines.filter(option => option.warehouse_id === warehouseId).map(option => {
-                const item = productById.get(option.product_id);
-                return <option key={option.invoice_line_id} value={option.invoice_line_id}>{item ? `${item.product_code} · ${item.display_name}` : option.product_id} · สั่ง {option.ordered_quantity} · ค้าง {option.remaining_quantity}</option>;
+            <InvoiceReagentPicker
+              products={lines.filter(option=>option.warehouse_id===warehouseId).map(option=>{
+                const item=productById.get(option.product_id);
+                return {id:option.invoice_line_id,product_code:item?.product_code??option.product_id,
+                  display_name:`${item?.display_name??'น้ำยา'} · รับจริง ${option.received_quantity} · ค้าง ${option.remaining_quantity}`};
               })}
-            </select></label>
+              label="น้ำยาใน Invoice" value={line.invoice_line_id} disabled={pending}
+              onChange={invoiceLineId=>setDraft(current=>current.map(item=>item.key===line.key
+                ?{...item,invoice_line_id:invoiceLineId}:item))}
+              hint="พิมพ์รหัสหรือชื่อ แล้วเลือกเฉพาะน้ำยาที่อยู่ใน Invoice และคลังเดิม"/>
             {product && <p className="muted text-xs">รหัส {product.product_code} · เปลี่ยนรายการได้เฉพาะน้ำยาที่อยู่ใน Invoice และคลังเดิม</p>}
             <div className="grid sm:grid-cols-2 gap-3">
               <label className="field">จำนวน<IntegerQuantityInput className="input" min="1" value={line.quantity} onChange={event => setDraft(current => current.map(item => item.key === line.key ? { ...item, quantity: Number(event.target.value) } : item))} required /></label>
