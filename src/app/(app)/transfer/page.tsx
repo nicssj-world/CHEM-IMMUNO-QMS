@@ -12,10 +12,10 @@ export default async function TransferPage({ searchParams }: { searchParams: Pro
   const product = products.find(p => p.id === params.product);
   const warehouse = access.warehouses.find(w => Number(w.id) === product?.warehouse_id) ?? access.warehouses[0];
   const allowed = canMutate(warehouse.role);
-  return <main className="grid gap-6 max-w-[900px]"><div><p className="eyebrow mb-2">Same warehouse transfer</p><h1 className="page-title">ย้ายตำแหน่งน้ำยา</h1><p className="muted mt-2 text-sm">ย้ายระหว่างตำแหน่งภายในคลังเดียวกันด้วย movement ลบและบวกคู่กัน</p></div>
+  return <main className="grid gap-6 max-w-[900px]"><div><p className="eyebrow mb-2">Same warehouse transfer</p><h1 className="page-title">ย้ายตำแหน่งน้ำยา</h1><p className="muted mt-2 text-sm">เลือกน้ำยาแล้วระบบจะแสดง LOT ที่ย้ายได้ทันที · ยืนยันตำแหน่งและจำนวนก่อนบันทึก</p></div>
     {params.error && <p className="error" role="alert">{params.error}</p>}{params.saved && <p className="notice" role="status">{savedNotice(params.saved,'ย้ายตำแหน่งสำเร็จ')}</p>}{error && <p className="error" role="alert">{userMessage(error)}</p>}
     {!allowed ? <p className="error">คุณไม่มีสิทธิ์ย้ายน้ำยาในคลังนี้</p> : locations.length < 2 ? <p className="notice">ต้องมีตำแหน่งจัดเก็บอย่างน้อยสองแห่งในคลังนี้</p> : <>
-      <ProductPicker path="/transfer" warehouseCode={warehouse.code} products={products} selectedId={product?.id}/>
+      <ProductPicker key={product?.id??'unselected'} path="/transfer" warehouseCode={warehouse.code} products={products} selectedId={product?.id}/>
       {product && !error && (options.length ? <StockOperationForm key={product.id} kind="transfer" options={options} locations={locations} submissionKey={randomUUID()} warehouseCode={warehouse.code} productId={product.id}/> : <p className="notice">{product.product_code} ไม่มี LOT คงเหลือให้ย้าย</p>)}
     </>}
   </main>;
