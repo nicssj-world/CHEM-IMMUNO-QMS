@@ -70,6 +70,7 @@ export function IssueForm({productId,productCode,warehouseCode,candidates,submis
         return <label key={`${candidate.lot_id}:${candidate.location_id}`}
           className={`relative flex cursor-pointer items-start gap-3 rounded-xl border p-3 sm:p-4 min-h-16 transition-colors ${active?'border-blue-600 bg-blue-50':'border-line hover:bg-surface-2'}`}>
           <input type="radio" name="issue_lot_choice" value={index} checked={active}
+            autoFocus={selected===-1&&index===0}
             onChange={()=>chooseLot(index)} className="mt-1 shrink-0 accent-blue-700"/>
           <span className="min-w-0 flex-1 grid gap-1">
             <span className="flex flex-wrap items-center gap-2">
