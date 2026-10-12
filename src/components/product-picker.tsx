@@ -1,10 +1,25 @@
+'use client';
+
+import { useState } from 'react';
+import { InvoiceReagentPicker } from './invoice-reagent-picker';
+
 export type PickerProduct = { id: string; product_code: string; display_name: string };
 
-/** A plain GET form: choosing a product reloads the page with `?product=` so the server can load that product's LOTs. */
-export function ProductPicker({ path, warehouseCode, products, selectedId, submitLabel = 'ดู LOT ของน้ำยานี้' }: { path: string; warehouseCode: string; products: PickerProduct[]; selectedId?: string; submitLabel?: string }) {
-  return <form key={selectedId ?? 'none'} method="get" action={path} className="surface p-5 sm:p-7 grid gap-4">
+/** A GET form: the searchable selection still submits the exact Product ID
+ * as ?product=, so the existing server-side LOT loading and scan redirects
+ * are unchanged. Nothing submits until a real reagent has been chosen.
+ */
+export function ProductPicker({ path, warehouseCode, products, selectedId, submitLabel = 'ดู LOT ของน้ำยานี้' }: {
+  path: string; warehouseCode: string; products: PickerProduct[];
+  selectedId?: string; submitLabel?: string;
+}) {
+  const [productId,setProductId]=useState(selectedId??'');
+  return <form key={selectedId??'none'} method="get" action={path}
+    className="surface p-5 sm:p-7 grid gap-4">
     <input type="hidden" name="warehouse" value={warehouseCode}/>
-    <label className="field">น้ำยา<select className="input" name="product" defaultValue={selectedId ?? ''} required><option value="">เลือกน้ำยา</option>{products.map(p => <option key={p.id} value={p.id}>{p.product_code} · {p.display_name}</option>)}</select></label>
-    <div><button className="button" type="submit">{submitLabel}</button></div>
+    <input type="hidden" name="product" value={productId}/>
+    <InvoiceReagentPicker products={products} value={productId} onChange={setProductId}
+      hint="พิมพ์รหัสหรือชื่อน้ำยาแล้วเลือกจากผลค้นหา · หรือใช้กล้องสแกนด้านบน"/>
+    <div><button className="button" type="submit" disabled={!productId}>{submitLabel}</button></div>
   </form>;
 }
