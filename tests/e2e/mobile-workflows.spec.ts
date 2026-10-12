@@ -892,13 +892,14 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
   await expect(page.getByText(/ไม่พบน้ำยา/).first()).toBeVisible();
 
-  await page.goto(`/products/${chemProduct}`);
+  await page.goto(`/products/${chemProduct}?tab=details`);
   await expect(page.getByRole('heading', { name: 'Synthetic CHE one' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Identity' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Identifiers' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Related Products' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Platforms / Analyzer' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Stock / LOT' })).toBeVisible();
+  // The LOT / Stock panel now lives in the dedicated tab; keep the existing
+  // master-information checks here before editing the related reagent.
   await expect(page.getByRole('heading', { name: 'ROP / Suggested Order' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Provenance' })).toBeVisible();
   await expect(page.getByText('E2E-C1', { exact: true })).toBeVisible();
