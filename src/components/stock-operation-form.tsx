@@ -5,6 +5,7 @@ import { transferStock, adjustStock, disposeExpired } from '@/app/actions/invent
 import { ConfirmForm } from './confirm-form';
 import { IntegerQuantityInput } from './integer-quantity-input';
 import { SubmitButton } from './submit-button';
+import { InvoiceReagentPicker } from './invoice-reagent-picker';
 
 export type StockOption = { lot_id: string; lot_number: string; expiry_date: string; location_id: string; location_code: string; product_code: string; product_name: string; balance: number };
 export type LocationOption = { id: string; code: string; name: string; parent_code?: string | null };
@@ -27,10 +28,15 @@ export function StockOperationForm({ kind, options, locations, submissionKey, wa
     <input type="hidden" name="lot_id" value={selected?.lot_id ?? ''}/><input type="hidden" name="idempotency_key" value={submissionKey}/>
     <input type="hidden" name={kind === 'transfer' ? 'from_location_id' : 'location_id'} value={selected?.location_id ?? ''}/>
     <input type="hidden" name="warehouse" value={warehouseCode}/><input type="hidden" name="product" value={productId}/><input type="hidden" name="summary" value={what}/>
-    <label className="field">{showProduct ? 'น้ำยา · LOT · ตำแหน่ง' : 'LOT · ตำแหน่ง'}<select className="input" value={index} required onChange={e => setIndex(Number(e.target.value))}>
-      {options.length > 1 && <option value={-1} disabled>เลือก LOT</option>}
-      {options.map((item,i) => <option key={`${item.lot_id}:${item.location_id}`} value={i}>{showProduct ? `${item.product_code} · ` : ''}LOT {item.lot_number} · หมดอายุ {item.expiry_date} · {item.location_code} · คงเหลือ {Number(item.balance)}</option>)}
-    </select></label>
+    <InvoiceReagentPicker
+      products={options.map((item,i)=>({
+        id:String(i), product_code:showProduct?item.product_code:`LOT ${item.lot_number}`,
+        display_name:`${showProduct?item.product_name+' · ':''}LOT ${item.lot_number} · EXP ${item.expiry_date} · ${item.location_code} · คงเหลือ ${Number(item.balance)}`,
+      }))}
+      label={showProduct?'น้ำยา · LOT · ตำแหน่ง':'LOT · ตำแหน่ง'}
+      placeholder={showProduct?'ค้นหารหัสหรือชื่อน้ำยา / LOT / EXP':'ค้นหา LOT / วันหมดอายุ / ตำแหน่ง'}
+      hint="พิมพ์ค้นหาแล้วเลือก LOT และตำแหน่งที่ถูกต้องก่อนบันทึก"
+      value={selected?String(index):''} onChange={id=>{setIndex(id===''?-1:Number(id));setAmount('');}}/>
     {selected && <p className="notice text-sm">{showProduct && <><strong>{selected.product_code}</strong> · {selected.product_name} · </>}คงเหลือ {Number(selected.balance)} · หมดอายุ {selected.expiry_date} · ตำแหน่ง {selected.location_code}</p>}
     {kind === 'transfer' && <label className="field">ปลายทาง<select className="input" name="to_location_id" required defaultValue=""><option value="">เลือกตำแหน่งปลายทาง</option>{locations.filter(l => l.id !== selected?.location_id).map(l => <option key={l.id} value={l.id}>{l.parent_code ? `${l.parent_code} › ` : ''}{l.code} · {l.name}</option>)}</select></label>}
     {kind === 'adjust' ? <fieldset className="grid gap-2"><legend className="field mb-2">ทิศทางและจำนวนที่ปรับ</legend>
