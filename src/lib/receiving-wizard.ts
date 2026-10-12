@@ -49,7 +49,8 @@ export function appendWizardScan(
 ): {ok:true;lines:WizardLine[];merged:boolean} | {ok:false;reason:'invalid'|'capacity'|'lot-expiry-conflict'|'review'} {
   const line=lines.find(l=>l.productId===next.productId);
   const packages=line?.packages ?? [];
-  const blank=packages.length===1 && !packages[0].lot && !packages[0].expiry && packages[0].quantity==='1';
+  const blank=packages.length===1 && !packages[0].lot && !packages[0].expiry &&
+    (packages[0].quantity===''||packages[0].quantity==='1');
   const source=blank?[]:packages;
   if(source.some(p=>!p.lot.trim()||!p.expiry||!p.locationId)) return {ok:false,reason:'review'};
   const existing=source.map(p=>({...p,invoiceLineId:next.productId}));
