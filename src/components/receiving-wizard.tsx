@@ -33,7 +33,8 @@ const scanFailureMessage = {
 } as const;
 
 // Temporary client-only handoff for the initial draft URL remount. Never written to DB.
-const pendingEvidenceOnDraftNavigation=new Map<string,File>();
+type EvidenceHandoff={file:File;previewUrl:string|null};
+const pendingEvidenceOnDraftNavigation=new Map<string,EvidenceHandoff>();
 const TITLES=['ข้อมูล Invoice','รับเข้าน้ำยา','ตรวจสอบข้อมูล','ประเมินและยืนยัน'];
 const initialHeader={vendorId:'',invoiceNumber:'',invoiceDate:'',poNumber:''};
 const makeLot=(locationId=''):WizardLot=>({id:crypto.randomUUID(),quantity:'1',lot:'',expiry:'',locationId});
@@ -75,34 +76,29 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const [sessionLocationId,setSessionLocationId]=useState('');
   const [scanBusy,setScanBusy]=useState(false);
   const scanGate=useRef(new ScanIntakeGate());
-  const [selectedEvidence,setSelectedEvidence]=useState<File|null>(null);
-  const [imagePreview,setImagePreview]=useState<string|null>(null);
+  // Keep the exact selected file and its preview URL across the keyed draft
+  // remount. The previous wizard passes ownership of the URL to this instance.
+  const [selectedEvidence,setSelectedEvidence]=useState<File|null>(()=>
+    initialDraft?.id ? pendingEvidenceOnDraftNavigation.get(initialDraft.id)?.file ?? null : null);
+  const [imagePreview,setImagePreview]=useState<string|null>(()=>
+    initialDraft?.id ? pendingEvidenceOnDraftNavigation.get(initialDraft.id)?.previewUrl ?? null : null);
   const [completedInvoiceId,setCompletedInvoiceId]=useState('');
   const [evidenceBusy,setEvidenceBusy]=useState(false);
+  const evidenceUrlRef=useRef<string|null>(imagePreview);
   useEffect(()=>{
-    // Keyed wizard remounts on Step 1 -> Step 2 URL change.
-    const id=initialDraft?.id;
-    if(!id)return;
-    const file=pendingEvidenceOnDraftNavigation.get(id);
-    if(!file)return;
-    pendingEvidenceOnDraftNavigation.delete(id);
-    setSelectedEvidence(file);
+    if(initialDraft?.id)pendingEvidenceOnDraftNavigation.delete(initialDraft.id);
   },[initialDraft?.id]);
-  useEffect(()=>{
-    if(!selectedEvidence?.type.startsWith('image/')){
-      setImagePreview(null);
-      return;
-    }
-    const url=URL.createObjectURL(selectedEvidence);
-    setImagePreview(url);
-    return ()=>URL.revokeObjectURL(url);
-  },[selectedEvidence]);
+  useEffect(()=>()=>{if(evidenceUrlRef.current)URL.revokeObjectURL(evidenceUrlRef.current);},[]);
   function chooseEvidence(file:File|null){
     if(file && (file.size>10*1024*1024 ||
        !(file.type.startsWith('image/') || file.type==='application/pdf'))){
       setError('เลือกภาพหรือ PDF ขนาดไม่เกิน 10 MB');
       return;
     }
+    if(evidenceUrlRef.current)URL.revokeObjectURL(evidenceUrlRef.current);
+    const nextUrl=file?.type.startsWith('image/')?URL.createObjectURL(file):null;
+    evidenceUrlRef.current=nextUrl;
+    setImagePreview(nextUrl);
     setSelectedEvidence(file);
     setError('');
   }
@@ -316,7 +312,11 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           }
           if(selectedEvidence){
             pendingEvidenceOnDraftNavigation.clear();
-            pendingEvidenceOnDraftNavigation.set(result.id,selectedEvidence);
+            pendingEvidenceOnDraftNavigation.set(result.id,{
+              file:selectedEvidence,previewUrl:evidenceUrlRef.current,
+            });
+            // Do not revoke a blob URL now owned by the next wizard instance.
+            evidenceUrlRef.current=null;
           }
           setDraftId(result.id);
           // Advance immediately: App Router can preserve this client instance
