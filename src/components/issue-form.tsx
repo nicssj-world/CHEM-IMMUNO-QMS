@@ -96,7 +96,7 @@ export function IssueForm({productId,productCode,warehouseCode,candidates,submis
       <label className="field">จำนวนที่เบิก <span className="text-red-700">*</span>
         <IntegerQuantityInput className="input min-h-12 text-lg font-semibold" name="quantity" min="1"
           max={Number(item.balance)} placeholder="ระบุจำนวนที่เบิกจริง"
-          autoFocus={scannedStatus==='unique'} required value={quantity}
+          autoFocus={scannedStatus==='unique'||candidates.length===1} required value={quantity}
           onChange={event=>setQuantity(event.target.value)}/>
       </label>
       <div className="grid grid-cols-2 gap-2">
