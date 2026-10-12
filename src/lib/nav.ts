@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ArrowUpFromLine, Boxes, ClipboardCheck, ClipboardList, FileUp, History, House, ListChecks, MapPin, NotebookTabs, PackagePlus, QrCode, ScanLine, ScrollText, ShieldCheck, SlidersHorizontal, Trash2, UserCog, Users, Wrench, type LucideIcon } from 'lucide-react';
+import { ArrowLeftRight, ArrowUpFromLine, Boxes, ClipboardCheck, ClipboardList, FileText, FileUp, History, House, ListChecks, MapPin, NotebookTabs, PackagePlus, QrCode, ScanLine, ScrollText, ShieldCheck, SlidersHorizontal, Trash2, UserCog, Users, Wrench, type LucideIcon } from 'lucide-react';
 import type { AccessContext } from '@/lib/auth';
 
 // Navigation groups routes into workspaces. It changes where a link is shown, never who may use the page: every page, server
@@ -28,6 +28,7 @@ export const workspaces: Workspace[] = [
   ] },
   { key: 'operations', label: 'ปฏิบัติงาน', icon: Wrench, tabs: [
     { href: '/receive', label: 'รับเข้า', icon: PackagePlus },
+    { href: '/invoices', label: 'ทะเบียน Invoice', icon: FileText },
     { href: '/issue', label: 'เบิกใช้', icon: ArrowUpFromLine, need: 'work' },
     { href: '/transfer', label: 'ย้ายที่เก็บ', icon: ArrowLeftRight, need: 'work' },
     { href: '/counts', label: 'ตรวจนับ', icon: ClipboardCheck, need: 'work' },
