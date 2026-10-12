@@ -45,7 +45,31 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <p className="text-sm muted">พบ <strong className="text-[var(--ink)]">{result.totalProducts.toLocaleString('th-TH')}</strong> น้ำยา · <strong className="text-[var(--ink)]">{result.totalLots.toLocaleString('th-TH')}</strong> LOT ที่มียอดคงเหลือ</p>
         <p className="text-xs muted">หน้า {page} จาก {Math.max(result.pageCount,1)} · เรียง LOT ตามวันหมดอายุ (FEFO)</p>
       </div>
-      <section className="grid gap-3" aria-label="คงคลังแยกตามน้ำยาและ LOT">
+      <section className="surface desktop-table table-wrap" aria-label="ตารางคงคลังแยก LOT">
+        <table className="data-table">
+          <thead><tr><th>น้ำยา</th><th>LOT</th><th>EXP</th><th className="text-right">คงเหลือ</th><th>ตำแหน่ง</th></tr></thead>
+          <tbody>{products.map(product=>product.lots.map((lot,index)=>{
+            const status=expiryLabel(lot.expiry);
+            return <tr key={product.id+':'+lot.id}>
+              {index===0&&<td rowSpan={product.lots.length}>
+                <Link href={`/products/${product.id}?tab=lots`} className="font-bold text-brand">{product.code}</Link>
+                <p className="text-sm max-w-xs break-words">{product.name}</p>
+                <p className="muted text-xs mt-2">รวม {product.balance.toLocaleString('th-TH')} · {product.lots.length} LOT</p>
+              </td>}
+              <td className="font-semibold">{lot.number}</td>
+              <td><span className="tabular-nums">{displayDate(lot.expiry)}</span>
+                <span className={`block w-fit rounded-md mt-1 px-2 py-1 text-xs font-semibold ${status.css}`}>{status.text}</span></td>
+              <td className="text-right font-extrabold tabular-nums">{lot.balance.toLocaleString('th-TH')}</td>
+              <td><details><summary className="cursor-pointer text-brand text-sm font-semibold">ดู {lot.locations.length} ตำแหน่ง</summary>
+                <div className="grid gap-1 mt-2 text-xs">{lot.locations.map(location=>
+                  <p key={location.id} className="flex gap-3 justify-between"><span>{location.code}</span><strong>{location.balance.toLocaleString('th-TH')}</strong></p>)}</div>
+              </details></td>
+            </tr>;
+          }))}</tbody>
+        </table>
+        {!products.length&&<p className="p-5 muted text-sm">ไม่พบ LOT ที่มียอดคงเหลือตามเงื่อนไขที่ค้นหา</p>}
+      </section>
+      <section className="mobile-card-list grid gap-3" aria-label="คงคลังแยกตามน้ำยาและ LOT">
         {products.map(product=><article key={product.id} className="surface p-4 sm:p-5 min-w-0 grid gap-3">
           <div className="flex justify-between gap-3 items-start">
             <div className="min-w-0">
