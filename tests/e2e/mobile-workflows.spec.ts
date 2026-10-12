@@ -136,27 +136,6 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.getByRole('textbox', { name: 'รหัสผ่าน' }).fill(password);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
   await expect(page.getByRole('heading', { name: /ภาพรวมคลัง/ })).toBeVisible();
-  // Searchable Product selection retains the exact GET Product ID and does
-  // not require native dropdown scrolling on the 375px mobile surface.
-  await page.goto('/issue');
-  const issueReagent = page.getByRole('combobox', { name: /น้ำยา/ }).first();
-  await issueReagent.fill('Synthetic CHE two');
-  await expect(page.getByRole('option', { name: /CHE-0002/ })).toBeVisible();
-  await page.getByRole('option', { name: /CHE-0002/ }).click();
-  await expect(page.locator('input[name="product"]')).toHaveValue(chemReagent2);
-  await page.getByRole('button', { name: 'ดู LOT ที่เบิกได้' }).click();
-  await expect(page).toHaveURL(/\/issue\?/);
-  await expect(page.locator('input[name="product"]')).toHaveValue(chemReagent2);
-  await page.goto('/transfer');
-  const transferReagent = page.getByRole('combobox', { name: /น้ำยา/ }).first();
-  await transferReagent.fill('CHE0001');
-  await expect(page.getByRole('option', { name: /CHE-0001/ })).toBeVisible();
-  await page.getByRole('option', { name: /CHE-0001/ }).click();
-  await expect(page.locator('input[name="product"]')).toHaveValue(chemProduct);
-  await page.getByRole('button', { name: 'ดู LOT ของน้ำยานี้' }).click();
-  await expect(page).toHaveURL(/\/transfer\?/);
-  await expect(page.locator('input[name="product"]')).toHaveValue(chemProduct);
-
   await expect(page.getByRole('link', { name: /^น้ำยาที่ใช้งาน 3/ })).toBeVisible();
   const dashboardMetricLabels = [
     'น้ำยาที่ใช้งาน', 'หมดสต็อก', 'ต่ำกว่า ROP', 'LOT หมดอายุแล้ว', 'หมดอายุใน 30 วัน', 'หมดอายุใน 90 วัน',
@@ -173,6 +152,21 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(page).toHaveURL(/warehouse=IMM/);
   await expect(page.getByRole('link', { name: /^น้ำยาที่ใช้งาน 1/ })).toBeVisible();
   await expectDashboardMetrics();
+
+  // Searchable reagent selection automatically loads its LOTs: no extra
+  // button click is needed and the server still scopes the requested Product.
+  await page.goto('/issue');
+  const issueReagent=page.getByRole('combobox',{name:/เลือกน้ำยา/}).first();
+  await issueReagent.fill('Synthetic CHE two');
+  await page.getByRole('option',{name:/CHE-0002/}).click();
+  await expect(page).toHaveURL(new RegExp(`/issue\\?[^#]*product=${chemReagent2}`));
+  await expect(page.getByRole('button',{name:'ดู LOT ที่เบิกได้'})).toHaveCount(0);
+  await page.goto('/transfer');
+  const transferReagent=page.getByRole('combobox',{name:/เลือกน้ำยา/}).first();
+  await transferReagent.fill('CHE0001');
+  await page.getByRole('option',{name:/CHE-0001/}).click();
+  await expect(page).toHaveURL(new RegExp(`/transfer\\?[^#]*product=${chemProduct}`));
+  await expect(page.getByRole('button',{name:'ดู LOT ของน้ำยานี้'})).toHaveCount(0);
 
   await page.goto('/products/new?warehouse=CHE');
   await page.getByLabel('ชื่อน้ำยาตามแหล่งข้อมูล').fill('Synthetic UI product source');
