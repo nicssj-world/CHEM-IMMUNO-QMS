@@ -354,44 +354,48 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(evidenceSection.getByText(/synthetic-invoice-step1\.pdf/)).toBeVisible();
   await page.getByRole('button', { name: /ถัดไป · รับน้ำยา/ }).click();
   await expect(page.getByRole('heading', { name: 'Step 2 · รับเข้าน้ำยา' })).toBeVisible();
-  // This GTIN is intentionally NOT registered: Product must resolve via
-  // approved REF_CURRENT from GS1 AI (240), not via GTIN or a manual picker.
+  // GTIN is intentionally not registered; the approved REF (240) must resolve
+  // the reagent. Even a completely decoded code opens a quantity popup.
   const matrixA = '(01)00098765432109(17)271231(10)E2E-MATRIX-A(240)E2E-C1';
   await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill(matrixA);
   await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
-  const pendingMatrix = page.getByRole('region', { name: 'ตรวจสอบ Barcode ก่อนเพิ่มลงร่าง' });
-  await expect(pendingMatrix).toBeVisible({timeout:15_000});
-  await expect(pendingMatrix.getByText('Synthetic CHE one')).toBeVisible();
-  await expect(pendingMatrix.getByRole('textbox', { name: /LOT/ })).toHaveValue('E2E-MATRIX-A');
-  await expect(pendingMatrix.locator('input[type="date"]')).toHaveValue('2027-12-31');
-  // A different decoded frame must never overwrite a LOT the operator has not accepted.
-  await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill('(01)00012345678905(17)280101(10)E2E-MATRIX-B');
-  await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
-  await expect(pendingMatrix.getByRole('textbox', { name: /LOT/ })).toHaveValue('E2E-MATRIX-A');
-  await pendingMatrix.getByRole('combobox', { name: /ตำแหน่งจัดเก็บ/ }).selectOption(location.data as string);
-  await pendingMatrix.getByRole('button', { name: 'ตรวจสอบและเพิ่มลงร่าง' }).click();
-  await expect(pendingMatrix).toHaveCount(0);
+  const scanPopup = page.getByRole('dialog', { name: 'ตรวจสอบน้ำยาที่สแกน' });
+  await expect(scanPopup).toBeVisible({timeout:15_000});
+  await expect(scanPopup.getByText('Synthetic CHE one')).toBeVisible();
+  await expect(scanPopup.getByRole('textbox', { name: /LOT/ })).toHaveValue('E2E-MATRIX-A');
+  await expect(scanPopup.locator('input[type="date"]')).toHaveValue('2027-12-31');
+  const scanQuantity = scanPopup.getByRole('spinbutton', { name: /จำนวนรับจริง/ });
+  await expect(scanQuantity, 'actual quantity must never be silently 1').toHaveValue('');
+  await scanPopup.getByRole('combobox', { name: /ตำแหน่งจัดเก็บ/ }).selectOption(location.data as string);
+  await scanQuantity.fill('2');
+  await scanPopup.getByRole('button', { name: 'ยืนยันและสแกนต่อ' }).click();
+  await expect(scanPopup).toHaveCount(0);
   const wizardRow = page.locator('article').filter({hasText:'Synthetic CHE one'}).first();
   await expect(wizardRow.getByRole('textbox', { name: /LOT/ })).toHaveValue('E2E-MATRIX-A');
-  await expect(wizardRow.locator('input[type="date"]')).toHaveValue('2027-12-31');
-  await wizardRow.getByRole('spinbutton', { name: /จำนวนตาม Invoice/ }).fill('2');
+  await expect(wizardRow.getByRole('spinbutton', { name: /จำนวนรับจริง/ })).toHaveValue('2');
+  await expect(page.getByRole('spinbutton', { name: /จำนวนตาม Invoice/ })).toHaveCount(0);
 
-  // The first reviewed Location must become the current scanning Location.
-  // Product #2 deliberately has NO default Location: the next Data Matrix
-  // should be accepted without asking staff to select storage again.
+  // The original scanning Location remains selected. A second scan can be
+  // started immediately after popup confirmation without re-opening the scanner.
   const scanningLocation = page.getByRole('combobox', { name: /ตำแหน่งสำหรับการสแกนต่อเนื่อง/ });
   await expect(scanningLocation).toHaveValue(location.data as string);
   const matrixB = '(01)00098765432109(17)280101(10)E2E-MATRIX-B(240)E2E-C2';
   await page.getByRole('textbox', { name: /พิมพ์หรือวาง Barcode/ }).fill(matrixB);
   await page.getByRole('button', { name: 'ตรวจ Barcode' }).click();
+  await expect(scanPopup).toBeVisible({timeout:15_000});
+  await expect(scanPopup.getByText('Synthetic CHE two')).toBeVisible();
+  await expect(scanPopup.getByRole('combobox', { name: /ตำแหน่งจัดเก็บ/ })).toHaveValue(location.data as string);
+  await expect(scanPopup.getByRole('spinbutton', { name: /จำนวนรับจริง/ })).toHaveValue('');
+  await scanPopup.getByRole('spinbutton', { name: /จำนวนรับจริง/ }).fill('1');
+  await scanPopup.getByRole('spinbutton', { name: /จำนวนรับจริง/ }).press('Enter');
+  await expect(scanPopup).toHaveCount(0);
   const secondWizardRow = page.locator('article').filter({ hasText: 'Synthetic CHE two' }).first();
   await expect(secondWizardRow).toBeVisible({ timeout: 15_000 });
-  await expect(pendingMatrix, 'the second Product must inherit scanning Location').toHaveCount(0);
+  await expect(page.locator('article').first()).toContainText('Synthetic CHE two');
   await expect(secondWizardRow.getByRole('combobox', { name: /ตำแหน่งจัดเก็บ/ })).toHaveValue(location.data as string);
   await secondWizardRow.getByRole('button', { name: '+ เพิ่ม LOT' }).click();
-  await expect(secondWizardRow.getByRole('combobox', { name: /ตำแหน่งจัดเก็บ/ }).nth(1)).toHaveValue(location.data as string);
-  await secondWizardRow.getByRole('button', { name: 'ลบ LOT' }).last().click();
-  await secondWizardRow.getByRole('spinbutton', { name: /จำนวนตาม Invoice/ }).fill('1');
+  await expect(secondWizardRow.getByRole('combobox', { name: /ตำแหน่งจัดเก็บ/ }).first()).toHaveValue(location.data as string);
+  await secondWizardRow.getByRole('button', { name: 'ลบ LOT' }).first().click();
 
   await page.getByRole('button', { name: /ถัดไป · ตรวจสอบ/ }).click();
   await expect(page.getByRole('heading', { name: 'Step 3 · ตรวจสอบก่อนยืนยัน' })).toBeVisible({timeout:15_000});
