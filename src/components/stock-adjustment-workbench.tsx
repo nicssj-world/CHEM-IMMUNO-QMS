@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
+import { ScanLine } from 'lucide-react';
 import { adjustStock, getAdjustmentLotOptions } from '@/app/actions/inventory';
 import { resolveProductScan } from '@/app/actions/scanner';
 import { userMessage } from '@/lib/messages';
@@ -45,11 +46,23 @@ export function StockAdjustmentWorkbench({
   const [raw, setRaw] = useState('');
   const [feedback, setFeedback] = useState<ScanFeedback | null>(null);
   const [busy, setBusy] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [focusedResult, setFocusedResult] = useState(-1);
+  const [showScanner, setShowScanner] = useState(false);
+  const pickerId = useId();
   const [formError, setFormError] = useState('');
   const feedbackId = useRef(0);
   const productById = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
   const locationById = useMemo(() => new Map(locations.map(location => [location.id, location])), [locations]);
   const product = productById.get(productId);
+  const pickerMatches = useMemo(() => {
+    const terms = productSearch.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    return products.filter(item => {
+      const searchable = (item.product_code + ' ' + item.display_name).toLocaleLowerCase();
+      return terms.every(term => searchable.includes(term));
+    }).slice(0, 60);
+  }, [products, productSearch]);
   const activeWarehouseId = product?.warehouse_id ?? warehouseId;
   const activeWarehouseCode = product?.product_code.startsWith('IMM-') ? 'IMM' : product?.product_code.startsWith('CHE-') ? 'CHE' : warehouseCode;
   const sameNumberOptions = lotNumber ? options.filter(option => option.lot_number === lotNumber) : [];
@@ -98,6 +111,15 @@ export function StockAdjustmentWorkbench({
     setLocationId(locationIds.length === 1 ? locationIds[0] : '');
   }
 
+  function chooseProduct(nextProductId: string) {
+    setPickerOpen(false);
+    setFocusedResult(-1);
+    setProductSearch('');
+    setShowScanner(false);
+    setFeedback(null);
+    void loadProductOptions(nextProductId, !productId && Boolean(raw));
+  }
+
   async function loadProductOptions(nextProductId: string, preserveScannedLot: boolean) {
     setProductId(nextProductId);
     setOptions([]);
@@ -141,6 +163,9 @@ export function StockAdjustmentWorkbench({
         const loaded = optionsForProduct(await getAdjustmentLotOptions(result.product.warehouseId, result.product.id), result.product.id);
         setOptions(loaded);
         if (nextLot) chooseExistingLot(loaded, nextLot, nextExpiry);
+        setPickerOpen(false);
+        setProductSearch('');
+        setShowScanner(false);
         const productLabel = `${result.product.code} · ${result.product.name}`;
         if (!trusted) tell('warn', `${productLabel} · Barcode มีคำเตือน`, 'ตรวจ LOT และวันหมดอายุก่อนปรับยอด');
         else if (!nextLot || !nextExpiry) tell('warn', `${productLabel}`, 'Barcode ไม่มี LOT หรือวันหมดอายุครบ · กรอกเอง');
@@ -208,8 +233,8 @@ export function StockAdjustmentWorkbench({
   const summaryText = product ? `${product.product_code} LOT ${lotNumber} @ ${selectedLocation?.code ?? ''}` : '';
 
   return <div className="grid gap-4">
-    <div><h2 className="font-bold text-lg mb-1">สแกนเพื่อปรับยอด</h2><p className="muted text-sm">สแกน DataMatrix เพื่อเติมน้ำยา, LOT และวันหมดอายุ · ตรวจตำแหน่งและเหตุผลก่อนยืนยัน</p></div>
-    <BarcodeScanner onScan={onScan} feedback={feedback} summary={summary}/>
+    <div><h2 className="font-bold text-lg mb-1">เลือกน้ำยาที่ต้องการปรับยอด</h2><p className="muted text-sm">ค้นหาน้ำยาจากรหัสหรือชื่อ หรือสแกน Data Matrix / Barcode เพื่อเลือกน้ำยาและอ่าน LOT กับวันหมดอายุ</p></div>
+    {!showScanner && feedback && <p className={feedback.tone === 'error' ? 'error' : 'notice text-sm'} role="status"><strong>{feedback.title}</strong>{feedback.detail ? ' · ' + feedback.detail : ''}</p>}
     {formError && <p className="error" role="alert">{formError}</p>}
     {locations.length === 0 && <p className="notice">ยังไม่มีตำแหน่งจัดเก็บในคลังนี้ · เพิ่มตำแหน่งก่อนปรับยอด</p>}
     <ConfirmForm action={adjustStock} className="surface p-5 sm:p-7 grid gap-4" message={data => `ยืนยันปรับยอด ${summaryText}\nLOT ${lotNumber} · หมดอายุ ${expiry} · ${selectedLocation?.code ?? ''}\nปรับ ${delta > 0 ? '+' : ''}${delta} · ยอดตำแหน่งนี้ ${selectedBalance} → ${after}\nเหตุผล: ${String(data.get('reason') ?? '')}\n\nบันทึกแล้วแก้ไขไม่ได้ ต้องใช้การยกเลิกรายการ`}>
@@ -225,10 +250,74 @@ export function StockAdjustmentWorkbench({
       <input type="hidden" name="summary" value={summaryText}/>
       <input type="hidden" name="quantity_delta" value={delta || ''}/>
 
-      <label className="field">น้ำยา<select className="input" value={productId} required onChange={event => void loadProductOptions(event.target.value, !productId && Boolean(raw))}>
-        <option value="">สแกนหรือเลือกน้ำยา</option>
-        {products.map(item => <option key={item.id} value={item.id}>{item.product_code} · {item.display_name}</option>)}
-      </select></label>
+      <div className="field">
+        <label htmlFor={pickerId}>น้ำยา <span className="text-rose-600" aria-hidden>*</span></label>
+        <div className="flex items-start gap-2">
+          <div className="relative min-w-0 flex-1" onBlur={event => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setPickerOpen(false);
+          }}>
+            <input
+              id={pickerId}
+              type="text"
+              className="input w-full"
+              role="combobox"
+              aria-label="ค้นหาและเลือกน้ำยา"
+              aria-autocomplete="list"
+              aria-expanded={pickerOpen}
+              aria-controls={pickerId + '-results'}
+              aria-activedescendant={pickerOpen && focusedResult >= 0 && pickerMatches[focusedResult] ? pickerId + '-option-' + focusedResult : undefined}
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="ค้นหารหัสหรือชื่อน้ำยา"
+              value={pickerOpen ? productSearch : product ? product.product_code + ' · ' + product.display_name : ''}
+              disabled={busy}
+              onFocus={() => { setPickerOpen(true); setProductSearch(''); setFocusedResult(-1); }}
+              onChange={event => { setProductSearch(event.target.value); setPickerOpen(true); setFocusedResult(-1); }}
+              onKeyDown={event => {
+                if (event.key === 'Escape') { setPickerOpen(false); return; }
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault(); setPickerOpen(true);
+                  setFocusedResult(index => Math.min(index + 1, pickerMatches.length - 1));
+                } else if (event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  setFocusedResult(index => Math.max(index - 1, 0));
+                } else if (event.key === 'Enter') {
+                  event.preventDefault();
+                  const match = focusedResult >= 0 ? pickerMatches[focusedResult] : pickerMatches.length === 1 ? pickerMatches[0] : undefined;
+                  if (match) chooseProduct(match.id);
+                  else if (productSearch.trim() && pickerMatches.length === 0) {
+                    setPickerOpen(false);
+                    void onScan(productSearch.trim(), 'manual');
+                  }
+                }
+              }}
+            />
+            {pickerOpen && <div id={pickerId + '-results'} role="listbox" aria-label="ผลการค้นหาน้ำยา" className="absolute z-30 mt-1 w-full max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+              {pickerMatches.map((item, index) => <button
+                key={item.id}
+                id={pickerId + '-option-' + index}
+                type="button"
+                role="option"
+                aria-selected={productId === item.id}
+                className={'block w-full border-b border-slate-100 px-3 py-3 text-left text-sm last:border-0 hover:bg-sky-50 focus:bg-sky-50 ' + (focusedResult === index ? 'bg-sky-50' : '')}
+                onMouseDown={event => event.preventDefault()}
+                onClick={() => chooseProduct(item.id)}
+              ><span className="font-semibold">{item.product_code}</span><span className="ml-1">· {item.display_name}</span></button>)}
+              {!pickerMatches.length && <p className="p-3 text-sm text-slate-600">ไม่พบน้ำยาที่ตรงกับคำค้น · ลองค้นหารหัสอื่นหรือสแกน Barcode</p>}
+              {pickerMatches.length === 60 && <p className="border-t border-slate-100 p-2 text-center text-xs text-slate-600">แสดงสูงสุด 60 รายการ · พิมพ์เพิ่มเพื่อค้นหาให้แคบลง</p>}
+            </div>}
+          </div>
+          <button type="button" className="button secondary min-h-11 shrink-0" aria-expanded={showScanner} aria-label={showScanner ? 'ปิดเครื่องสแกนน้ำยา' : 'สแกน Barcode เพื่อเลือกน้ำยา'} disabled={busy} onClick={() => { setPickerOpen(false); setShowScanner(value => !value); }}>
+            <ScanLine size={18} aria-hidden/> <span>{showScanner ? 'ปิดสแกน' : 'สแกน'}</span>
+          </button>
+        </div>
+        <p className="muted text-xs">ค้นหาจากรหัสหรือชื่อ แล้วแตะเลือกรายการ · หรือสแกน Barcode ที่กล่องน้ำยา</p>
+      </div>
+      {showScanner && <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+        {/* The parent adjustment form already owns submit; suppress the scanner's nested manual form. */}
+        <BarcodeScanner onScan={onScan} feedback={feedback} summary={summary} showManual={false} autoStart/>
+      </div>}
       {product && <p className="notice text-sm"><strong>{product.product_code}</strong> · {product.display_name}</p>}
 
       {uniqueLots.length > 0 && <label className="field">เลือก LOT ที่มีอยู่ (ไม่ต้องเลือกเมื่อสแกน LOT ใหม่)<select className="input" value={lotId} onChange={event => selectExistingLot(event.target.value)}><option value="">สแกนหรือกรอก LOT</option>{uniqueLots.map(option => <option key={option.lot_id} value={option.lot_id}>LOT {option.lot_number} · หมดอายุ {option.expiry_date} · คงเหลือ {options.filter(row => row.lot_id === option.lot_id).reduce((sum,row) => sum + row.balance,0)}</option>)}</select></label>}
