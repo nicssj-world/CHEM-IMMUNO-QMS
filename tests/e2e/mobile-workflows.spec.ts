@@ -335,8 +335,25 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.getByRole('combobox', { name: /ผู้ขาย/ }).first().selectOption(vendor.data as string);
   await page.locator('#receive-invoice-number').fill('E2E-WIZARD-MATRIX-1');
   await page.locator('input[type="date"]').first().fill('2026-10-09');
+  // Invoice evidence belongs to Step 1 and is only uploaded after Step 4.
+  // The first Step 1 -> Step 2 transition changes the draft URL and remounts
+  // the wizard; ensure that transition does not silently drop a selected file.
+  const evidenceSection = page.getByRole('region', { name: 'ภาพ Invoice / เอกสารส่งของ' });
+  await evidenceSection.getByLabel('เลือกจากรูปภาพ/PDF').setInputFiles({
+    name: 'synthetic-invoice-step1.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4\n%%EOF'),
+  });
+  await expect(evidenceSection.getByText(/synthetic-invoice-step1\.pdf/)).toBeVisible();
   await page.getByRole('button', { name: /ถัดไป · รับน้ำยา/ }).click();
+  await expect(page).toHaveURL(/\?draft=/);
   await expect(page.getByRole('heading', { name: 'Step 2 · รับเข้าน้ำยา' })).toBeVisible({timeout: 15_000});
+  await expect(page.getByRole('region', { name: 'ภาพ Invoice / เอกสารส่งของ' })).toHaveCount(0);
+  await page.getByRole('button', { name: '← ย้อนกลับ' }).click();
+  await expect(page.getByRole('heading', { name: 'Step 1 · ส่วนหัว Invoice' })).toBeVisible();
+  await expect(evidenceSection.getByText(/synthetic-invoice-step1\.pdf/)).toBeVisible();
+  await page.getByRole('button', { name: /ถัดไป · รับน้ำยา/ }).click();
+  await expect(page.getByRole('heading', { name: 'Step 2 · รับเข้าน้ำยา' })).toBeVisible();
   // This GTIN is intentionally NOT registered: Product must resolve via
   // approved REF_CURRENT from GS1 AI (240), not via GTIN or a manual picker.
   const matrixA = '(01)00098765432109(17)271231(10)E2E-MATRIX-A(240)E2E-C1';
@@ -379,6 +396,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await page.getByRole('button', { name: /ถัดไป · ตรวจสอบ/ }).click();
   await expect(page.getByRole('heading', { name: 'Step 3 · ตรวจสอบก่อนยืนยัน' })).toBeVisible({timeout:15_000});
   await expect(page.getByText(/LOT E2E-MATRIX-A/)).toBeVisible();
+  await expect(page.getByText(/เอกสารรอแนบ: synthetic-invoice-step1\.pdf/)).toBeVisible();
   await expect(page.getByText('รับเข้าจริง').first()).toBeVisible();
   const accidentalPosted = await admin.from('ci_invoices').select('id').eq('invoice_number','E2E-WIZARD-MATRIX-1');
   expect(accidentalPosted.error).toBeNull();
