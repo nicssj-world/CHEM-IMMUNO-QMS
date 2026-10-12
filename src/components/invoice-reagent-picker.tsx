@@ -6,10 +6,14 @@ import { searchReagents, type SearchableReagent } from '@/lib/reagent-search';
 
 const MAX_RESULTS = 12;
 
-export function InvoiceReagentPicker({ products, value, onChange }: {
+export function InvoiceReagentPicker({ products, value, onChange, label = 'น้ำยา', placeholder = 'พิมพ์รหัสหรือชื่อน้ำยา เช่น 002, TSH', hint = 'ค้นหาแบบบางส่วนได้ทันที ไม่ต้องพิมพ์เต็มรหัสหรือชื่อ · เลือกผลลัพธ์เพื่อเพิ่มน้ำยา', disabled = false }: {
   products: SearchableReagent[];
   value: string;
   onChange: (productId: string) => void;
+  label?: string;
+  placeholder?: string;
+  hint?: string;
+  disabled?: boolean;
 }) {
   const id = useId();
   const [query, setQuery] = useState('');
@@ -28,13 +32,13 @@ export function InvoiceReagentPicker({ products, value, onChange }: {
   }
 
   return <div className="grid gap-2 min-w-0">
-    <label className="block text-sm font-semibold" htmlFor={id}>น้ำยา <span className="text-[#b42318]" aria-hidden="true">*</span></label>
+    <label className="block text-sm font-semibold" htmlFor={id}>{label} <span className="text-[#b42318]" aria-hidden="true">*</span></label>
     {selected && <div className="flex items-center justify-between gap-2 rounded-lg border border-field-line bg-surface-2 p-3">
       <div className="min-w-0">
         <strong className="block text-sm break-words">{selected.product_code}</strong>
         <span className="block text-sm muted break-words">{selected.display_name}</span>
       </div>
-      <button type="button" className="button secondary shrink-0 min-h-11" onClick={() => {
+      <button type="button" disabled={disabled} className="button secondary shrink-0 min-h-11" onClick={() => {
         onChange('');
         setQuery('');
         setExpanded(true);
@@ -49,7 +53,7 @@ export function InvoiceReagentPicker({ products, value, onChange }: {
         <input id={id} type="search" role="combobox" aria-autocomplete="list"
           aria-expanded={showResults} aria-controls={id + '-options'}
           aria-activedescendant={showResults && options[highlighted] ? id + '-option-' + highlighted : undefined}
-          className="input min-h-12 w-full min-w-0" style={{paddingLeft:42,paddingRight:42}} placeholder="พิมพ์รหัสหรือชื่อน้ำยา เช่น 002, TSH"
+          className="input min-h-12 w-full min-w-0" style={{paddingLeft:42,paddingRight:42}} placeholder={placeholder} disabled={disabled}
           value={query} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
           onFocus={() => setExpanded(true)}
           onChange={event => {
@@ -74,7 +78,7 @@ export function InvoiceReagentPicker({ products, value, onChange }: {
             }
           }}/>
         {query && <button className="absolute right-1 grid place-items-center min-h-11 min-w-11 cursor-pointer"
-          type="button" aria-label="ล้างคำค้นหา" onClick={() => {setQuery(''); setHighlighted(0);setExpanded(true);}}>
+          type="button" disabled={disabled} aria-label="ล้างคำค้นหา" onClick={() => {setQuery(''); setHighlighted(0);setExpanded(true);}}>
           <X size={18} aria-hidden />
         </button>}
       </div>
@@ -92,6 +96,6 @@ export function InvoiceReagentPicker({ products, value, onChange }: {
         {matches.length > MAX_RESULTS && <p className="p-3 text-xs muted">พบ {matches.length} รายการ · แสดง {MAX_RESULTS} รายการแรก พิมพ์เพิ่มเพื่อกรองให้แคบลง</p>}
       </div>}
     </div>
-    <p className="muted text-xs">ค้นหาแบบบางส่วนได้ทันที ไม่ต้องพิมพ์เต็มรหัสหรือชื่อ · เลือกผลลัพธ์เพื่อเพิ่มน้ำยา</p>
+    <p className="muted text-xs">{hint}</p>
   </div>;
 }
