@@ -81,7 +81,7 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
       <p className="text-sm">ผู้เบิก: <strong>{successReceipt.transaction.actorName ?? access.displayName}</strong></p>
       <p className="muted text-xs">{formatDateTimeBE(successReceipt.transaction.created_at)} · คงเหลือเป็นยอดปัจจุบันที่อ่านใหม่หลังยืนยัน</p>
     </section>}
-    {error && <p className="error" role="alert">อ่าน LOT ไม่สำเร็จ: {userMessage(error)}</p>
+    {error && <p className="error" role="alert">อ่าน LOT ไม่สำเร็จ: {userMessage(error)}</p>}
     <ProductPicker key={product?.id??'unselected'} path="/issue" warehouseCode={warehouse.code} products={products} selectedId={product?.id}/>
     {lotMissing && <p className="notice" role="status">LOT {scannedLot} จาก Barcode ไม่มียอดคงเหลือในคลังนี้ · เลือก LOT ที่มีอยู่ด้านล่าง</p>}{product && !error && (candidates.length ? canIssue ? <IssueForm key={`${product.id}:${scannedLot}`} productId={product.id} productCode={product.product_code} warehouseCode={warehouse.code} candidates={candidates} preferredLot={scannedLot} submissionKey={randomUUID()}/> : <p className="error">คุณมีสิทธิ์ดูอย่างเดียวในคลังนี้</p> : <p className="notice">ไม่มี LOT ที่ยังไม่หมดอายุและมียอดคงเหลือสำหรับน้ำยานี้</p>)}
   </main>;
