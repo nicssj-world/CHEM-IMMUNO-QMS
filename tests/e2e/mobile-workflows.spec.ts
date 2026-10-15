@@ -534,7 +534,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   expect(shellMetrics.asideLeft, 'the sidebar begins at the left edge of the viewport').toBe(0);
   expect(shellMetrics.viewportWidth - shellMetrics.mainRight, 'Main is not stranded by a leftover centered max-width').toBeLessThan(2);
 
-  // Narrow screens: no sidebar, the horizontal tab strip is back, the bottom bar and /more are unchanged.
+  // Narrow screens: the bottom navigation prioritizes receiving and issuing; Scan remains in More.
   await page.setViewportSize({ width: 768, height: 900 });
   await page.goto('/stock?warehouse=CHE');
   await expect(sidebar, 'the sidebar is not used at tablet-portrait width').toBeHidden();
@@ -546,7 +546,7 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(strip.getByRole('link', { name: 'ตำแหน่งจัดเก็บ', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(strip.getByRole('link')).toHaveCount(5);
   const bottom = page.getByRole('navigation', { name: 'เมนูมือถือ' });
-  await expect(bottom.getByRole('link'), 'the accepted mobile bottom navigation is unchanged').toHaveText(['ภาพรวม', 'คงคลัง', 'สแกน', 'รับเข้า', 'เพิ่มเติม']);
+  await expect(bottom.getByRole('link'), 'the accepted mobile bottom navigation prioritizes stock workflows').toHaveText(['ภาพรวม', 'คงคลัง', 'รับเข้า', 'เบิกออก', 'เพิ่มเติม']);
   await expect(bottom.getByRole('link', { name: 'คงคลัง' }), 'Stock also lights up for Inventory pages').toHaveAttribute('aria-current', 'page');
   await page.goto('/more');
   for (const heading of workspaceNames) await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
@@ -786,7 +786,8 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
 
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto('/');
-  await page.getByRole('navigation', { name: 'เมนูมือถือ' }).getByRole('link', { name: 'สแกน' }).click();
+  await page.getByRole('navigation', { name: 'เมนูมือถือ' }).getByRole('link', { name: 'เพิ่มเติม' }).click();
+  await page.getByRole('link', { name: /สแกน Barcode.*ตรวจสอบเท่านั้น/ }).click();
   await expect(page).toHaveURL(/\/scan$/);
   await page.goto('/scan');
   await expect(page.getByRole('button', { name: /สแกนอีกครั้ง/ })).toBeVisible();

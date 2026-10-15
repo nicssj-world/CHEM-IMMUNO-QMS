@@ -11,6 +11,8 @@ import { SubmitButton } from '@/components/submit-button';
 import { STOCK_UNITS, isStockUnit, unitLabel } from '@/lib/units';
 import { locationOptionLabel } from '@/lib/locations';
 import { ProductLotOverview } from '@/components/product-lot-overview';
+import { loadMovementDetails, type MovementTransaction } from '@/lib/stock-history';
+import { StockMovementCards } from '@/components/stock-movement-cards';
 
 type Product = { id: string; warehouse_id: number; product_code: string; product_type: string; source_name: string; display_name: string; packing_size_raw: string | null; base_stock_unit: string; active: boolean; source_sheet: string | null; source_row: number | null; raw_source: Record<string,unknown> | null; import_batch_id: string | null; default_location_id: string | null };
 type Identifier = { id: string; kind: string; value: string; source: string; approved: boolean };
@@ -32,7 +34,7 @@ function approvedResolutionText(resolution: ImportResolution): string {
   return `ยืนยันประเภท ${String(decision.approved_value)} โดยไม่แก้ค่า catalog`;
 }
 
-export default async function ProductDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; saved?: string; tab?: string }> }) {
+export default async function ProductDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; saved?: string; tab?: string; historyPage?: string }> }) {
   const { id } = await params;
   const query = await searchParams;
   const tab = ['overview','lots','history','details'].includes(query.tab??'') ? query.tab : 'overview';
@@ -72,10 +74,21 @@ export default async function ProductDetailPage({ params, searchParams }: { para
     ? [...locationRows.filter(l=>l.active), currentDefault]
     : locationRows.filter(l=>l.active);
   const lotIds = (lotResult.data??[]).map(l=>l.id);
-  const movementResult = lotIds.length ? await client.from('ci_stock_movement_lines').select('transaction_id,quantity_delta').in('lot_id',lotIds).order('created_at',{ascending:false}).limit(10) : {data:[],error:null};
+  const historyPage = Math.min(500, Math.max(1, Number.parseInt(query.historyPage ?? '1',10) || 1));
+  const historySize = 20;
+  const movementResult = tab === 'history' && lotIds.length
+    ? await client.from('ci_stock_movement_lines').select('transaction_id',{count:'exact'})
+        .in('lot_id',lotIds).order('created_at',{ascending:false}).order('id',{ascending:false})
+        .range((historyPage-1)*historySize,historyPage*historySize-1)
+    : {data:[],error:null,count:0};
   const txIds = [...new Set((movementResult.data??[]).map(m=>m.transaction_id))];
-  const txResult = txIds.length ? await client.from('ci_stock_transactions').select('id,kind,purpose,created_at').in('id',txIds) : {data:[],error:null};
-  const txMap = new Map((txResult.data??[]).map(tx=>[tx.id,tx]));
+  const txResult = txIds.length ? await client.from('ci_stock_transactions')
+    .select('id,warehouse_id,kind,purpose,reason,created_at,actor_id,source_transaction_id').in('id',txIds) : {data:[],error:null};
+  const txRows = (txResult.data??[]) as MovementTransaction[];
+  const sortedTransactions = txIds.map(txId=>txRows.find(row=>row.id===txId)).filter((tx):tx is MovementTransaction=>!!tx);
+  const detailedHistory = tab === 'history' && !movementResult.error && !txResult.error
+    ? await loadMovementDetails(client,sortedTransactions,access).then(rows=>rows.map(row=>({...row,lines:row.lines.filter(line=>line.productId===id)}))).catch(()=>null)
+    : null;
   const optionMap = new Map(options.map(p => [p.id,p]));
   const currentRef = identifiers.find((item) => item.kind === 'REF_CURRENT')?.value;
   const resolutionResult = product.import_batch_id && currentRef
@@ -111,9 +124,16 @@ export default async function ProductDetailPage({ params, searchParams }: { para
       <ProductLotOverview product={product} balances={balances} locations={locationRows}/>
     </section>}
     {tab==='history'&&<>
-    <section className="surface p-5 sm:p-7"><h2 className="text-lg font-extrabold mb-3">ความเคลื่อนไหวล่าสุด</h2><div className="grid gap-2">{(movementResult.data??[]).map((m,i)=>{const tx=txMap.get(m.transaction_id);return <p key={`${m.transaction_id}:${i}`} className="border rounded-lg p-3 text-sm">{tx?.kind??'movement'} · {Number(m.quantity_delta)>0?'+':''}{m.quantity_delta} · {tx?.purpose??'—'} · {tx?.created_at?new Intl.DateTimeFormat('th-TH',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Bangkok'}).format(new Date(tx.created_at)):'—'}</p>;})}{!movementResult.data?.length && <p className="muted text-sm">ยังไม่มี movement</p>}</div></section>
-      <p className="muted text-xs">แสดงเหตุการณ์ล่าสุด · สำหรับข้อมูลย้อนหลังทั้งหมด ใช้เมนูประวัติเคลื่อนไหว</p>
-      <Link className="button secondary justify-self-start" href="/movements">เปิดประวัติเคลื่อนไหวทั้งหมด</Link>
+      <section className="surface p-4 sm:p-6 grid gap-3">
+        <h2 className="text-lg font-extrabold">ประวัติการเคลื่อนไหวของน้ำยานี้</h2>
+        <p className="muted text-xs">ข้อมูลจาก Ledger · แสดงผู้ทำรายการ LOT จำนวน และยอดคงเหลือปัจจุบัน (ไม่ใช่ยอดย้อนหลัง)</p>
+        {detailedHistory ? <StockMovementCards rows={detailedHistory}/> : <p className="error" role="alert">ไม่สามารถอ่านรายละเอียดประวัติได้ครบ กรุณาลองอีกครั้ง</p>}
+        <nav aria-label="หน้าประวัติของน้ำยา" className="flex flex-wrap justify-between gap-3">
+          {historyPage>1?<Link className="button secondary" href={'/products/'+id+'?tab=history&historyPage='+(historyPage-1)}>← ก่อนหน้า</Link>:<span/>}
+          {(movementResult.count??0)>historyPage*historySize&&<Link className="button secondary" href={'/products/'+id+'?tab=history&historyPage='+(historyPage+1)}>ถัดไป →</Link>}
+        </nav>
+        <Link className="button secondary justify-self-start" href="/movements">เปิดประวัติเคลื่อนไหวทั้งหมด</Link>
+      </section>
     </>}
     {tab==='details'&&<>
     <section className="surface p-5 sm:p-7"><h2 className="text-lg font-extrabold mb-5">Identity</h2><dl className="grid sm:grid-cols-2 gap-4 text-sm"><div><dt className="muted">Product Code</dt><dd className="font-bold">{product.product_code}</dd></div><div><dt className="muted">ประเภท</dt><dd className="font-bold">{label(productTypeLabels,product.product_type)}</dd></div><div><dt className="muted">ชื่อจากแหล่งข้อมูล</dt><dd className="font-bold">{product.source_name}</dd></div><div><dt className="muted">หน่วยนับสต็อก</dt><dd className="font-bold">{unitLabel(product.base_stock_unit)}</dd></div><div><dt className="muted">ตำแหน่งจัดเก็บหลัก</dt><dd className="font-bold">{currentDefault ? locationOptionLabel(currentDefault, locationMap) : 'ยังไม่กำหนด'}{currentDefault && !currentDefault.active && <span className="badge ml-2">ปิดใช้งาน</span>}</dd></div></dl>{editable && <form action={updateProduct} className="grid sm:grid-cols-2 gap-4 mt-6 pt-6 border-t border-line"><input type="hidden" name="id" value={id}/><label className="field">ชื่อที่แสดง<input className="input" name="display_name" defaultValue={product.display_name} required/></label><label className="field">ประเภท<select className="input" name="product_type" defaultValue={product.product_type}><option value="reagent">Reagent</option><option value="calibrator">Calibrator</option><option value="control">Control</option><option value="consumable">Consumable</option></select></label><label className="field">ขนาดบรรจุ<input className="input" name="packing_size_raw" defaultValue={product.packing_size_raw ?? ''}/></label><label className="field">หน่วยนับสต็อก<select className="input" name="base_stock_unit" defaultValue={product.base_stock_unit} required>{STOCK_UNITS.map(u=><option key={u.value} value={u.value}>{u.label}</option>)}{!isStockUnit(product.base_stock_unit)&&<option value={product.base_stock_unit}>{product.base_stock_unit}</option>}</select></label><label className="field">ตำแหน่งจัดเก็บหลัก (ค่าเริ่มต้นตอนรับเข้า)<select className="input" name="default_location_id" defaultValue={product.default_location_id ?? ''}><option value="">ไม่กำหนด</option>{defaultLocationOptions.map(l=><option key={l.id} value={l.id}>{locationOptionLabel(l, locationMap)}{!l.active?' (ปิดใช้งาน)':''}</option>)}</select></label><label className="flex items-center gap-3 font-semibold text-sm"><input type="checkbox" name="active" defaultChecked={product.active}/> ใช้งานน้ำยา</label><div className="sm:text-right"><SubmitButton className="button" label="บันทึกข้อมูลน้ำยา" pendingLabel="กำลังบันทึก…"/></div></form>}</section>

@@ -5,9 +5,11 @@ import { addDays, bangkokToday, fiscalYear, reorderAttention } from '@/lib/inven
 import { formatDate, formatDateTime } from '@/lib/format';
 import { label, movementKindLabels } from '@/lib/labels';
 import { logUserMessage } from '@/lib/messages';
+import { loadMovementDetails, type MovementTransaction } from '@/lib/stock-history';
+import { StockMovementCards } from '@/components/stock-movement-cards';
 
 type Reorder = { product_id: string; usable_stock: number; rop: number | null; suggested_order: number | null };
-type Movement = { id: string; kind: string; created_at: string; purpose: string | null };
+
 type VendorMetric = { receipt_count: number; discrepancy_count: number };
 type Tone = 'alert' | 'warn' | 'neutral';
 
@@ -32,7 +34,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     client.from('ci_stock_lots').select('id', { count: 'exact', head: true }).in('warehouse_id', scopeIds),
     movementCount('receive'),
     movementCount('issue'),
-    client.from('ci_stock_transactions').select('id,kind,created_at,purpose').in('warehouse_id', scopeIds).order('created_at', { ascending: false }).limit(8),
+    client.from('ci_stock_transactions').select('id,warehouse_id,kind,created_at,purpose,reason,actor_id,source_transaction_id').in('warehouse_id', scopeIds).order('created_at', { ascending: false }).limit(8),
     client.from('ci_vendor_metrics').select('receipt_count,discrepancy_count', { count: 'exact' }).in('warehouse_id', scopeIds).eq('fiscal_year', fiscalYear(today)).limit(500),
     client.from('ci_identifier_mapping_requests').select('id', { count: 'exact', head: true }).in('warehouse_id', scopeIds).eq('status', 'proposed'),
     client.from('ci_vendor_issues').select('id', { count: 'exact', head: true }).in('warehouse_id', scopeIds).eq('status', 'open'),
@@ -47,7 +49,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const below = status.filter(s => s === 'below').length;
   const noRop = status.filter(s => s === 'no-rop').length;
   const vendorRows = (vendors.data ?? []) as VendorMetric[];
-  const recent = (movements.data ?? []) as Movement[];
+  const recent = (movements.data ?? []) as MovementTransaction[];
+  const detailedRecent = await loadMovementDetails(client, recent, access).catch(() => null);
   const suggested = reorderRows.filter(r => Number(r.suggested_order) > 0).length;
   const cards: { label: string; count: number | string; href: string; tone: Tone; hint?: string }[] = [
     { label: 'น้ำยาที่ใช้งาน', count: products.count ?? '—', href: '/products', tone: 'neutral' },
@@ -66,7 +69,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     {empty && <section className="notice grid gap-3"><p><strong>คลังนี้ยังไม่มีสต็อกคงเหลือ</strong> · เริ่มจากรับน้ำยาเข้าตาม Invoice แล้วตั้งค่า ROP ให้น้ำยาที่ใช้ประจำ</p><div className="flex flex-wrap gap-2"><Link className="button" href="/receive">รับน้ำยาเข้า</Link><Link className="button secondary" href="/reorder">ตั้งค่า ROP</Link></div></section>}
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">{cards.map(card => <Link key={card.label} href={card.href} className="kpi surface p-4 no-underline text-[var(--ink)]" data-tone={Number(card.count) > 0 ? card.tone : 'neutral'}><p className="muted text-sm">{card.label}</p><strong className="text-2xl mt-2 block tabular-nums">{card.count}</strong>{card.hint && <p className="muted text-xs mt-1">{card.hint}</p>}</Link>)}</div>
     <div className="grid lg:grid-cols-2 gap-4"><section className="surface p-5 grid gap-3"><h2 className="font-bold text-lg">งานที่ต้องติดตาม</h2><p>หมดสต็อก {stockout} · ต่ำกว่า ROP {below} · LOT หมดอายุแล้ว {expired.count ?? 0}</p><p>Barcode รออนุมัติ {mapping.count ?? 0} · ปัญหาผู้ขายที่เปิดอยู่ {issues.count ?? 0}</p><Link className="button secondary" href="/attention">เปิดรายการที่ต้องติดตาม</Link></section><section className="surface p-5 grid gap-3"><h2 className="font-bold text-lg">การใช้และสั่งซื้อ</h2><p>น้ำยาแนะนำสั่ง {suggested} รายการ</p><p>ปีงบประมาณ {fiscalYear(today)}: รับเข้า {vendorRows.reduce((n, r) => n + Number(r.receipt_count), 0)} ครั้ง · พบความคลาดเคลื่อน {vendorRows.reduce((n, r) => n + Number(r.discrepancy_count), 0)} ครั้ง</p><div className="flex flex-wrap gap-2"><Link className="button secondary" href="/reorder">ROP / Suggested Order</Link><Link className="button secondary" href="/reports/monthly">รายงานรายเดือน</Link></div></section></div>
-    <section className="surface p-5"><h2 className="font-bold text-lg mb-3">ความเคลื่อนไหวล่าสุด</h2><div className="grid gap-2">{recent.map(row => <p className="border border-[var(--line)] rounded-lg p-3 text-sm" key={row.id}><strong>{label(movementKindLabels, row.kind)}</strong>{row.purpose ? ` · ${row.purpose}` : ''} · {formatDateTime(row.created_at)}</p>)}{recent.length === 0 && <p className="muted">ยังไม่มีธุรกรรมสต็อก</p>}</div>{recent.length > 0 && <Link className="button secondary mt-3" href="/movements">ดูประวัติทั้งหมด</Link>}</section>
+    <section className="surface p-5"><h2 className="font-bold text-lg mb-3">ความเคลื่อนไหวล่าสุด</h2>
+      {detailedRecent ? <StockMovementCards rows={detailedRecent} compact/> : <p role="alert" className="error">อ่านรายละเอียดรายการเคลื่อนไหวไม่ครบ กรุณาเปิดประวัติทั้งหมดเพื่อตรวจสอบ</p>}
+      {recent.length > 0 && <Link className="button secondary mt-3" href="/movements">ดูประวัติทั้งหมด</Link>}
+    </section>
     <div className="flex flex-wrap gap-2"><Link className="button" href="/scan">สแกน</Link><Link className="button" href="/receive">รับเข้า</Link><Link className="button secondary" href="/stock">ดูสต็อก</Link></div>
   </main>;
 }

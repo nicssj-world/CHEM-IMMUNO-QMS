@@ -29,7 +29,7 @@ export const workspaces: Workspace[] = [
   { key: 'operations', label: 'ปฏิบัติงาน', icon: Wrench, tabs: [
     { href: '/receive', label: 'รับเข้า', icon: PackagePlus },
     { href: '/invoices', label: 'ทะเบียน Invoice', icon: FileText },
-    { href: '/issue', label: 'เบิกใช้', icon: ArrowUpFromLine, need: 'work' },
+    { href: '/issue', label: 'เบิกออก', icon: ArrowUpFromLine, need: 'work' },
     { href: '/transfer', label: 'ย้ายที่เก็บ', icon: ArrowLeftRight, need: 'work' },
     { href: '/counts', label: 'ตรวจนับ', icon: ClipboardCheck, need: 'work' },
     { href: '/adjust', label: 'ปรับยอด', icon: ListChecks, need: 'supervise' },

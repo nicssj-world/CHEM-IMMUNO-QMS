@@ -84,11 +84,12 @@ test('paused module routes are outside navigation; active reports stay in Report
   assert.equal(activeWorkspace('/reports/morning-talk'), null);
 });
 
-test('the mobile bottom bar is not changed by the new workspace', async () => {
+test('the mobile bottom bar prioritizes inventory receiving and issuing', async () => {
   const { readFile } = await import('node:fs/promises');
   const bottom = await readFile(path.join(process.cwd(), 'src/components/bottom-nav.tsx'), 'utf8');
   assert.doesNotMatch(bottom, /morning/i, 'paused modules stay out of the mobile bottom bar');
-  for (const label of ['ภาพรวม', 'คงคลัง', 'สแกน', 'รับเข้า', 'เพิ่มเติม']) assert.ok(bottom.includes(label), label);
+  for (const label of ['ภาพรวม', 'คงคลัง', 'รับเข้า', 'เบิกออก', 'เพิ่มเติม']) assert.ok(bottom.includes(label), label);
+  assert.ok(!bottom.includes("href: '/scan'"), 'Scan lives in More instead');
 });
 
 test('navigation does not relax any authorization: every tab keeps its previous role gate', () => {

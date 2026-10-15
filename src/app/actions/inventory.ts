@@ -138,9 +138,13 @@ export async function issueStock(form: FormData) {
   const purpose = value(form,'purpose');
   if (!['Routine','QC','Calibration','Verification/Validation','Repeat/Troubleshooting','Waste','Other'].includes(purpose)) fail(back,'กรุณาเลือกวัตถุประสงค์การเบิก');
   const payload = { product_id: value(form,'product_id'), lot_id: value(form,'lot_id'), location_id: value(form,'location_id'), quantity: value(form,'quantity'), purpose, override_reason: value(form,'override_reason') || null, idempotency_key: value(form,'idempotency_key') };
-  const { error } = await client.rpc('ci_issue_stock',{ p_data: payload });
-  if (error) fail(back,error.message);
-  success(pageOf('/issue', form),`${value(form,'summary')} × ${value(form,'quantity')}`);
+  const { data: transactionId, error } = await client.rpc('ci_issue_stock',{ p_data: payload });
+  if (error || typeof transactionId !== 'string') fail(back,error?.message ?? 'ไม่พบหลักฐานรายการเบิก');
+  // The transaction ID refers to the committed row, not a client-side estimated balance.
+  for (const pathname of ['/', '/stock', '/movements']) revalidatePath(pathname);
+  const returnPage = pageOf('/issue', form, ['warehouse','product']);
+  success(returnPage + (returnPage.includes('?') ? '&' : '?') + 'tx=' + encodeURIComponent(transactionId),
+    `${value(form,'summary')} × ${value(form,'quantity')}`);
 }
 
 export async function transferStock(form: FormData) {

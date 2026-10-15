@@ -1,7 +1,7 @@
 // Stored enum values stay English in the database; these are the words people see.
 type Labels = Record<string, string>;
 
-export const movementKindLabels: Labels = { receive: 'รับเข้า', issue: 'เบิกใช้', transfer: 'ย้ายตำแหน่ง', adjustment: 'ปรับยอด', reversal: 'ยกเลิกรายการ', expired_disposal: 'กำจัดหมดอายุ' };
+export const movementKindLabels: Labels = { receive: 'รับเข้า', issue: 'เบิกออก', transfer: 'ย้ายตำแหน่ง', adjustment: 'ปรับยอด', reversal: 'ยกเลิกรายการ', expired_disposal: 'กำจัดหมดอายุ' };
 export const stockStatusLabels: Labels = { stockout: 'หมดสต็อก', 'below ROP': 'ต่ำกว่า ROP', adequate: 'เพียงพอ', 'ต้องตั้งค่า': 'ยังไม่ตั้ง ROP' };
 export const productTypeLabels: Labels = { reagent: 'Reagent', calibrator: 'Calibrator', control: 'Control', consumable: 'Consumable' };
 export const roleLabels: Labels = { admin: 'ผู้ดูแลระบบ', supervisor: 'หัวหน้างาน', staff: 'เจ้าหน้าที่', viewer: 'ดูอย่างเดียว' };
