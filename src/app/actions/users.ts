@@ -8,6 +8,7 @@ import { internalAuthEmail, normalizeEphisId } from '@/lib/auth-identity';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { logUserMessage } from '@/lib/messages';
+import { isGenericUserName } from '@/lib/user-display-name';
 
 function fail(message: string): never { redirect(`/admin/users?error=${encodeURIComponent(message)}`); }
 
@@ -26,9 +27,13 @@ export async function provisionUser(form: FormData) {
   const active = form.get('active') === 'on';
   const password = String(form.get('initial_password') ?? '');
   if (!ephisId || displayName.length < 1 || displayName.length > 120 ||
-      !['admin','supervisor','staff','viewer'].includes(role) ||
-      false) {
+      !['admin','supervisor','staff','viewer'].includes(role)) {
     fail('ตรวจสอบ Ephis ID, ชื่อ และบทบาท');
+  }
+  // The name stored in the profile is what the movement and audit trails display.
+  // A role label cannot be mistaken for a person's name in an accountability record.
+  if (isGenericUserName(displayName)) {
+    fail('กรุณาระบุชื่อ–นามสกุลผู้ใช้ ไม่ใช้บทบาท Admin/Staff แทนชื่อบุคคล');
   }
 
   const authClient = await createClient();

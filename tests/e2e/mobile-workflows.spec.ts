@@ -443,6 +443,17 @@ test('local authenticated inventory flows, responsive surfaces, CSP, photo evide
   await expect(sidebar.getByRole('link', { name: 'รายงานรายเดือน', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(sidebar.getByRole('link', { name: 'บันทึกการตรวจสอบ', exact: true })).toBeVisible();
   await page.goto('/admin/users');
+  // Editing one person opens their existing identity and rights; cancelling changes nothing.
+  const editButton = page.getByRole('button', { name: 'แก้ไขข้อมูล Synthetic E2E Admin Ephis ID e2eadmin' }).first();
+  await expect(editButton).toBeVisible();
+  await editButton.click();
+  const userEditor = page.getByRole('dialog', { name: 'แก้ไขข้อมูลผู้ใช้' });
+  await expect(userEditor).toBeVisible();
+  await expect(userEditor.getByRole('textbox', { name: /ชื่อ–นามสกุลที่แสดง/ })).toHaveValue('Synthetic E2E Admin');
+  await expect(userEditor.getByRole('combobox', { name: 'สิทธิ์ใช้งานในระบบ' })).toHaveValue('admin');
+  await expect(userEditor.getByRole('checkbox', { name: 'เปิดใช้งานบัญชีและสิทธิ์' })).toBeChecked();
+  await userEditor.getByRole('button', { name: 'ยกเลิก' }).click();
+  await expect(userEditor).not.toBeVisible();
   await expect(categoryButton('SYSTEM')).toHaveAttribute('aria-expanded', 'true');
   await expect(categoryButton('REPORTS & AUDIT')).toHaveAttribute('aria-expanded', 'false');
   await expect(sidebar.getByRole('link', { name: 'ผู้ใช้', exact: true })).toHaveAttribute('aria-current', 'page');
