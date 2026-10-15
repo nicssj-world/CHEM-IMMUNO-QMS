@@ -102,7 +102,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     })),
   ];
   const actionGroups:ActionGroup[]=[
-    {title:'น้ำยาที่ต้องเติมสต็อก',count:stockout+below,href:'/attention?type=stockout',tone:'alert',items:stockActions.slice(0,4)},
+    {title:'น้ำยาที่ต้องเติมสต็อก',count:stockout+below,href:'/attention',tone:'alert',items:stockActions.slice(0,4)},
     {title:'LOT ที่ต้องตรวจสอบวันหมดอายุ',count:(expired.count??0)+(expiring30.count??0),href:'/attention',tone:'warn',items:expiryActions.slice(0,4)},
     {title:'งานตั้งค่าคลัง',count:noRop+unclassified,href:'/reorder',tone:'neutral',items:setupActions.slice(0,4)},
   ];
