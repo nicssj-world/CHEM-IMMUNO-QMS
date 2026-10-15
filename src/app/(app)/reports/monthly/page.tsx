@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { requireAccess } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { PrintButton } from '@/components/print-button';
-import { bangkokToday, expiryBucket, fiscalYear, stockStatus } from '@/lib/inventory-insights';
+import { bangkokToday, expiryBucket, fiscalYear, stockStatus, type StockRequirement } from '@/lib/inventory-insights';
 import { reconcileMonthlyRows, reportMonth, type MonthlyRow } from '@/lib/monthly-report';
 import { logUserMessage } from '@/lib/messages';
 import { formatDateTime, formatMonth } from '@/lib/format';
@@ -24,14 +24,17 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
     client.from('ci_vendor_metrics').select('receipt_count,assessed_count,discrepancy_count,issue_count',{count:'exact'}).in('warehouse_id',scopeIds).eq('fiscal_year',fiscalYear(`${month}-01`)).limit(100),
     client.from('ci_locations').select('id,code',{count:'exact'}).limit(200),
     client.from('ci_products').select('id',{count:'exact',head:true}).in('warehouse_id',scopeIds),
-    client.from('ci_products').select('id,base_stock_unit',{count:'exact'}).in('warehouse_id',scopeIds).limit(500),
+    client.from('ci_products').select('id,base_stock_unit,stock_requirement',{count:'exact'}).in('warehouse_id',scopeIds).limit(500),
   ]);
   const error = reports.find(report => report.error)?.error??reorder.error??expiry.error??vendors.error??locations.error??productCount.error??unitRows.error;
   if (error) return <p className="error" role="alert">อ่านรายงานไม่สำเร็จ: {logUserMessage('monthly-report', error)}</p>;
   const rows = reports.flatMap(report => (report.data??[]) as MonthlyRow[]).sort((a,b) => a.product_code.localeCompare(b.product_code));
   if (rows.length!==(productCount.count??0) || (productCount.count??0)>500 || (expiry.count??0)>1000 || (reorder.count??0)>500 || (vendors.count??0)>100 || (locations.count??0)>200 || (unitRows.count??0)>500) return <p className="error" role="alert">ข้อมูลรายงานเกินขอบเขตการแสดงผล · ไม่แสดงยอดรวมที่อาจไม่ครบ</p>;
   const {totals,invalidProductCodes} = reconcileMonthlyRows(rows);
-  const reorders = (reorder.data??[]).filter(r=>['stockout','below ROP'].includes(stockStatus(Number(r.usable_stock),r.rop==null?null:Number(r.rop))));
+  const requirementOf = new Map((unitRows.data??[]).map(u=>[u.id as string,u.stock_requirement as StockRequirement]));
+  const reorders = (reorder.data??[]).filter(r=>['stockout','below ROP'].includes(
+    stockStatus(Number(r.usable_stock),r.rop==null?null:Number(r.rop),requirementOf.get(r.product_id)??'unclassified')
+  ));
   const expiring = (expiry.data??[]).filter(r=>expiryBucket(r.expiry_date)!=='>90');
   const vendor = vendors.data??[];
   const unitOf = new Map((unitRows.data??[]).map(u=>[u.id as string,u.base_stock_unit as string]));

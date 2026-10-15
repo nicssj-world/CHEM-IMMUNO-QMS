@@ -1,14 +1,14 @@
 import Link from 'next/link';
 import { requireAccess } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
-import { addDays, bangkokToday, expiryBucket, reorderAttention } from '@/lib/inventory-insights';
+import { addDays, bangkokToday, expiryBucket, reorderAttention, type StockRequirement } from '@/lib/inventory-insights';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { logUserMessage } from '@/lib/messages';
 import { ISSUE_TYPE_LABELS } from '@/lib/vendor-issues';
 import { unitLabel } from '@/lib/units';
 
 type Reorder = { product_id: string; usable_stock: number; rop: number | null; missing_reason: string | null };
-type Product = { id: string; product_code: string; display_name: string; base_stock_unit: string };
+type Product = { id: string; product_code: string; display_name: string; base_stock_unit: string; stock_requirement: StockRequirement };
 type Balance = { product_id: string; lot_number: string; expiry_date: string; location_id: string; balance: number };
 type Location = { id: string; code: string };
 
@@ -27,7 +27,7 @@ export default async function AttentionPage({ searchParams }: { searchParams: Pr
   const scopeIds = access.warehouses.map(w => Number(w.id));
   const client = await createClient();
   if (!client) return <main className="grid gap-4"><h1 className="page-title">รายการที่ต้องติดตาม</h1><p className="error" role="alert">ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล</p></main>;
-  const supportedFilters = new Set(['stockout', 'below', 'mapping', 'discrepancy', 'vendor', 'EXPIRED', '≤30', '31–60', '61–90']);
+  const supportedFilters = new Set(['stockout', 'below', 'no-rop', 'unclassified', 'mapping', 'discrepancy', 'vendor', 'EXPIRED', '≤30', '31–60', '61–90']);
   const filter = supportedFilters.has(params.type ?? '') ? params.type : undefined;
   const today = bangkokToday();
   const range: Record<string, [string | null, string]> = { EXPIRED: [null, addDays(today, -1)], '≤30': [today, addDays(today, 30)], '31–60': [addDays(today, 31), addDays(today, 60)], '61–90': [addDays(today, 61), addDays(today, 90)] };
@@ -38,7 +38,7 @@ export default async function AttentionPage({ searchParams }: { searchParams: Pr
   let balanceList = client.from('ci_stock_balances').select('product_id,lot_number,expiry_date,location_id,balance', { count: 'exact' }).in('warehouse_id', scopeIds).gt('balance', 0).lte('expiry_date', listTo);
   if (listFrom) balanceList = balanceList.gte('expiry_date', listFrom);
   const [productResult, reorderResult, balanceResult, locationResult, mappingResult, assessmentResult, vendorIssueResult, ...bucketResults] = await Promise.all([
-    client.from('ci_products').select('id,product_code,display_name,base_stock_unit').in('warehouse_id', scopeIds).eq('active', true).limit(2000),
+    client.from('ci_products').select('id,product_code,display_name,base_stock_unit,stock_requirement').in('warehouse_id', scopeIds).eq('active', true).limit(2000),
     client.from('ci_reorder_status').select('product_id,usable_stock,rop,missing_reason').in('warehouse_id', scopeIds).limit(2000),
     balanceList.order('expiry_date').limit(LIST_LIMIT),
     client.from('ci_locations').select('id,code').in('warehouse_id', scopeIds),
@@ -52,7 +52,10 @@ export default async function AttentionPage({ searchParams }: { searchParams: Pr
   const products = new Map(((productResult.data ?? []) as Product[]).map(p => [p.id, p]));
   const locations = new Map(((locationResult.data ?? []) as Location[]).map(l => [l.id, l]));
   // Same rule as the dashboard: only active products, and "no ROP" is a setup task rather than a stockout.
-  const reorders = ((reorderResult.data ?? []) as Reorder[]).filter(r => products.has(r.product_id)).map(row => ({ ...row, status: reorderAttention(Number(row.usable_stock), row.rop === null ? null : Number(row.rop)) }));
+  const reorders = ((reorderResult.data ?? []) as Reorder[]).filter(r => products.has(r.product_id))
+    .map(row => ({ ...row, status: reorderAttention(Number(row.usable_stock), row.rop === null ? null : Number(row.rop), products.get(row.product_id)!.stock_requirement) }));
+  const noRopRows = reorders.filter(r => products.get(r.product_id)?.stock_requirement === 'required' && r.rop === null);
+  const unclassifiedRows = reorders.filter(r => products.get(r.product_id)?.stock_requirement === 'unclassified');
   const balances = ((balanceResult.data ?? []) as Balance[]).map(row => ({ ...row, bucket: expiryBucket(row.expiry_date, today) }));
   const mapping = mappingResult.data ?? [];
   const assessments = assessmentResult.data ?? [];
@@ -60,20 +63,44 @@ export default async function AttentionPage({ searchParams }: { searchParams: Pr
   const bucketTotals = Object.fromEntries(buckets.map((b, i) => [b, bucketResults[i].count ?? 0]));
   const counts = [
     { type: 'stockout', label: 'หมดสต็อก', count: reorders.filter(r => r.status === 'stockout').length, tone: 'alert' },
-    { type: 'below', label: 'ต่ำกว่า ROP', count: reorders.filter(r => r.status === 'below').length, tone: 'warn' },
+    { type: 'below', label: 'ถึง/ต่ำกว่า ROP', count: reorders.filter(r => r.status === 'below').length, tone: 'warn' },
+    { type: 'no-rop', label: 'ต้องตั้ง ROP', count: noRopRows.length, tone: 'warn' },
+    { type: 'unclassified', label: 'ยังไม่จัดประเภท', count: unclassifiedRows.length, tone: 'neutral' },
     ...buckets.map(type => ({ type, label: bucketLabel[type], count: bucketTotals[type], tone: type === 'EXPIRED' ? 'alert' : type === '≤30' ? 'warn' : 'neutral' })),
     { type: 'mapping', label: 'Barcode รออนุมัติ', count: mappingResult.count ?? 0, tone: 'warn' },
     { type: 'discrepancy', label: 'ผลตรวจรับคลาดเคลื่อน', count: assessmentResult.count ?? 0, tone: 'neutral' },
     { type: 'vendor', label: 'ปัญหาผู้ขายที่เปิดอยู่', count: vendorIssueResult.count ?? 0, tone: 'warn' },
   ];
   const stockRows = reorders.filter(r => r.status === 'stockout' || r.status === 'below').filter(r => !filter || (filter === 'stockout' && r.status === 'stockout') || (filter === 'below' && r.status === 'below'));
-  const noRop = reorders.filter(r => r.status === 'no-rop').length;
+  const noRop = noRopRows.length;
   const code = 'ALL';
   const productName = (id: string) => { const p = products.get(id); return p ? `${p.product_code} · ${p.display_name}` : 'น้ำยาที่ปิดใช้งาน'; };
   return <main className="grid gap-6"><div><p className="eyebrow mb-2">Attention Center</p><h1 className="page-title">รายการที่ต้องติดตาม</h1><p className="muted mt-2 text-sm">อิงยอด LOT/ตำแหน่ง และสิทธิ์ของคลังที่เลือก</p></div>
     <nav aria-label="ประเภทรายการ" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">{counts.map(item => <Link className="kpi surface p-4 no-underline text-[var(--ink)]" data-tone={item.count > 0 ? item.tone : 'neutral'} aria-current={filter === item.type ? 'true' : undefined} href={`/attention?warehouse=${code}&type=${encodeURIComponent(item.type)}`} key={item.type}><p className="muted text-xs">{item.label}</p><strong className="text-2xl tabular-nums">{item.count}</strong></Link>)}</nav>
     {filter && <div><Link className="button secondary" href={`/attention?warehouse=${code}`}>แสดงทุกประเภท</Link></div>}
-    {(!filter || filter === 'stockout' || filter === 'below') && <section className="surface p-5 grid gap-2"><h2 className="font-bold">สต็อก / ROP</h2>{stockRows.map(row => <Link key={row.product_id} href={`/products/${row.product_id}?warehouse=${code}`} className="border border-[var(--line)] rounded-lg p-3 no-underline text-[var(--ink)]"><strong>{productName(row.product_id)}</strong><p className="muted text-sm">{row.status === 'stockout' ? 'หมดสต็อก' : 'ต่ำกว่า ROP'} · ใช้ได้ {Number(row.usable_stock)} {unitLabel(products.get(row.product_id)?.base_stock_unit)} · ROP {row.rop} {unitLabel(products.get(row.product_id)?.base_stock_unit)}</p></Link>)}{stockRows.length === 0 && <Empty>ไม่มีน้ำยาหมดสต็อกหรือต่ำกว่า ROP</Empty>}{noRop > 0 && <p className="muted text-sm">ยังไม่ตั้ง ROP อีก {noRop} รายการ · ระบบจึงยังเตือนน้ำยาเหล่านี้ไม่ได้</p>}<Link href={`/reorder?warehouse=${code}`} className="button secondary">ตั้งค่า ROP</Link></section>}
+    {(!filter || filter === 'stockout' || filter === 'below') && <section className="surface p-5 grid gap-2"><h2 className="font-bold">สต็อก / ROP</h2>{stockRows.map(row => <Link key={row.product_id} href={`/products/${row.product_id}?warehouse=${code}`} className="border border-[var(--line)] rounded-lg p-3 no-underline text-[var(--ink)]"><strong>{productName(row.product_id)}</strong><p className="muted text-sm">{row.status === 'stockout' ? 'หมดสต็อก' : 'ถึง/ต่ำกว่า ROP'} · ใช้ได้ {Number(row.usable_stock)} {unitLabel(products.get(row.product_id)?.base_stock_unit)} · ROP {row.rop} {unitLabel(products.get(row.product_id)?.base_stock_unit)}</p></Link>)}{stockRows.length === 0 && <Empty>ไม่มีน้ำยาหมดสต็อกหรือต่ำกว่า ROP</Empty>}{noRop > 0 && <p className="muted text-sm">น้ำยาที่ต้องสำรองแต่ยังไม่มี ROP {noRop} รายการ · รายการที่ของหมดจริงยังอยู่ในหมวดหมดสต็อก</p>}<Link href={`/reorder?warehouse=${code}`} className="button secondary">ตั้งค่า ROP</Link></section>}
+    {(!filter || filter === 'no-rop') && noRopRows.length>0 && <section className="surface p-5 grid gap-3">
+      <h2 className="font-bold">น้ำยาที่ต้องสำรองแต่ยังไม่ตั้ง ROP ({noRopRows.length})</h2>
+      <p className="muted text-sm">ตั้งค่า Manual ROP ในหน่วยสต็อกได้ทันที โดยไม่จำเป็นต้องมีประวัติ 90 วัน</p>
+      {noRopRows.slice(0, filter === 'no-rop' ? 200 : 5).map(row=>
+        <Link key={row.product_id} href={'/reorder?requirement=required&q='+encodeURIComponent(products.get(row.product_id)?.product_code ?? '')}
+          className="border border-line rounded-lg p-3 no-underline text-[var(--ink)] text-sm">
+          <strong>{productName(row.product_id)}</strong> · คงเหลือพร้อมใช้ {Number(row.usable_stock)} {unitLabel(products.get(row.product_id)?.base_stock_unit)}
+          <span className="block text-brand font-semibold mt-1">ตั้ง ROP →</span>
+        </Link>)}
+      {filter !== 'no-rop' && noRopRows.length>5 && <Link className="button secondary justify-self-start" href="/attention?type=no-rop">ดูทั้งหมด</Link>}
+    </section>}
+    {(!filter || filter === 'unclassified') && unclassifiedRows.length>0 && <section className="surface p-5 grid gap-3">
+      <h2 className="font-bold">น้ำยารอจัดประเภทการสำรอง ({unclassifiedRows.length})</h2>
+      <p className="muted text-sm">ยังไม่ถือว่าน้ำยาเหล่านี้หมดสต็อก จนกว่าจะกำหนดว่าเป็นรายการต้องสำรองประจำ</p>
+      {unclassifiedRows.slice(0,filter === 'unclassified' ? 200 : 5).map(row=>
+        <Link key={row.product_id} href={'/reorder?requirement=unclassified&q='+encodeURIComponent(products.get(row.product_id)?.product_code ?? '')}
+          className="border border-line rounded-lg p-3 no-underline text-[var(--ink)] text-sm">
+          <strong>{productName(row.product_id)}</strong>
+          <span className="block text-brand font-semibold mt-1">จัดประเภทน้ำยา →</span>
+        </Link>)}
+      {filter !== 'unclassified' && unclassifiedRows.length>5 && <Link className="button secondary justify-self-start" href="/attention?type=unclassified">ดูทั้งหมด</Link>}
+    </section>}
     {(!filter || (buckets as readonly string[]).includes(filter)) && <section className="surface p-5 grid gap-2"><h2 className="font-bold">{filter ? bucketLabel[filter] : 'LOT หมดอายุหรือใกล้หมดอายุ (ภายใน 90 วัน)'}</h2>{balances.map((row, i) => <Link href={`/products/${row.product_id}?warehouse=${code}`} className="border border-[var(--line)] rounded-lg p-3 no-underline text-[var(--ink)]" key={`${row.product_id}:${row.lot_number}:${row.location_id}:${i}`}><strong>{productName(row.product_id)}</strong><p className="muted text-sm">LOT {row.lot_number} · หมดอายุ {row.expiry_date} ({bucketLabel[row.bucket] ?? row.bucket}) · ตำแหน่ง {locations.get(row.location_id)?.code ?? '—'} · คงเหลือ {Number(row.balance)}</p></Link>)}{balances.length === 0 && <Empty>ไม่มี LOT ในช่วงนี้</Empty>}<Shown shown={balances.length} total={balanceResult.count ?? 0}/>{bucketTotals.EXPIRED > 0 && <Link className="button secondary" href={`/dispose?warehouse=${code}`}>กำจัดน้ำยาหมดอายุ</Link>}</section>}
     {(!filter || filter === 'mapping') && <section className="surface p-5 grid gap-2"><h2 className="font-bold">Barcode รออนุมัติ</h2>{mapping.map(row => <p className="border border-[var(--line)] rounded-lg p-3 text-sm" key={row.id}><strong>{products.get(row.product_id)?.product_code ?? '—'}</strong> · {row.identifier_kind} <span className="font-mono break-all">{row.identifier_value}</span> · เสนอเมื่อ {formatDateTime(row.proposed_at)}</p>)}{mapping.length === 0 && <Empty>ไม่มีคำขอรออนุมัติ</Empty>}<Shown shown={mapping.length} total={mappingResult.count ?? 0}/><Link className="button secondary" href={`/scan/review?warehouse=${code}`}>เปิดคิวพิจารณา</Link></section>}
     {(!filter || filter === 'discrepancy') && <section className="surface p-5 grid gap-2"><h2 className="font-bold">ผลตรวจรับคลาดเคลื่อน</h2>{assessments.map(row => <p className="border border-[var(--line)] rounded-lg p-3 text-sm" key={row.id}>ตรวจรับเมื่อ {formatDateTime(row.assessed_at)}{row.notes ? ` · ${row.notes}` : ''}</p>)}{assessments.length === 0 && <Empty>ไม่มีผลตรวจรับที่คลาดเคลื่อน</Empty>}<Shown shown={assessments.length} total={assessmentResult.count ?? 0}/></section>}

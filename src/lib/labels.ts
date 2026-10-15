@@ -2,7 +2,8 @@
 type Labels = Record<string, string>;
 
 export const movementKindLabels: Labels = { receive: 'รับเข้า', issue: 'เบิกออก', transfer: 'ย้ายตำแหน่ง', adjustment: 'ปรับยอด', reversal: 'ยกเลิกรายการ', expired_disposal: 'กำจัดหมดอายุ' };
-export const stockStatusLabels: Labels = { stockout: 'หมดสต็อก', 'below ROP': 'ต่ำกว่า ROP', adequate: 'เพียงพอ', 'ต้องตั้งค่า': 'ยังไม่ตั้ง ROP' };
+export const stockStatusLabels: Labels = { stockout: 'หมดสต็อก', 'below ROP': 'ถึง/ต่ำกว่า ROP', adequate: 'เพียงพอ', 'ต้องตั้งค่า': 'ยังไม่ตั้ง ROP', 'ต้องจัดประเภท': 'ยังไม่จัดประเภท', 'ตามความต้องการ': 'ไม่สำรองประจำ' };
+export const stockRequirementLabels: Labels = { unclassified: 'ยังไม่จัดประเภท', required: 'ต้องสำรองประจำ', on_demand: 'ใช้ตามความต้องการ' };
 export const productTypeLabels: Labels = { reagent: 'Reagent', calibrator: 'Calibrator', control: 'Control', consumable: 'Consumable' };
 export const roleLabels: Labels = { admin: 'ผู้ดูแลระบบ', supervisor: 'หัวหน้างาน', staff: 'เจ้าหน้าที่', viewer: 'ดูอย่างเดียว' };
 export const roleShortLabels: Labels = { admin: 'แอดมิน', supervisor: 'หัวหน้า', staff: 'เจ้าหน้าที่', viewer: 'ดู' };
