@@ -337,7 +337,8 @@ export async function previewApprovedWorkbook(bytes: Buffer, sourceFilename = AP
     unresolved_critical_review_count: unresolvedCriticalReviewCount,
     activation_blocked: unresolvedCriticalReviewCount > 0,
     notes: [
-      "Excel No. is source provenance only; it is duplicated across sheets and is not a key.",
+      "Excel No. is source provenance only; it overlaps between reagent and FOC sheets and is not a key.",
+      "FOC No. 47 and 48 also repeat across the Chemistry and Immunology FOC sheets; physical sheet and row identify each source record.",
       "Immunology FOC No. 71 appears after No. 75; physical row order is preserved.",
       "Platform source groups are retained as one source assertion each, not expanded into compatibility edges.",
       "No GTIN is inferred from nine-digit manufacturer barcodes.",

@@ -55,3 +55,13 @@ test('role helpers keep Viewer read-only and Supervisor/Admin approval rights ex
   assert.equal(canSuperviseRole('supervisor'), true);
   assert.equal(canSuperviseRole('admin'), true);
 });
+
+test('a profile cannot use authorization role names in place of a real person', async () => {
+  const { isGenericUserName } = await import('../../src/lib/user-display-name');
+  for (const name of ['Admin', '  ADMIN ', 'Staff', 'Supervisor', 'Viewer', 'ผู้ดูแลระบบ', 'เจ้าหน้าที่']) {
+    assert.equal(isGenericUserName(name), true, name);
+  }
+  for (const name of ['นางสาวนันทยา ไชยวุฒิ', 'สมชาย ใจดี', 'Dr. Admin Smith']) {
+    assert.equal(isGenericUserName(name), false, name);
+  }
+});
