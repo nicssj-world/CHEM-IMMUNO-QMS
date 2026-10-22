@@ -4,6 +4,7 @@ import { requireAccess, canMutate } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { IssueForm } from '@/components/issue-form';
 import { IssueScan } from '@/components/issue-scan';
+import { IssueGroupWorkbench, type IssueCandidate, type IssueProduct, type OpenGroup } from '@/components/issue-group-workbench';
 import { ProductPicker } from '@/components/product-picker';
 import { userMessage } from '@/lib/messages';
 import { loadMovementDetails, type MovementDetail, type MovementDetailLine, type MovementTransaction } from '@/lib/stock-history';
@@ -14,7 +15,7 @@ type Product = { id: string; warehouse_id: number; product_code: string; display
 type Candidate = { lot_id: string; lot_number: string; expiry_date: string; location_id: string; balance: number };
 type Location = { id: string; code: string };
 
-export default async function IssuePage({ searchParams }: { searchParams: Promise<{ warehouse?: string; product?: string; lot?: string; error?: string; saved?: string; tx?: string }> }) {
+export default async function IssuePage({ searchParams }: { searchParams: Promise<{ warehouse?: string; product?: string; lot?: string; error?: string; saved?: string; tx?: string; mode?: string }> }) {
   const params = await searchParams;
   const access = await requireAccess();
   const scopeIds = access.warehouses.map(item => Number(item.id));
@@ -32,6 +33,44 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
   const scannedLot = (params.lot ?? '').trim().slice(0,80);
   const lotMissing = Boolean(product && scannedLot && candidates.length && !candidates.some(c => c.lot_number.trim().toUpperCase() === scannedLot.toUpperCase()));
   const canIssue = product ? canMutate(warehouse.role) : access.warehouses.some(w => canMutate(w.role));
+  if (params.mode === 'batch' || params.mode === 'prepare') {
+    const allowed = access.warehouses.filter(w => canMutate(w.role)).map(w => Number(w.id));
+    const [available, groups] = client && allowed.length ? await Promise.all([
+      client.from('ci_fefo_candidates')
+        .select('warehouse_id,product_id,lot_id,lot_number,expiry_date,location_id,balance')
+        .in('warehouse_id',allowed).order('expiry_date').order('lot_number').limit(2000),
+      client.from('ci_issue_groups').select('id,status,created_at')
+        .in('status',['pending','picking']).order('created_at',{ascending:false}).limit(50),
+    ]) : [{data:[],error:null},{data:[],error:null}];
+    const recent = groups.data ?? [];
+    const {data:counts,error:countsError}=recent.length && client
+      ? await client.from('ci_issue_group_lines').select('group_id,picked').in('group_id',recent.map(g=>g.id)).limit(2000)
+      : {data:[],error:null};
+    const openGroups:OpenGroup[]=recent.map(g=>{
+      const subset=(counts??[]).filter(x=>x.group_id===g.id);
+      return {id:g.id,status:g.status,created_at:g.created_at,
+        line_count:subset.length,done_count:subset.filter(x=>x.picked).length};
+    });
+    const allCandidates:IssueCandidate[]=(available.data??[]).map(x=>({
+      ...x,warehouse_id:Number(x.warehouse_id),balance:Number(x.balance),
+      location_code:locations.get(x.location_id)??'—'
+    }));
+    const scopedProducts:IssueProduct[]=products.filter(p=>allowed.includes(Number(p.warehouse_id)));
+    return <main className="grid gap-5 max-w-[1050px]">
+      <div><p className="eyebrow mb-2">Issue / Consumption</p>
+      <h1 className="page-title">เบิกใช้น้ำยา</h1>
+      <p className="muted text-sm mt-2">เลือกวิธีเบิกตามงานที่กำลังทำ</p></div>
+      <nav aria-label="วิธีเบิกออก" className="grid grid-cols-3 gap-2">
+        <Link className="button secondary text-center text-xs sm:text-sm min-h-12 px-2" href="/issue">เบิกปกติ</Link>
+        <Link className={'button text-center text-xs sm:text-sm min-h-12 px-2 '+(params.mode==='batch'?'':'secondary')} href="/issue?mode=batch">สแกนแบบชุด</Link>
+        <Link className={'button text-center text-xs sm:text-sm min-h-12 px-2 '+(params.mode==='prepare'?'':'secondary')} href="/issue?mode=prepare">สร้างรายการเบิก</Link>
+      </nav>
+      {(available.error||groups.error||countsError)&&<p role="alert" className="error">โหลดข้อมูลรายการเบิกไม่ได้ กรุณาลองใหม่</p>}
+      {!allowed.length?<p className="notice">บัญชีนี้ไม่มีสิทธิ์เบิกสินค้า</p>
+        :!(available.error||groups.error||countsError)&&<IssueGroupWorkbench mode={params.mode} products={scopedProducts}
+           candidates={allCandidates} openGroups={openGroups}/>}
+    </main>;
+  }
   let successReceipt: { transaction: MovementDetail; line: MovementDetailLine; stockTotal: number } | null = null;
   let receiptProblem = '';
   // Show a persisted success receipt only after re-reading the committed transaction and balances.
@@ -64,7 +103,11 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
     }
   } else if (params.tx) receiptProblem = 'รหัสหลักฐานการเบิกไม่ถูกต้อง';
 
-  return <main className="grid gap-6 max-w-[900px]"><div><p className="eyebrow mb-2">Issue / Consumption</p><h1 className="page-title">เบิกใช้น้ำยา</h1><p className="muted mt-2 text-sm">ค้นหาหรือสแกนน้ำยา แล้วเลือก LOT ตาม FEFO และระบุจำนวนที่เบิกได้ทันที</p></div>{canIssue && <IssueScan/>}{params.error && <p className="error" role="alert">{params.error}</p>}
+  return <main className="grid gap-6 max-w-[900px]"><div><p className="eyebrow mb-2">Issue / Consumption</p><h1 className="page-title">เบิกใช้น้ำยา</h1><p className="muted mt-2 text-sm">ค้นหาหรือสแกนน้ำยา แล้วเลือก LOT ตาม FEFO และระบุจำนวนที่เบิกได้ทันที</p></div><nav aria-label="วิธีเบิกออก" className="grid grid-cols-3 gap-2">
+  <Link className="button text-center text-xs sm:text-sm min-h-12 px-2" href="/issue">เบิกปกติ</Link>
+  <Link className="button secondary text-center text-xs sm:text-sm min-h-12 px-2" href="/issue?mode=batch">สแกนแบบชุด</Link>
+  <Link className="button secondary text-center text-xs sm:text-sm min-h-12 px-2" href="/issue?mode=prepare">สร้างรายการเบิก</Link>
+ </nav>{canIssue && <IssueScan/>}{params.error && <p className="error" role="alert">{params.error}</p>}
     {receiptProblem && <p className="notice" role="alert">{receiptProblem} · <Link href="/movements">ตรวจสอบประวัติการเคลื่อนไหว</Link></p>}
     {successReceipt && <section className="surface p-4 sm:p-6 grid gap-3" aria-label="ผลการเบิกออกสำเร็จ" role="status">
       <h2 className="text-xl font-extrabold text-emerald-800">✓ เบิกออกสำเร็จ</h2>

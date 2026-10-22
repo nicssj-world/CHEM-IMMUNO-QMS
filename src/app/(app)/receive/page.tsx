@@ -17,6 +17,7 @@ import { label, invoiceStatusLabels } from '@/lib/labels';
 import { VendorIssuePanel } from '@/components/vendor-issue-panel';
 import { ReceiptAssessmentCard } from '@/components/receipt-assessment-card';
 import { ReceiptEditForm } from '@/components/receipt-edit-form';
+import { InvoiceAdditions } from '@/components/invoice-additions';
 import { loadReceiptEvents } from '@/lib/receipt-events';
 import { ISSUE_COLUMNS, type IssueAttachment, type VendorIssue } from '@/lib/vendor-issues';
 
@@ -255,6 +256,14 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
           <div><p className="eyebrow">Invoice {invoice.invoice_number}</p><h2 className="font-extrabold text-xl">ตรวจและรับน้ำยา</h2><p className="muted text-sm">{invoice.invoice_date} · {vendors.find(v => v.id === invoice.vendor_id)?.name ?? 'ผู้ขาย'}</p></div>
           <Link className="button secondary" href="/receive">กลับรายการ Invoice</Link>
         </div>
+        {invoice.status !== 'cancelled' && warehouseIds.length>0 && !lineError &&
+          <InvoiceAdditions key={invoice.id} invoiceId={invoice.id}
+           invoice={{invoice_number:invoice.invoice_number,invoice_date:invoice.invoice_date,
+             po_number:invoice.po_number,status:invoice.status}}
+           products={products} lines={lines.map(l=>({
+             product_id:l.product_id,ordered_quantity:Number(l.ordered_quantity),
+             received_quantity:Number(l.received_quantity)
+           }))}/>}
         {invoice.status === 'closed_short' && <p className="notice">Invoice นี้ปิดแบบรับไม่ครบแล้ว · ระบบบันทึกปัญหา “จำนวนส่งมอบไม่ครบ” ให้ผู้ขาย</p>}
         {canCloseShort && <details className="surface p-5">
           <summary className="cursor-pointer font-bold min-h-11 flex items-center">ผู้ขายส่งของไม่ครบและจะไม่ส่งเพิ่ม? ปิด Invoice แบบรับไม่ครบ</summary>
