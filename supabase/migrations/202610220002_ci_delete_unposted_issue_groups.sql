@@ -20,7 +20,7 @@ begin
 end $$;
 
 create function public.ci_delete_issue_group(p_group uuid)
-returns void language sql security invoker set search_path='' as $$
+returns void language sql security definer set search_path='' as $
   select ci_private.ci_delete_issue_group($1)
 $$;
 revoke all on function ci_private.ci_delete_issue_group(uuid)
