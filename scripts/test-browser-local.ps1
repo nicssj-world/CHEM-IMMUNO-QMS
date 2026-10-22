@@ -22,6 +22,22 @@ $env:NEXT_PUBLIC_SUPABASE_URL = $localUrl
 $env:NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = $publishable
 $env:SUPABASE_SERVICE_ROLE_KEY = $service
 $env:CI_E2E_PASSWORD = 'Local-' + [Guid]::NewGuid().ToString('N') + '-A9!'
+$env:CI_E2E_BASE_URL = ''
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$envFile = Join-Path $repoRoot '.env.local'
+if (Test-Path -LiteralPath $envFile) {
+  $configuredUrlLine = Get-Content -LiteralPath $envFile | Where-Object { $_ -match '^NEXT_PUBLIC_SUPABASE_URL=' } | Select-Object -First 1
+  if ($configuredUrlLine) {
+    $configuredUrl = $configuredUrlLine.Substring('NEXT_PUBLIC_SUPABASE_URL='.Length).Trim().Trim('"')
+    if ($configuredUrl -eq $localUrl) {
+      $existingApp = 'http://localhost:3000'
+      try {
+        $existingResponse = Invoke-WebRequest -UseBasicParsing -Uri "$existingApp/login" -TimeoutSec 3
+        if ($existingResponse.StatusCode -eq 200 -and $existingResponse.Content.Contains('Ephis ID')) { $env:CI_E2E_BASE_URL = $existingApp }
+      } catch { }
+    }
+  }
+}
 $ready = $false
 for ($attempt = 0; $attempt -lt 25; $attempt++) {
   try {
@@ -30,6 +46,11 @@ for ($attempt = 0; $attempt -lt 25; $attempt++) {
   } catch { Start-Sleep -Seconds 2 }
 }
 if (-not $ready) { throw 'Local Supabase Auth did not become ready.' }
-Write-Output 'Running synthetic browser E2E at 375px, 768px, and desktop (credentials omitted).'
+if ($env:CI_E2E_BASE_URL) {
+  Write-Output 'Using the existing repository dev server for synthetic browser E2E (credentials omitted).'
+} else {
+  Remove-Item Env:CI_E2E_BASE_URL -ErrorAction SilentlyContinue
+  Write-Output 'Starting the isolated local app server for synthetic browser E2E (credentials omitted).'
+}
 npx playwright test
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
