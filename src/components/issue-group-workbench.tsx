@@ -41,15 +41,21 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups}:{mode:
  const units=lines.reduce((s,x)=>s+x.quantity,0);
  const canSubmit=lines.length>0&&lines.every(x=>x.quantity>0&&Number.isSafeInteger(x.quantity));
  useEffect(()=>{
-   try{
-    const saved=localStorage.getItem(storageKey(mode));
-    if(saved){const data=JSON.parse(saved) as {lines?:IssueCartLine[];purpose?:string;clientKey?:string};
-      if(Array.isArray(data.lines))setLines(data.lines.filter(x=>products.some(p=>p.id===x.product_id)));
-      if(data.purpose)setPurpose(data.purpose);
-      setClientKey(data.clientKey||crypto.randomUUID());
-    } else setClientKey(crypto.randomUUID());
-   }catch{setClientKey(crypto.randomUUID());}
-   setHydrated(true);
+   let cancelled=false;
+   // Hydrate saved drafts after mount without changing state synchronously during the effect.
+   queueMicrotask(()=>{
+    if(cancelled)return;
+    try{
+     const saved=localStorage.getItem(storageKey(mode));
+     if(saved){const data=JSON.parse(saved) as {lines?:IssueCartLine[];purpose?:string;clientKey?:string};
+       if(Array.isArray(data.lines))setLines(data.lines.filter(x=>products.some(p=>p.id===x.product_id)));
+       if(data.purpose)setPurpose(data.purpose);
+       setClientKey(data.clientKey||crypto.randomUUID());
+     } else setClientKey(crypto.randomUUID());
+    }catch{setClientKey(crypto.randomUUID());}
+    setHydrated(true);
+   });
+   return ()=>{cancelled=true;};
  },[mode,products]);
  useEffect(()=>{
    if(!hydrated||!clientKey)return;
