@@ -245,3 +245,4 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups,groupPa
      </div>}
    </section>}
  </div>;
+}

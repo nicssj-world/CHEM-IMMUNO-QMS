@@ -47,7 +47,7 @@ test('issue group: owner-only deletion, checklist progress, atomic post and immu
    await c.query('insert into auth.users(id) values($1),($2)',[OWNER,OTHER]);
    await c.query("insert into ci_user_profiles(user_id,ephis_id,display_name,active) values($1,'owner','Owner',true),($2,'other','Other',true)",[OWNER,OTHER]);
    await c.query("insert into ci_user_access(user_id,warehouse_id,role) values($1,1,'admin'),($2,1,'staff')",[OWNER,OTHER]);
-   product=(await c.query<{id:string}>("insert into ci_products(warehouse_id,product_code,product_type,source_name,display_name) values(1,'CHE-TEST','reagent','Test','Test') returning id")).rows[0].id;
+   product=(await c.query<{id:string}>("insert into ci_products(warehouse_id,product_code,product_type,source_name,display_name) values(1,'CHE-0001','reagent','Test','Test') returning id")).rows[0].id;
    location=(await c.query<{id:string}>("insert into ci_locations(warehouse_id,code,name) values(1,'STORE','Store') returning id")).rows[0].id;
    lot=(await c.query<{id:string}>("insert into ci_stock_lots(warehouse_id,product_id,lot_number,expiry_date) values(1,$1,'LOT-1','2028-01-01') returning id",[product])).rows[0].id;
    const tx=(await c.query<{id:string}>("insert into ci_stock_transactions(warehouse_id,kind,idempotency_key,request_hash,actor_id) values(1,'adjustment','seed-issue-test','seed',$1) returning id",[OWNER])).rows[0].id;
