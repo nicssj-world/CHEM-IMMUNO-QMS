@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { PackagePlus, Search, Pencil, Trash2 } from 'lucide-react';
+import { PackagePlus, Pencil, Trash2 } from 'lucide-react';
+import { SearchInput } from './search-input';
 import { amendInvoice } from '@/app/actions/invoice-additions';
 
 type Product = {id:string;product_code:string;display_name:string;warehouse_id:number};
@@ -62,10 +63,8 @@ export function InvoiceAdditions({invoiceId,invoice,products,lines}:{
    </div>
    <div className="rounded-xl bg-surface-2 p-3 grid gap-2">
     <h3 className="font-semibold">เพิ่มสินค้า / เพิ่มจำนวนที่จะรับ</h3>
-    <label className="field">ค้นหาชื่อสินค้า หรือ REF (Realtime)
-     <div className="relative"><Search size={18} className="absolute left-3 top-3.5 text-slate-500" aria-hidden/>
-      <input className="input pl-10" value={query} placeholder="ค้นหาน้ำยา..." onChange={e=>{setQuery(e.target.value);setProductId('');}}/></div>
-    </label>
+    <SearchInput label="ค้นหาชื่อสินค้า หรือ REF (Realtime)" placeholder="ค้นหาน้ำยา..."
+      value={query} onChange={value=>{setQuery(value);setProductId('');}}/>
     {query.trim()&&!productId&&<div className="grid max-h-44 overflow-y-auto bg-white rounded-xl border border-line">
      {matches.map(p=><button type="button" key={p.id} className="text-left min-h-11 p-3 border-b last:border-0 border-line hover:bg-surface-2"
       onClick={()=>{setProductId(p.id);setQuery(p.product_code+' · '+p.display_name);}}>

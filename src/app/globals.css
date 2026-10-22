@@ -48,6 +48,19 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .input { width: 100%; min-height: 46px; padding: 10px 13px; border: 1px solid #bfd0d8; border-radius: 10px; background: #fff; color: var(--ink); }
 .input:disabled { background: #eaf0f2; }
 
+/* Issue, checklist and invoice search fields: base .input shorthand must not
+   overwrite the spacing reserved for icons and the clear action. */
+.ci-search-wrap { position: relative; min-width: 0; }
+.input.ci-search-input { padding-left: 44px; padding-right: 48px; min-width: 0; }
+.ci-search-input::-webkit-search-cancel-button { display: none; }
+.ci-search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #58707e; pointer-events: none; }
+.ci-search-clear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 40px; height: 40px; border-radius: 8px; display: grid; place-items: center;
+  color: #526d7d; background: transparent; cursor: pointer; }
+.ci-search-clear:hover { background: #edf3f5; color: #17344a; }
+.ci-search-clear:focus-visible { outline: 3px solid #0b7f7a; outline-offset: -2px; }
+
+
 /* iOS Safari's native date input can paint beyond its CSS width even with
  * min-width:0. Put the visible border on a dimensionally bounded outer shell,
  * and let the native picker grow within a zero-basis flex slot.

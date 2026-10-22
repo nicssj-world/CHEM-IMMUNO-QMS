@@ -2,11 +2,13 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ClipboardList, Plus, ScanLine, Search, Trash2 } from 'lucide-react';
+import { Check, ClipboardList, Plus, ScanLine, Trash2 } from 'lucide-react';
 import { BarcodeScanner } from './barcode-scanner';
 import { resolveProductScan } from '@/app/actions/scanner';
 import { scanBatchFields } from '@/lib/barcode';
-import { createIssueGroup } from '@/app/actions/issue-groups';
+import { createIssueGroup, deleteIssueGroup } from '@/app/actions/issue-groups';
+import { SearchInput } from './search-input';
+import Link from 'next/link';
 import { mergeIssueLine, type IssueCartLine } from '@/lib/issue-cart';
 
 export type IssueProduct={id:string;warehouse_id:number;product_code:string;display_name:string};
@@ -17,7 +19,7 @@ const date=(x:string)=>{const [y,m,d]=x.split('-');return [d,m,y].join('/');};
 const storageKey=(mode:string)=>'ci-issue-v1-'+mode;
 
 /** Multi-item issue and planned warehouse picking share the same editor, never the legacy single-item form. */
-export function IssueGroupWorkbench({mode,products,candidates,openGroups}:{mode:'batch'|'prepare';products:IssueProduct[];candidates:IssueCandidate[];openGroups:OpenGroup[]}) {
+export function IssueGroupWorkbench({mode,products,candidates,openGroups,groupPage,groupTotal,groupPageSize}:{mode:'batch'|'prepare';products:IssueProduct[];candidates:IssueCandidate[];openGroups:OpenGroup[];groupPage:number;groupTotal:number;groupPageSize:number;}) {
  const router=useRouter();
  const [search,setSearch]=useState('');
  const [chosen,setChosen]=useState('');
@@ -33,6 +35,10 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups}:{mode:
  const [clientKey,setClientKey]=useState('');
  const [hydrated,setHydrated]=useState(false);
  const [showLists,setShowLists]=useState(true);
+ const [deleteTarget,setDeleteTarget]=useState<OpenGroup|null>(null);
+ const [deleteError,setDeleteError]=useState('');
+ const [deleteBusy,startDelete]=useTransition();
+ const pageCount=Math.max(1,Math.ceil(groupTotal/groupPageSize));
  const product=products.find(x=>x.id===chosen);
  const lots=candidates.filter(x=>x.product_id===chosen).sort((a,b)=>a.expiry_date.localeCompare(b.expiry_date)||a.lot_number.localeCompare(b.lot_number));
  const selected=lots.find(x=>x.lot_id+':'+x.location_id===choice);
@@ -61,6 +67,21 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups}:{mode:
    if(!hydrated||!clientKey)return;
    try{localStorage.setItem(storageKey(mode),JSON.stringify({lines,purpose,clientKey}));}catch{/* storage unavailable; server still validates */}
  },[mode,lines,purpose,clientKey,hydrated]);
+ function confirmDelete(){
+   if(!deleteTarget||deleteBusy)return;
+   const id=deleteTarget.id;
+   setDeleteError('');
+   startDelete(async()=>{
+     const result=await deleteIssueGroup(id);
+     if(!result.ok){setDeleteError(result.message);return;}
+     setDeleteTarget(null);
+     if(openGroups.length===1&&groupPage>1){
+       router.replace('/issue?mode=prepare&page='+String(groupPage-1));
+     }else{
+       router.refresh();
+     }
+   });
+ }
  function selectProduct(p:IssueProduct, scannedLot=''){
    const available=candidates.filter(x=>x.product_id===p.id).sort((a,b)=>a.expiry_date.localeCompare(b.expiry_date));
    setChosen(p.id);
@@ -122,11 +143,8 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups}:{mode:
      <p className="muted text-sm">{mode==='batch'?'สแกนและเพิ่มจำนวนทีละรายการ ระบบยังไม่ตัด Stock จนกว่าจะตรวจสรุปและยืนยัน':'ค้นหาสินค้า เลือก LOT ตาม FEFO และระบุจำนวน แล้วสร้าง Checklist สำหรับไปหยิบในคลัง'}</p>
      {mode==='batch'&&!review&&<BarcodeScanner onScan={onScan} continuous />}
      {!review&&<>
-       <label className="field">ค้นหาน้ำยา / REF แบบ Realtime
-        <div className="relative"><Search size={18} className="absolute left-3 top-3.5 text-slate-500" aria-hidden/>
-        <input className="input pl-10" value={search} onChange={e=>{setSearch(e.target.value);setChosen('');setEditor(false);}}
-         placeholder="พิมพ์ชื่อสินค้า หรือ REF" autoComplete="off" /></div>
-       </label>
+       <SearchInput label="ค้นหาน้ำยา / REF แบบ Realtime" placeholder="พิมพ์ชื่อสินค้า หรือ REF"
+         value={search} onChange={value=>{setSearch(value);setChosen('');setEditor(false);}}/>
        {search.trim()&&!chosen&&<div className="max-h-60 overflow-y-auto rounded-xl border border-line" role="listbox" aria-label="ผลค้นหาน้ำยา">
          {filtered.map(p=><button type="button" key={p.id} className="block w-full text-left p-3 border-b border-line last:border-0 hover:bg-surface-2"
           onClick={()=>selectProduct(p)}><strong className="block">{p.product_code}</strong><span className="muted text-sm">{p.display_name}</span></button>)}
@@ -186,13 +204,45 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups}:{mode:
      </div>
    </section>
    {mode==='prepare'&&<section className="surface p-4 sm:p-6 grid gap-3">
-     <button type="button" className="flex w-full justify-between items-center text-left" onClick={()=>setShowLists(x=>!x)}>
-       <h2 className="font-bold">รายการเบิกที่ยังไม่ปิด ({openGroups.length})</h2><span className="muted">{showLists?'ซ่อน':'แสดง'}</span></button>
-     {showLists&&<div className="grid gap-2">{openGroups.map(x=><button type="button" key={x.id} className="rounded-xl border border-line p-3 text-left hover:bg-surface-2"
-       onClick={()=>router.push('/issue/groups/'+x.id)}>
-       <strong>รายการ #{x.id.slice(0,8).toUpperCase()}</strong><span className="ml-2 text-sm muted">{x.status==='picking'?'กำลังหยิบ':'รอหยิบ'}</span>
-       <p className="muted text-sm">{x.done_count}/{x.line_count} รายการ · {new Date(x.created_at).toLocaleString('th-TH')}</p></button>)}
-       {!openGroups.length&&<p className="muted text-sm">ไม่มีรายการที่รอหยิบ</p>}</div>}
+     <button type="button" className="flex w-full justify-between items-center text-left" onClick={()=>setShowLists(x=>!x)}
+       aria-expanded={showLists}>
+       <h2 className="font-bold">รายการเบิกที่ยังไม่ปิด ({groupTotal})</h2><span className="muted">{showLists?'ซ่อน':'แสดง'}</span></button>
+     {showLists&&<div className="grid gap-3">
+       {deleteTarget&&<div className="rounded-xl border border-rose-300 bg-rose-50 p-4 grid gap-3" role="alertdialog"
+           aria-label="ยืนยันลบรายการเบิก" aria-describedby="issue-delete-note">
+         <div><strong className="text-rose-800">ลบรายการ #{deleteTarget.id.slice(0,8).toUpperCase()}?</strong>
+         <p id="issue-delete-note" className="text-sm mt-1">ลบ Checklist และรายการเตรียมเบิกนี้โดยถาวร ไม่กระทบ Stock เนื่องจากยังไม่ได้ปิดรายการ</p></div>
+         {deleteError&&<p className="error" role="alert">{deleteError}</p>}
+         <div className="flex flex-wrap gap-2">
+           <button type="button" className="button danger min-h-11" disabled={deleteBusy} onClick={confirmDelete}>
+             <Trash2 size={17} aria-hidden/>{deleteBusy?'กำลังลบ…':'ยืนยันลบรายการ'}</button>
+           <button type="button" className="button secondary min-h-11" disabled={deleteBusy}
+             onClick={()=>{setDeleteTarget(null);setDeleteError('');}}>กลับ</button>
+         </div>
+       </div>}
+       {openGroups.map(x=><article key={x.id} className="rounded-xl border border-line p-3 flex items-center gap-2">
+         <Link href={'/issue/groups/'+x.id} className="min-w-0 flex-1 rounded-lg px-1 py-2 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-teal-700"
+           aria-label={'เปิดรายการเบิก '+x.id.slice(0,8)}>
+           <strong>รายการ #{x.id.slice(0,8).toUpperCase()}</strong>
+           <span className="ml-2 text-sm muted">{x.status==='picking'?'กำลังหยิบ':'รอหยิบ'}</span>
+           <p className="muted text-sm">{x.done_count}/{x.line_count} รายการ · {new Date(x.created_at).toLocaleString('th-TH')}</p>
+         </Link>
+         <button type="button" className="min-h-11 min-w-11 px-3 rounded-lg border border-rose-200 text-rose-700 font-semibold flex items-center gap-2 justify-center hover:bg-rose-50"
+           aria-label={'ลบรายการเบิก '+x.id.slice(0,8)} onClick={()=>{setDeleteTarget(x);setDeleteError('');}}>
+           <Trash2 size={17} aria-hidden/><span className="hidden sm:inline">ลบ</span>
+         </button>
+       </article>)}
+       {!openGroups.length&&<p className="muted text-sm">ไม่มีรายการที่รอหยิบในหน้านี้</p>}
+       {groupTotal>groupPageSize&&<nav className="flex flex-wrap items-center justify-between gap-2" aria-label="หน้ารายการเบิก">
+         <span className="muted text-sm">หน้า {groupPage} / {pageCount} · แสดงครั้งละ {groupPageSize} รายการ</span>
+         <div className="flex gap-2">
+           {groupPage>1?<Link className="button secondary min-h-11" href={'/issue?mode=prepare&page='+(groupPage-1)}>ก่อนหน้า</Link>
+           :<span className="button secondary opacity-40" aria-disabled="true">ก่อนหน้า</span>}
+           {groupPage<pageCount?<Link className="button secondary min-h-11" href={'/issue?mode=prepare&page='+(groupPage+1)}>ถัดไป</Link>
+           :<span className="button secondary opacity-40" aria-disabled="true">ถัดไป</span>}
+         </div>
+       </nav>}
+     </div>}
    </section>}
  </div>;
 }
