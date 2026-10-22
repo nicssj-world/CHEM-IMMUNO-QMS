@@ -15,7 +15,7 @@ type Product = { id: string; warehouse_id: number; product_code: string; display
 type Candidate = { lot_id: string; lot_number: string; expiry_date: string; location_id: string; balance: number };
 type Location = { id: string; code: string };
 
-export default async function IssuePage({ searchParams }: { searchParams: Promise<{ warehouse?: string; product?: string; lot?: string; error?: string; saved?: string; tx?: string; mode?: string }> }) {
+export default async function IssuePage({ searchParams }: { searchParams: Promise<{ warehouse?: string; product?: string; lot?: string; error?: string; saved?: string; tx?: string; mode?: string; page?: string }> }) {
   const params = await searchParams;
   const access = await requireAccess();
   const scopeIds = access.warehouses.map(item => Number(item.id));
@@ -35,13 +35,17 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
   const canIssue = product ? canMutate(warehouse.role) : access.warehouses.some(w => canMutate(w.role));
   if (params.mode === 'batch' || params.mode === 'prepare') {
     const allowed = access.warehouses.filter(w => canMutate(w.role)).map(w => Number(w.id));
+    const groupPageSize = 10;
+    const requestedPage = Number(params.page);
+    const groupPage = Number.isSafeInteger(requestedPage) && requestedPage >= 1 && requestedPage <= 10000 ? requestedPage : 1;
     const [available, groups] = client && allowed.length ? await Promise.all([
       client.from('ci_fefo_candidates')
         .select('warehouse_id,product_id,lot_id,lot_number,expiry_date,location_id,balance')
         .in('warehouse_id',allowed).order('expiry_date').order('lot_number').limit(2000),
-      client.from('ci_issue_groups').select('id,status,created_at')
-        .in('status',['pending','picking']).order('created_at',{ascending:false}).limit(50),
-    ]) : [{data:[],error:null},{data:[],error:null}];
+      client.from('ci_issue_groups').select('id,status,created_at',{count:'exact'})
+        .in('status',['pending','picking']).order('created_at',{ascending:false})
+        .range((groupPage-1)*groupPageSize,groupPage*groupPageSize-1),
+    ]) : [{data:[],error:null},{data:[],error:null,count:0}];
     const recent = groups.data ?? [];
     const {data:counts,error:countsError}=recent.length && client
       ? await client.from('ci_issue_group_lines').select('group_id,picked').in('group_id',recent.map(g=>g.id)).limit(2000)
@@ -68,7 +72,8 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
       {(available.error||groups.error||countsError)&&<p role="alert" className="error">โหลดข้อมูลรายการเบิกไม่ได้ กรุณาลองใหม่</p>}
       {!allowed.length?<p className="notice">บัญชีนี้ไม่มีสิทธิ์เบิกสินค้า</p>
         :!(available.error||groups.error||countsError)&&<IssueGroupWorkbench mode={params.mode} products={scopedProducts}
-           candidates={allCandidates} openGroups={openGroups}/>}
+           candidates={allCandidates} openGroups={openGroups} groupPage={groupPage} groupPageSize={groupPageSize}
+           groupTotal={groups.count??0}/>}
     </main>;
   }
   let successReceipt: { transaction: MovementDetail; line: MovementDetailLine; stockTotal: number } | null = null;

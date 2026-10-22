@@ -70,3 +70,15 @@ export async function cancelIssueGroup(groupId:string):Promise<{ok:boolean;messa
   revalidatePath('/issue/groups/'+groupId);
   return {ok:true};
 }
+
+/** Hard-delete only a still-unposted picking plan; the RPC rejects closed or posted groups. */
+export async function deleteIssueGroup(groupId:string):Promise<{ok:true}|{ok:false;message:string}> {
+  const {client}=await authenticatedClient();
+  if (!client) return {ok:false,message:'ไม่สามารถเชื่อมต่อฐานข้อมูล'};
+  if(!/^[0-9a-f-]{36}$/i.test(groupId))return {ok:false,message:'รหัสรายการเบิกไม่ถูกต้อง'};
+  const {error}=await client.rpc('ci_delete_issue_group',{p_group:groupId});
+  if (error) return {ok:false,message:logUserMessage('issue-delete',error,'ลบรายการไม่ได้ ตรวจสอบว่าไม่ได้ปิดเบิกแล้ว')};
+  refreshIssue();
+  revalidatePath('/issue/groups/'+groupId);
+  return {ok:true};
+}

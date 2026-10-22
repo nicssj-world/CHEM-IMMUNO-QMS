@@ -3,9 +3,10 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Check, CheckCheck, Search, X } from 'lucide-react';
+import { Check, CheckCheck, Trash2 } from 'lucide-react';
+import { SearchInput } from './search-input';
 import { matchesPickingQuery } from '@/lib/issue-cart';
-import { setIssueLinePicked,completeIssueGroup,cancelIssueGroup } from '@/app/actions/issue-groups';
+import { setIssueLinePicked,completeIssueGroup,deleteIssueGroup } from '@/app/actions/issue-groups';
 
 export type PickingLine={
  id:string;product_code:string;product_name:string;lot_number:string;
@@ -46,12 +47,12 @@ export function PickingChecklist({id,status,initialLines,transactions}:{id:strin
      router.refresh();
    });
  }
- function cancel() {
+ function removeGroup() {
    if(pending||!editable)return;
-   if(!window.confirm('ยกเลิกรายการที่ยังไม่ตัด Stock นี้?'))return;
-   startTransition(async()=>{const result=await cancelIssueGroup(id);
-    if(!result.ok)setError(result.message??'ยกเลิกรายการไม่ได้');
-    else router.refresh();
+   if(!window.confirm('ลบรายการเบิกนี้โดยถาวร? รายการนี้ยังไม่ตัด Stock'))return;
+   startTransition(async()=>{const result=await deleteIssueGroup(id);
+    if(!result.ok)setError(result.message??'ลบรายการไม่ได้');
+    else router.replace('/issue?mode=prepare');
    });
  }
  return <main className="max-w-[860px] grid gap-4 pb-24">
@@ -59,19 +60,15 @@ export function PickingChecklist({id,status,initialLines,transactions}:{id:strin
      <div><Link href="/issue?mode=prepare" className="text-sm underline text-teal-800">← รายการเบิกออก</Link>
       <h1 className="page-title mt-2">Picking Checklist</h1>
       <p className="muted text-sm">#{id.slice(0,8).toUpperCase()} · {closed?'ปิดรายการแล้ว':status==='cancelled'?'ยกเลิกแล้ว':status==='picking'?'กำลังหยิบ':'รอหยิบ'}</p></div>
-     {editable&&<button className="button secondary text-sm" type="button" onClick={cancel} disabled={pending}>ยกเลิกรายการ</button>}
+     {editable&&<button className="button secondary text-sm" type="button" onClick={removeGroup} disabled={pending}><Trash2 size={17} aria-hidden/> ลบรายการ</button>}
    </header>
    <section className="surface p-4 sm:p-6 grid gap-3">
      <div className="flex justify-between gap-3 items-center"><strong>หยิบแล้ว {done} / {lines.length} รายการ</strong><span className="muted text-sm">{Math.round((done/Math.max(1,lines.length))*100)}%</span></div>
      <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden" role="progressbar" aria-valuenow={done} aria-valuemin={0} aria-valuemax={lines.length} aria-label="ความคืบหน้าการหยิบ">
        <div className="h-full bg-emerald-600 transition-all duration-200" style={{width:(100*done/Math.max(1,lines.length))+'%'}} />
      </div>
-     <label className="field">ค้นหารายการแบบ Realtime
-      <div className="relative"><Search className="absolute left-3 top-3.5 text-slate-500" size={18} aria-hidden/>
-        <input className="input pl-10 pr-10" value={query} onChange={e=>setQuery(e.target.value)} placeholder="ชื่อสินค้า / REF / LOT" autoComplete="off"/>
-        {query&&<button type="button" onClick={()=>setQuery('')} className="absolute right-3 top-3" aria-label="ล้างการค้นหา"><X size={20}/></button>}
-      </div>
-     </label>
+     <SearchInput label="ค้นหารายการแบบ Realtime" placeholder="ชื่อสินค้า / REF / LOT"
+       value={query} onChange={setQuery}/>
      <div className="grid grid-cols-2 gap-2">
        <button type="button" onClick={()=>setShowAll(false)}
          aria-pressed={!showAll} className={'min-h-11 rounded-lg text-sm font-semibold border '+(!showAll?'bg-teal-800 text-white':'border-line bg-white')}>ยังไม่หยิบ ({lines.length-done})</button>
