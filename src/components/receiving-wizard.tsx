@@ -49,10 +49,11 @@ const makeLine=(productId:string,locationId=''):WizardLine=>({
   id:crypto.randomUUID(),productId,orderedQuantity:'',packages:[makeLot(locationId)],
 });
 
-export function ReceivingWizard({vendors,products,locations,initialDraft,recentInvoices,recentDrafts,recentLocationByProduct={},canAddVendor=false,locationManageHref}:{
+export function ReceivingWizard({vendors,products,locations,initialDraft,recentInvoices,recentDrafts,recentLocationByProduct={},canAddVendor=false,locationManageHref,supervisedWarehouses=[]}:{
   vendors:Vendor[];products:WizardProduct[];locations:WizardLocation[];
   initialDraft?:WizardDraft|null;recentInvoices:RecentInvoice[];recentDrafts:RecentDraft[];
   recentLocationByProduct?:Record<string,string>;canAddVendor?:boolean;locationManageHref?:string;
+  supervisedWarehouses?:{id:number;code:string}[];
 }) {
   const router=useRouter();
   const [step,setStep]=useState(initialDraft ? Math.min(4,Math.max(2,initialDraft.step)) : 1);
@@ -467,7 +468,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         <label className="field min-w-0">เลขที่ PO (ถ้ามี)
           <input className="input" value={header.poNumber} onChange={e=>setHeader({...header,poNumber:e.target.value})} maxLength={200}/></label>
       </div>
-      <ReceiveExcelImport vendorId={header.vendorId}/>
+      <ReceiveExcelImport vendorId={header.vendorId} products={products} supervisedWarehouses={supervisedWarehouses}/>
       {invoiceScannerOpen && <section id="receive-invoice-scanner" className="rounded-xl border border-line p-3 sm:p-4 grid gap-3 min-w-0"
         aria-label="สแกนเลขที่ Invoice">
         <div className="flex flex-wrap items-start justify-between gap-2">

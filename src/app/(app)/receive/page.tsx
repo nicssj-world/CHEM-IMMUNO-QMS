@@ -106,7 +106,8 @@ export default async function ReceivePage({ searchParams }: { searchParams: Prom
     return <main><ReceivingWizard key={activeDraft?.id ?? 'new'} vendors={vendors} products={products} locations={locations}
       initialDraft={activeDraft as WizardDraft|null} recentInvoices={invoices}
       recentDrafts={draftRows??[]} recentLocationByProduct={wizardRecentLocations}
-      canAddVendor={vendorLinkAllowed} locationManageHref={locationManageHref}/></main>;
+      canAddVendor={vendorLinkAllowed} locationManageHref={locationManageHref}
+      supervisedWarehouses={access.warehouses.filter(w=>canSupervise(w.role)).map(w=>({id:Number(w.id),code:w.code}))}/></main>;
   }
   const { data: lineData, error: lineError } = invoice && client ? await client.from('ci_invoice_line_progress').select('invoice_line_id,warehouse_id,product_id,ordered_quantity,received_quantity,remaining_quantity').eq('invoice_id',invoice.id).limit(1000) : {data:[],error:null};
   const lines = (lineData ?? []) as Line[];
