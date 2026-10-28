@@ -36,7 +36,8 @@ export async function importSupplierExcelDraft(
   let table: unknown[][];
   try {
     const book = new ExcelJS.Workbook();
-    await book.xlsx.load(Buffer.from(await file.arrayBuffer()));
+    // ExcelJS and Node 22 expose incompatible Buffer generic declarations; bytes are a real Node Buffer.
+    await book.xlsx.load(Buffer.from(await file.arrayBuffer()) as unknown as Parameters<typeof book.xlsx.load>[0]);
     const sheet = book.getWorksheet('Bill') ?? book.worksheets[0];
     if (!sheet || sheet.rowCount > 501)
       return { ok: false, message: 'ไฟล์ต้องมี Worksheet Bill และรายการไม่เกิน 500 แถว' };
