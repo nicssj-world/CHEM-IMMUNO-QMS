@@ -5,7 +5,8 @@ import { requireAccess, canMutate } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { logUserMessage } from '@/lib/messages';
 import { assessmentError, toAssessmentPayload, type AssessmentInput } from '@/lib/receipt-assessment';
-import { wizardHeaderError, wizardLineError, invoiceLinesFromActualReceipts, type WizardHeader, type WizardLine, type WizardProduct, type WizardLocation } from '@/lib/receiving-wizard';
+import { supplierChecklistError } from '@/lib/supplier-bill-import';
+import { wizardHeaderError, wizardLineError, invoiceLinesFromActualReceipts, importedLinesForFinalization, type WizardHeader, type WizardLine, type WizardProduct, type WizardLocation } from '@/lib/receiving-wizard';
 
 export type WizardActionResult =
   | { ok: true; id: string; existingInvoice?: boolean }
@@ -60,6 +61,13 @@ export async function finalizeReceivingWizard(
   if (headerProblem) return {ok:false,message:headerProblem};
   const assessProblem=assessmentError(assessment);
   if (assessProblem) return {ok:false,message:assessProblem};
+  const checklistProblem=supplierChecklistError(lines);
+  if (checklistProblem) return {ok:false,message:checklistProblem};
+  const incoming=importedLinesForFinalization(lines);
+  const shortage=lines.some(line=>line.source==='supplier_excel' && line.packages.some(pkg=>
+    pkg.notReceived || (pkg.verified && Number(pkg.quantity)!==Number(pkg.expectedQuantity))));
+  if (shortage && assessment.itemCorrectness!=='problem')
+    return {ok:false,message:'รับไม่ครบตาม Excel กรุณาระบุพบปัญหาที่ความถูกต้องของรายการในแบบประเมิน'};
   const {access,client}=await authorizedClient();
   if (!client) return {ok:false,message:'ยังไม่ได้ตั้งค่า Supabase'};
   const scopedProducts=(await client.from('ci_products')
@@ -68,13 +76,19 @@ export async function finalizeReceivingWizard(
     .limit(1000)).data as WizardProduct[]|null;
   const scopedLocations=(await client.from('ci_locations').select('id,code,name').eq('active',true).limit(1000)).data as WizardLocation[]|null;
   if (!scopedProducts || !scopedLocations) return {ok:false,message:'ไม่สามารถตรวจสอบทะเบียนน้ำยาและตำแหน่งได้'};
-  const lineProblem=wizardLineError(lines,scopedProducts,scopedLocations);
+  const lineProblem=wizardLineError(incoming,scopedProducts,scopedLocations);
   if (lineProblem) return {ok:false,message:lineProblem};
+  for(const line of lines) if(line.source==='supplier_excel') {
+    const expected=line.packages.reduce((n,p)=>n+Number(p.expectedQuantity),0);
+    const received=line.packages.filter(p=>p.verified&&!p.notReceived).reduce((n,p)=>n+Number(p.quantity),0);
+    if(!Number.isSafeInteger(expected)||expected<1||received>expected)
+      return {ok:false,message:'จำนวนรับจริงต้องไม่เกินจำนวนตาม Excel ของสินค้านั้น'};
+  }
   // Server derives invoice ordered_quantity from actual received LOTs.
   // The existing final RPC then creates Invoice, receipt, and assessment
   // in ONE PostgreSQL transaction and locks the draft against a second submit.
   const {error:saveError}=await client.rpc('ci_save_receive_draft',{
-    p_id:id,p_header:header,p_lines:invoiceLinesFromActualReceipts(lines),
+    p_id:id,p_header:header,p_lines:invoiceLinesFromActualReceipts(incoming),
     p_assessment:toAssessmentPayload(assessment),p_step:4,
   });
   if (saveError) return {ok:false,message:logUserMessage('receive-save-final',saveError,'บันทึกร่างก่อนยืนยันไม่สำเร็จ')};
