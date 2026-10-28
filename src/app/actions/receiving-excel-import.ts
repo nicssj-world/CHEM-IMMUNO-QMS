@@ -8,12 +8,16 @@ import { createClient } from '@/lib/supabase/server';
 import { mostRecentReceivedLocations } from '@/lib/recent-receive-location';
 import { createReceivingWizardDraft, saveReceivingWizardDraft } from '@/app/actions/receiving-wizard';
 import { DEFAULT_ASSESSMENT } from '@/lib/receipt-assessment';
-import { buildImportedWizardLines, normalizeSupplierCode, parseSupplierBillTable,
+import { buildImportedWizardLines, parseSupplierBillTable,
   type SupplierProductMatch } from '@/lib/supplier-bill-import';
+import { resolveSupplierProducts, type UnmatchedSupplierProduct } from '@/lib/supplier-identifier';
 
 export type SupplierExcelImportResult =
   | { ok: true; id: string; existingDraft?: boolean }
-  | { ok: false; message: string };
+  | { ok: false; message: string }
+  | { ok: false; needsResolution: true; message: string;
+      invoiceNumber: string; totalRows: number; matchedRows: number;
+      items: UnmatchedSupplierProduct[] };
 
 export async function importSupplierExcelDraft(
   vendorId: string, file: File,
@@ -64,6 +68,11 @@ export async function importSupplierExcelDraft(
   const parsed = parseSupplierBillTable(table);
   if (!parsed.ok) return parsed;
   const bill = parsed.bill;
+  const { data: alreadyReceived, error: duplicateError } = await client.from('ci_invoices')
+    .select('id').eq('vendor_id', vendorId).eq('invoice_number', bill.invoiceNumber)
+    .neq('status', 'cancelled').limit(1).maybeSingle();
+  if (duplicateError) return { ok: false, message: 'ตรวจสอบ Invoice ซ้ำไม่สำเร็จ' };
+  if (alreadyReceived) return { ok: false, message: 'Invoice นี้รับเข้าแล้ว กรุณาเปิดประวัติ Invoice เดิม (ห้าม Import ซ้ำ)' };
 
   // Validate every identifier against APPROVED master-data mappings. Do not create
   // products or silently guess on two different identifiers pointing to different products.
@@ -73,7 +82,7 @@ export async function importSupplierExcelDraft(
       .eq('active', true).in('warehouse_id', warehouseIds).limit(1000),
     client.from('ci_product_identifiers')
       .select('product_id,kind,value').eq('approved', true)
-      .in('kind', ['REF_CURRENT', 'REF_LEGACY', 'MANUFACTURER_BARCODE']).limit(2000),
+      .in('kind', ['REF_CURRENT', 'REF_LEGACY', 'MANUFACTURER_BARCODE', 'OTHER']).limit(5000),
     client.from('ci_locations').select('id,warehouse_id')
       .eq('active', true).in('warehouse_id', warehouseIds).limit(1000),
   ]);
@@ -84,33 +93,16 @@ export async function importSupplierExcelDraft(
   const products = new Map<string, SupplierProductMatch>(
     (productsQuery.data as SupplierProductMatch[]).map(product => [product.id, product]));
   const locationWarehouse = new Map(locationsQuery.data.map(loc => [loc.id, loc.warehouse_id]));
-  const refs = new Map<string, Set<string>>();
-  const materials = new Map<string, Set<string>>();
-  for (const identifier of identifiersQuery.data) {
-    if (!products.has(identifier.product_id)) continue;
-    const target = identifier.kind === 'MANUFACTURER_BARCODE' ? materials : refs;
-    const key = normalizeSupplierCode(identifier.value);
-    if (!target.has(key)) target.set(key, new Set());
-    target.get(key)!.add(identifier.product_id);
+  const resolution = resolveSupplierProducts(bill.rows,
+    identifiersQuery.data.map(item => ({ ...item, approved: Boolean(item.approved) })),
+    products);
+  if (resolution.issues.length) {
+    return { ok: false, needsResolution: true,
+      message: 'พบสินค้าที่ต้องตรวจสอบทะเบียน กรุณาจับคู่ให้ครบก่อนสร้าง Draft',
+      invoiceNumber: bill.invoiceNumber, totalRows: bill.rows.length,
+      matchedRows: resolution.matched.size, items: resolution.issues };
   }
-
-  const matched = new Map<number, SupplierProductMatch>();
-  for (const row of bill.rows) {
-    const refIds = refs.get(normalizeSupplierCode(row.rdthCode)) ?? new Set<string>();
-    const materialIds = materials.get(normalizeSupplierCode(row.materialNo)) ?? new Set<string>();
-    if (refIds.size > 1 || materialIds.size > 1)
-      return { ok: false, message: 'รหัสสินค้าจับคู่ได้หลายรายการที่ Excel แถว ' + row.excelRow };
-    const refId = [...refIds][0];
-    const materialId = [...materialIds][0];
-    if (refId && materialId && refId !== materialId)
-      return { ok: false, message: 'RDTH Code และ Material No. ชี้คนละสินค้า ที่ Excel แถว ' + row.excelRow };
-    const productId = refId || materialId;
-    const product = productId ? products.get(productId) : undefined;
-    if (!product)
-      return { ok: false, message: 'ไม่พบสินค้าในทะเบียนที่ Excel แถว ' + row.excelRow +
-        ' (REF ' + row.rdthCode + ' / Material ' + row.materialNo + ')' };
-    matched.set(row.excelRow, product);
-  }
+  const matched = resolution.matched;
 
   // Reuse the same safe historical Location logic as the existing Receiving Wizard.
   // Reversed receipts and ambiguous latest locations must not be guessed.
