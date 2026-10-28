@@ -5,7 +5,6 @@ import ExcelJS from 'exceljs';
 import { revalidatePath } from 'next/cache';
 import { requireAccess, canMutate } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
-import { logUserMessage } from '@/lib/messages';
 import { mostRecentReceivedLocations } from '@/lib/recent-receive-location';
 import { createReceivingWizardDraft, saveReceivingWizardDraft } from '@/app/actions/receiving-wizard';
 import { DEFAULT_ASSESSMENT } from '@/lib/receipt-assessment';
@@ -104,7 +103,8 @@ export async function importSupplierExcelDraft(
     const materialId = [...materialIds][0];
     if (refId && materialId && refId !== materialId)
       return { ok: false, message: 'RDTH Code และ Material No. ชี้คนละสินค้า ที่ Excel แถว ' + row.excelRow };
-    const product = products.get(refId || materialId);
+    const productId = refId || materialId;
+    const product = productId ? products.get(productId) : undefined;
     if (!product)
       return { ok: false, message: 'ไม่พบสินค้าในทะเบียนที่ Excel แถว ' + row.excelRow +
         ' (REF ' + row.rdthCode + ' / Material ' + row.materialNo + ')' };
