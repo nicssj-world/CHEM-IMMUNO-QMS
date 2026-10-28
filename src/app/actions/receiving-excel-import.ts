@@ -81,7 +81,7 @@ export async function importSupplierExcelDraft(
       .select('id,warehouse_id,product_code,display_name,default_location_id')
       .eq('active', true).in('warehouse_id', warehouseIds).limit(1000),
     client.from('ci_product_identifiers')
-      .select('product_id,kind,value').eq('approved', true)
+      .select('product_id,kind,value,approved').eq('approved', true)
       .in('kind', ['REF_CURRENT', 'REF_LEGACY', 'MANUFACTURER_BARCODE', 'OTHER']).limit(5000),
     client.from('ci_locations').select('id,warehouse_id')
       .eq('active', true).in('warehouse_id', warehouseIds).limit(1000),
