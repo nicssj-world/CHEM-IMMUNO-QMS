@@ -4,9 +4,11 @@ import { ASSESSMENT_REASON_CODES, DEFAULT_ASSESSMENT, type AssessmentInput, type
 export type WizardLot = {
   id: string; quantity: string; lot: string; expiry: string; locationId: string;
   raw?: string;
+  expectedQuantity?: string; verified?: boolean; notReceived?: boolean; sourceRows?: number[];
 };
 export type WizardLine = {
   id: string; productId: string; orderedQuantity: string; packages: WizardLot[];
+  source?: 'supplier_excel'; importedLots?: WizardLot[];
 };
 export type WizardHeader = {
   vendorId: string; invoiceNumber: string; invoiceDate: string; poNumber: string;
@@ -31,11 +33,24 @@ export type WizardLocation = { id: string; warehouse_id: number; code: string; n
 export function invoiceLinesFromActualReceipts(lines: readonly WizardLine[]): WizardLine[] {
   return lines.map(line=>({
     ...line,
-    orderedQuantity:String(line.packages.reduce((total,pkg)=>{
-      const quantity=Number(pkg.quantity);
+    orderedQuantity:String((line.source==='supplier_excel' ? (line.importedLots??line.packages) : line.packages).reduce((total,pkg)=>{
+      const quantity=Number(line.source==='supplier_excel' ? pkg.expectedQuantity : pkg.quantity);
       return total+(Number.isSafeInteger(quantity)&&quantity>0?quantity:0);
     },0)),
   }));
+}
+
+/** Imported bills retain the supplier's ordered quantities while only checked
+ * LOTs reach the receipt. Keep the original LOT details in draft JSON for audit
+ * and for a later receipt of outstanding quantities on the open Invoice.
+ * Never use this function to save a work-in-progress draft.
+ */
+export function importedLinesForFinalization(lines: readonly WizardLine[]): WizardLine[] {
+  return lines.map(line => line.source !== 'supplier_excel' ? line : {
+    ...line,
+    importedLots: line.importedLots ?? line.packages.map(pkg => ({ ...pkg })),
+    packages: line.packages.filter(pkg => pkg.verified && !pkg.notReceived),
+  });
 }
 
 /** Append only after explicit popup confirmation. The newest product and LOT
@@ -106,7 +121,7 @@ export function wizardLineError(lines: readonly WizardLine[], products: readonly
       expiryByLot.set(key,pkg.expiry);
       received += count;
     }
-    if(!Number.isSafeInteger(received)||received<1||received>1_000_000)
+    if(!Number.isSafeInteger(received)||(received<1 && line.source!=='supplier_excel')||received>1_000_000)
       return 'จำนวนรับจริงต่อ Product ต้องอยู่ระหว่าง 1 ถึง 1,000,000 หน่วย';
   }
   if (!lots) return 'กรุณาระบุจำนวนรับเข้าจริงอย่างน้อยหนึ่ง LOT';
