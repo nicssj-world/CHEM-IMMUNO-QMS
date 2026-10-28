@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { AlertCircle, CheckCircle2, FileSpreadsheet, Plus, Search } from 'lucide-react';
 import { importSupplierExcelDraft, type SupplierExcelImportResult } from '@/app/actions/receiving-excel-import';
 import { resolveSupplierExistingProduct, createSupplierExcelProduct } from '@/app/actions/supplier-product-resolution';
@@ -43,8 +44,9 @@ export function ReceiveExcelImport({ vendorId, products, supervisedWarehouses }:
       if (saved.vendorId !== vendorId || !saved.content || !saved.filename) return;
       const binary = atob(saved.content);
       const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
-      setFile(new File([bytes], saved.filename,
-        { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      const restored = new File([bytes], saved.filename,
+        { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      queueMicrotask(() => setFile(restored));
     } catch { /* Storage unavailable; selecting the original file still works. */ }
   }, [vendorId]);
 
@@ -188,7 +190,7 @@ export function ReceiveExcelImport({ vendorId, products, supervisedWarehouses }:
               · REF {item.rdthCode} · Material {item.materialNo}</span>
             {item.reason === 'conflict' && <p className="error text-sm">
               รหัสสองรายการนี้ชี้ไปคนละสินค้า / มีรหัสซ้ำในทะเบียน
-              กรุณาตรวจแก้รหัสในทะเบียนก่อน Import (ไม่อนุญาตให้ผูกทับ)</p>}
+              กรุณาตรวจแก้รหัสในทะเบียนก่อน Import (ไม่อนุญาตให้ผูกทับ) · <Link href="/products" className="underline">เปิดทะเบียนสินค้า</Link></p>}
           </div>
           {item.reason === 'missing' && <>
             <div className="grid gap-2">
@@ -215,7 +217,7 @@ export function ReceiveExcelImport({ vendorId, products, supervisedWarehouses }:
                 </button>}
               </div>
               {supervisedWarehouses.length === 0 && <p className="muted text-xs">
-                การผูกของเจ้าหน้าที่จะส่งให้หัวหน้างานอนุมัติ · <a href="/scan/review" className="underline">คิวอนุมัติรหัส</a>
+                การผูกของเจ้าหน้าที่จะส่งให้หัวหน้างานอนุมัติ · <Link href="/scan/review" className="underline">คิวอนุมัติรหัส</Link>
               </p>}
             </div>
             {creating === item.key && supervisedWarehouses.length > 0 && <div className="grid gap-3 rounded-lg bg-surface-2 p-3">
