@@ -171,7 +171,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const verifiedReceived=lines.reduce((total,line)=>total+line.packages.reduce((count,pkg)=>
     count+((line.source!=='supplier_excel'||(pkg.verified&&!pkg.notReceived))?Number(pkg.quantity)||0:0),0),0);
   const importShortage=lines.some(line=>line.source==='supplier_excel' && line.packages.some(pkg=>
-    pkg.notReceived||(pkg.verified&&Number(pkg.quantity)!==Number(pkg.expectedQuantity)));
+    pkg.notReceived||(pkg.verified&&Number(pkg.quantity)!==Number(pkg.expectedQuantity))));
   const checkedLots=lines.reduce((count,line)=>count+line.packages.filter(pkg=>
     line.source==='supplier_excel'&&(pkg.verified||pkg.notReceived)).length,0);
 
