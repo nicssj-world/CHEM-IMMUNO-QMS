@@ -9,6 +9,8 @@ import { BarcodeScanner, type ScanFeedback } from './barcode-scanner';
 import { ScanLine, X } from 'lucide-react';
 import { invoiceNumberFromScan } from '@/lib/invoice-barcode';
 import { InvoiceReagentPicker } from './invoice-reagent-picker';
+import { ReceiveExcelImport } from './receive-excel-import';
+import { supplierChecklistError } from '@/lib/supplier-bill-import';
 import { IntegerQuantityInput } from './integer-quantity-input';
 import { ReceiptAssessmentFields } from './receipt-assessment-fields';
 import { assessmentError, type AssessmentInput } from '@/lib/receipt-assessment';
@@ -16,7 +18,7 @@ import { resolveProductScan, checkLotExpiryConflict, proposeScanMapping, registe
 import { preselectLocation } from '@/lib/receive-location';
 import { createReceivingWizardDraft, saveReceivingWizardDraft, finalizeReceivingWizard } from '@/app/actions/receiving-wizard';
 import { wizardHeaderError, wizardLineError, wizardTotals, restoreWizardAssessment, appendWizardScan,
-  type WizardDraft, type WizardHeader, type WizardLine, type WizardLot, type WizardLocation, type WizardProduct } from '@/lib/receiving-wizard';
+  importedLinesForFinalization, type WizardDraft, type WizardHeader, type WizardLine, type WizardLot, type WizardLocation, type WizardProduct } from '@/lib/receiving-wizard';
 import { scannedReceivingDefaults } from '@/lib/receiving-scan-defaults';
 import { ScanIntakeGate } from '@/lib/scan-intake-gate';
 import { userMessage } from '@/lib/messages';
@@ -165,6 +167,13 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   const locationsById=new Map(locations.map(p=>[p.id,p]));
   const vendorsById=new Map(vendors.map(p=>[p.id,p]));
   const totals=wizardTotals(lines);
+  const isImported=lines.some(line=>line.source==='supplier_excel');
+  const verifiedReceived=lines.reduce((total,line)=>total+line.packages.reduce((count,pkg)=>
+    count+((line.source!=='supplier_excel'||(pkg.verified&&!pkg.notReceived))?Number(pkg.quantity)||0:0),0),0);
+  const importShortage=lines.some(line=>line.source==='supplier_excel' && line.packages.some(pkg=>
+    pkg.notReceived||(pkg.verified&&Number(pkg.quantity)!==Number(pkg.expectedQuantity)));
+  const checkedLots=lines.reduce((count,line)=>count+line.packages.filter(pkg=>
+    line.source==='supplier_excel'&&(pkg.verified||pkg.notReceived)).length,0);
 
   function onInvoiceScan(raw:string,symbology:string) {
     const result=invoiceNumberFromScan(raw,symbology);
@@ -190,7 +199,12 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     const chosenLocation=change.locationId;
     if(chosenLocation && locationsById.has(chosenLocation))
       setSessionLocationId(current=>current || chosenLocation);
-    alterLine(lineId,line=>({...line,packages:line.packages.map(pkg=>pkg.id===lotId?{...pkg,...change}:pkg)}));
+    alterLine(lineId,line=>({...line,packages:line.packages.map(pkg=>{
+      if(pkg.id!==lotId)return pkg;
+      const recheck=line.source==='supplier_excel'&&
+        ['lot','expiry','quantity','locationId'].some(key=>key in change);
+      return {...pkg,...change,...(recheck?{verified:false,notReceived:false}:{})};
+    })}));
   }
   function addProduct(productId:string) {
     if(!productId)return;
@@ -326,8 +340,10 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
     setError('');setNotice('');
     const headerIssue=wizardHeaderError(header);
     if(headerIssue){setError(headerIssue);setStep(1);return;}
-    if(nextStep>=3) {
-      const lineIssue=wizardLineError(lines,products,locations);
+    if(nextStep>=3 && (!isImported || nextStep>=4)) {
+      const checklistIssue=isImported?supplierChecklistError(lines):null;
+      if(checklistIssue){setError(checklistIssue);setStep(3);return;}
+      const lineIssue=wizardLineError(isImported?importedLinesForFinalization(lines):lines,products,locations);
       if(lineIssue){setError(lineIssue);setStep(2);return;}
     }
     startTransition(async()=>{
@@ -364,7 +380,9 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   }
 
   function complete() {
-    const lineIssue=wizardLineError(lines,products,locations);
+    const checklistIssue=supplierChecklistError(lines);
+    if(checklistIssue){setError(checklistIssue);setStep(3);return;}
+    const lineIssue=wizardLineError(importedLinesForFinalization(lines),products,locations);
     if(lineIssue){setError(lineIssue);setStep(2);return;}
     const assessmentIssue=assessmentError(assessment);
     if(assessmentIssue){setError(assessmentIssue);return;}
@@ -394,7 +412,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
   }
 
   const summary=<div className="grid grid-cols-3 gap-2">
-    {[{label:'น้ำยา',value:totals.products},{label:'LOT',value:totals.lots},{label:'จำนวนรับจริง',value:totals.received}].map(entry=>
+    {[{label:'น้ำยา',value:totals.products},{label:'LOT',value:totals.lots},{label:isImported&&step>=3?'รับจริงที่ตรวจแล้ว':isImported?'จำนวนตาม Bill':'จำนวนรับจริง',value:isImported&&step>=3?verifiedReceived:totals.received}].map(entry=>
       <div key={entry.label} className="min-w-0 rounded-lg bg-surface-2 p-3 text-center">
         <span className="text-xs muted block">{entry.label}</span>
         <strong className="block text-xl tabular-nums">{entry.value.toLocaleString('th-TH')}</strong>
@@ -449,6 +467,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         <label className="field min-w-0">เลขที่ PO (ถ้ามี)
           <input className="input" value={header.poNumber} onChange={e=>setHeader({...header,poNumber:e.target.value})} maxLength={200}/></label>
       </div>
+      <ReceiveExcelImport vendorId={header.vendorId}/>
       {invoiceScannerOpen && <section id="receive-invoice-scanner" className="rounded-xl border border-line p-3 sm:p-4 grid gap-3 min-w-0"
         aria-label="สแกนเลขที่ Invoice">
         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -493,7 +512,8 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
       <div><h2 className="font-bold text-lg">Step 2 · รับเข้าน้ำยา</h2>
         <p className="muted text-sm">สแกนแล้วตรวจรายละเอียดใน Popup · ระบุเฉพาะจำนวนรับจริง · รายการล่าสุดแสดงด้านบน</p></div>
       <div className="rounded-lg bg-surface-2 p-3 text-sm"><strong>Invoice {header.invoiceNumber}</strong> · {vendorsById.get(header.vendorId)?.name??'—'}</div>
-      <div className="contents">
+      {isImported&&<p className="notice text-sm">สร้างร่างจาก Excel แล้ว · แยก LOT ตามไฟล์ · ตรวจจำนวนและเลือก Location ที่ยังว่าง ก่อนเข้าหน้า Checklist · ไม่ต้องสแกน</p>}
+      {!isImported && <div className="contents">
         <h3 className="font-bold">เพิ่มน้ำยาจาก Barcode</h3>
         <label className="field min-w-0">ตำแหน่งสำหรับการสแกนต่อเนื่อง
           <select className="input" value={sessionLocationId} onChange={e=>{
@@ -576,7 +596,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         </div>}
         <h3 className="font-bold">หรือเพิ่มน้ำยาด้วยตนเอง</h3>
         <InvoiceReagentPicker products={products} value="" onChange={addProduct}/>
-      </div>
+      </div>}
       {lines.map((line,index)=>{
         const product=productsById.get(line.productId);
         const amount=line.packages.reduce((total,p)=>total+(Number(p.quantity)||0),0);
@@ -584,15 +604,15 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0"><strong>{index+1}. {product?.product_code??'น้ำยา'}</strong>
               <p className="muted text-sm break-words">{product?.display_name??'—'}</p></div>
-            <button className="button secondary text-[#a83442] shrink-0" disabled={pending} type="button"
-              onClick={()=>setWizardLines(old=>old.filter(item=>item.id!==line.id))}>ลบ</button>
+            {!isImported&&<button className="button secondary text-[#a83442] shrink-0" disabled={pending} type="button"
+              onClick={()=>setWizardLines(old=>old.filter(item=>item.id!==line.id))}>ลบ</button>}
           </div>
           <div className="grid gap-3">
             {line.packages.map((pkg,lotIndex)=><div key={pkg.id} className="rounded-lg bg-surface-2 p-3 grid gap-3">
               <div className="flex items-center justify-between gap-2">
                 <strong className="text-sm">LOT {lotIndex+1}</strong>
-                <button type="button" className="button secondary" disabled={line.packages.length<=1 || pending}
-                  onClick={()=>alterLine(line.id,old=>({...old,packages:old.packages.filter(p=>p.id!==pkg.id)}))}>ลบ LOT</button>
+                {!isImported&&<button type="button" className="button secondary" disabled={line.packages.length<=1 || pending}
+                  onClick={()=>alterLine(line.id,old=>({...old,packages:old.packages.filter(p=>p.id!==pkg.id)}))}>ลบ LOT</button>}
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 <label className="field min-w-0"><span>LOT <span className="text-[#b42318]">*</span></span>
@@ -620,8 +640,8 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
               </div>
             </div>)}
           </div>
-          <button className="button secondary justify-self-start" type="button" disabled={pending}
-            onClick={()=>alterLine(line.id,old=>({...old,packages:[makeLot(nextLotLocation(old)),...old.packages]}))}>+ เพิ่ม LOT</button>
+          {!isImported&&<button className="button secondary justify-self-start" type="button" disabled={pending}
+            onClick={()=>alterLine(line.id,old=>({...old,packages:[makeLot(nextLotLocation(old)),...old.packages]}))}>+ เพิ่ม LOT</button>}
           <p className="muted text-sm font-medium">รับจริงรวม {amount.toLocaleString('th-TH')} หน่วย · {line.packages.length} LOT</p>
         </article>;
       })}
@@ -638,18 +658,32 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
 
     {step===3 && <section className="surface p-4 sm:p-7 grid gap-4">
       <div><h2 className="font-bold text-lg">Step 3 · ตรวจสอบก่อนยืนยัน</h2>
-        <p className="muted text-sm">ตรวจทุกรายการให้ถูกต้อง ก่อนทำการประเมิน · ยังไม่เพิ่ม Stock</p></div>
+        <p className="muted text-sm">{isImported?'แตะ รับแล้ว หรือ ไม่ได้รับ แยกทีละ LOT · ข้อมูลจะบันทึกใน Draft โดยยังไม่เพิ่ม Stock':'ตรวจทุกรายการให้ถูกต้อง ก่อนทำการประเมิน · ยังไม่เพิ่ม Stock'}</p></div>
       <div className="rounded-xl bg-surface-2 p-4 text-sm grid gap-1">
         <strong>Invoice {header.invoiceNumber}</strong>
         <span>ผู้ขาย: {vendorsById.get(header.vendorId)?.name??'—'}</span>
         <span>วันที่: {header.invoiceDate} · PO: {header.poNumber||'—'}</span>
       </div>
+      {isImported&&<p className="rounded-lg bg-surface-2 p-3 text-sm font-semibold">ตรวจแล้ว {checkedLots}/{totals.lots} LOT · รับจริง {verifiedReceived.toLocaleString('th-TH')} หน่วย</p>}
       {lines.map(line=><div key={line.id} className="rounded-xl border border-line p-3 grid gap-2">
         <strong>{productsById.get(line.productId)?.product_code} · {productsById.get(line.productId)?.display_name}</strong>
         <p className="muted text-sm">รับจริง {line.packages.reduce((n,p)=>n+Number(p.quantity),0)} หน่วย · {line.packages.length} LOT</p>
-        {line.packages.map(pkg=><div key={pkg.id} className="rounded-lg bg-surface-2 p-3 text-sm">
-          <strong>LOT {pkg.lot}</strong> · {pkg.quantity} หน่วย
-          <p className="muted">หมดอายุ {pkg.expiry} · {locationsById.get(pkg.locationId)?.name??'ไม่พบตำแหน่ง'}</p>
+        {line.packages.map(pkg=><div key={pkg.id} className="rounded-lg bg-surface-2 p-3 text-sm grid gap-2">
+          <div><strong>LOT {pkg.lot}</strong> · {line.source==='supplier_excel'?'ตาม Bill '+pkg.expectedQuantity+' / รับจริง '+pkg.quantity:pkg.quantity} หน่วย
+            <p className="muted">หมดอายุ {pkg.expiry} · {locationsById.get(pkg.locationId)?.name??'ยังไม่ระบุตำแหน่ง'}</p></div>
+          {line.source==='supplier_excel'&&<div className="flex flex-wrap gap-2">
+            <button type="button" disabled={pending||!pkg.locationId||!Number.isSafeInteger(Number(pkg.quantity))||Number(pkg.quantity)<1}
+              className={pkg.verified?'button':'button secondary'} aria-pressed={Boolean(pkg.verified)}
+              onClick={()=>alterLot(line.id,pkg.id,{verified:!pkg.verified,notReceived:false})}>
+              {pkg.verified?'✓ รับแล้ว':'รับแล้ว ✓'}
+            </button>
+            <button type="button" disabled={pending} aria-pressed={Boolean(pkg.notReceived)}
+              className={pkg.notReceived?'button':'button secondary'}
+              onClick={()=>alterLot(line.id,pkg.id,{notReceived:!pkg.notReceived,verified:false})}>
+              {pkg.notReceived?'✓ ไม่ได้รับ':'ไม่ได้รับ'}
+            </button>
+            {!pkg.locationId&&!pkg.notReceived&&<span className="text-xs text-amber-800 self-center">กรุณาเลือก Location ใน Step 2 ก่อนติ๊กรับ</span>}
+          </div>}
         </div>)}
       </div>)}
       {summary}
@@ -665,6 +699,7 @@ export function ReceivingWizard({vendors,products,locations,initialDraft,recentI
         <p className="muted text-sm">เมื่อยืนยัน ระบบสร้าง Invoice และบันทึก Stock กับผลประเมินเป็นธุรกรรมเดียว</p></div>
       {summary}
       {selectedEvidence&&<p className="muted text-sm">เอกสารรอแนบ: {selectedEvidence.name}</p>}
+      {isImported&&importShortage&&<p className="notice text-sm">มีรายการรับไม่ครบตาม Excel · Invoice จะคงยอดค้างรับ โปรดเลือก “พบปัญหา” ในความถูกต้องของรายการและระบุหมายเหตุในแบบประเมิน</p>}
       <ReceiptAssessmentFields value={assessment} onChange={setAssessment}/>
       <button className="button secondary justify-self-start" type="button" disabled={pending} onClick={()=>save(4)}>บันทึกแบบประเมินเป็นร่าง</button>
       {completedInvoiceId && <div className="notice grid gap-3" role="status">
