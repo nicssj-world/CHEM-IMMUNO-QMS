@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Search } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { SearchInput } from './search-input';
 import type { IssueCartLine } from '@/lib/issue-cart';
 import type { IssueCandidate, IssueProduct } from './issue-group-workbench';
 
@@ -147,19 +148,14 @@ export function IssuePrepareCatalog({
 
   return <div className="grid gap-3">
     <div className="grid gap-1.5">
-      <label htmlFor="issue-prepare-query" className="font-semibold text-sm">รายการน้ำยาในคลัง</label>
-      <div className="relative">
-        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden />
-        <input id="issue-prepare-query" type="search" className="input w-full pl-10"
-          placeholder="ค้นหาชื่อน้ำยา รหัสสินค้า LOT หรือตำแหน่ง"
-          value={query} onChange={event => {
-            setQuery(event.target.value);
-            if (event.target.value.trim()) {
-              setExpandedWarehouses(warehouses.map(w => w.id));
-              setCollapsedProducts([]);
-            }
-          }} />
-      </div>
+      <SearchInput label="รายการน้ำยาในคลัง" placeholder="ค้นหาชื่อน้ำยา รหัสสินค้า LOT หรือตำแหน่ง"
+        value={query} onChange={value => {
+          setQuery(value);
+          if (value.trim()) {
+            setExpandedWarehouses(warehouses.map(w => w.id));
+            setCollapsedProducts([]);
+          }
+        }} />
       <p className="muted text-sm">เลือก LOT ที่ต้องการแล้วกรอกจำนวน ระบบจะแยกตำแหน่งหยิบให้อัตโนมัติ</p>
     </div>
 
@@ -177,8 +173,9 @@ export function IssuePrepareCatalog({
           <span className="muted text-sm text-right">{groups.length} น้ำยา · เลือก {countSelected} รายการ</span>
         </button>
         {open && <div id={'issue-warehouse-' + warehouse.id} className="divide-y divide-line">
-          {groups.map(group => {
+          {groups.map((group, productIndex) => {
             const product = group.product;
+            const empty = group.lots.length === 0;
             const collapsed = collapsedProducts.includes(product.id);
             const countSelectedLocations = group.lots.reduce((sum, lot) =>
               sum + lot.locations.filter(position =>
@@ -186,28 +183,38 @@ export function IssuePrepareCatalog({
             const selectedQty = group.lots.reduce((sum, lot) => sum +
               lot.locations.reduce((total, position) =>
                 total + (selected.get(keyOf(position.lot_id, position.location_id))?.quantity || 0), 0), 0);
+            // Soft alternating headers distinguish reagents; status colors retain their meaning.
+            const headerTone = empty
+              ? 'bg-slate-50/70 border-l-slate-200 text-slate-500'
+              : countSelectedLocations > 0
+                ? 'bg-teal-50 border-l-teal-500 hover:bg-teal-100/70'
+                : productIndex % 2 === 0
+                  ? 'bg-slate-50 border-l-slate-300 hover:bg-slate-100'
+                  : 'bg-sky-50/80 border-l-sky-400 hover:bg-sky-100/80';
             return <div key={product.id}>
-              <button type="button"
-                className="w-full min-h-14 flex items-start justify-between gap-3 px-3 sm:px-4 py-3 text-left hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-teal-700"
-                aria-expanded={!collapsed} aria-controls={'issue-product-' + product.id}
+              <button type="button" disabled={empty}
+                className={'w-full min-h-14 border-l-4 flex items-start justify-between gap-3 px-3 sm:px-4 py-3 text-left focus-visible:outline-2 focus-visible:outline-teal-700 ' + headerTone}
+                aria-expanded={empty ? undefined : !collapsed}
+                aria-controls={empty ? undefined : 'issue-product-' + product.id}
                 onClick={() => setCollapsedProducts(previous => collapsed
                   ? previous.filter(id => id !== product.id) : [...previous, product.id])}>
                 <span className="flex items-start gap-2 min-w-0">
                   <span className="pt-0.5 shrink-0 text-slate-500">
-                    {collapsed ? <ChevronRight size={18} aria-hidden /> : <ChevronDown size={18} aria-hidden />}
+                    {!empty && (collapsed ? <ChevronRight size={18} aria-hidden /> : <ChevronDown size={18} aria-hidden />)}
                   </span>
                   <span className="min-w-0">
-                    <strong className="block text-sm text-slate-900">{product.product_code}</strong>
+                    <strong className={'block text-sm ' + (empty ? 'text-slate-500' : 'text-slate-900')}>{product.product_code}</strong>
                     <span className="block text-sm leading-5 break-words">{product.display_name}</span>
-                    <span className="block text-xs muted mt-1">{group.lots.length} LOT · คงเหลือรวม {formatQuantity(group.balance)}</span>
+                    <span className="block text-xs mt-1 text-slate-600">
+                      {empty ? 'ไม่มี LOT คงเหลือ' : group.lots.length + ' LOT · คงเหลือรวม ' + formatQuantity(group.balance)}
+                    </span>
                   </span>
                 </span>
                 {countSelectedLocations > 0 && <span className="shrink-0 text-right text-xs font-semibold text-teal-800 rounded-lg border border-teal-200 bg-teal-50 px-2 py-1">
                   เลือก {countSelectedLocations} · {formatQuantity(selectedQty)} ชิ้น
                 </span>}
               </button>
-              {!collapsed && <div id={'issue-product-' + product.id} className="pb-2 sm:pl-8">
-                {!group.lots.length && <p className="px-4 pb-3 muted text-sm">ยังไม่มี LOT คงเหลือ</p>}
+              {!empty && !collapsed && <div id={'issue-product-' + product.id} className="pb-2 sm:pl-8">
                 {group.lots.map(lot => {
                   const expired = lot.expiry < today;
                   const recommended = isFefo(product.id, lot.id);
@@ -231,21 +238,23 @@ export function IssuePrepareCatalog({
                         const baseId = 'issue-' + position.lot_id + '-' + position.location_id;
                         return <div key={position.location_id} className={'rounded-lg border px-2.5 py-2.5 sm:px-3 ' +
                           (item ? 'bg-white border-teal-300' : 'bg-white border-line')}>
-                          <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] sm:grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_8rem] items-center gap-x-3 gap-y-2">
+                          <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] sm:grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_8rem] items-center gap-x-3 gap-y-2.5">
                             <input type="checkbox" id={baseId} className="w-5 h-5 accent-teal-700"
                               aria-label={'เลือก ' + product.product_code + ' LOT ' + lot.number + ' ตำแหน่ง ' + position.location_code}
                               checked={Boolean(item)} disabled={!selectable && !item}
                               onChange={event => toggle(product, position, event.target.checked)} />
                             <label htmlFor={baseId} className="min-w-0 text-sm cursor-pointer">
-                              <span className="block font-medium break-words">{position.location_code}</span>
-                              <span className="block text-xs muted sm:hidden">คงเหลือ {formatQuantity(Number(position.balance))}</span>
+                              <span className="inline-flex max-w-full items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600 break-all">
+                                <span className="sr-only">ตำแหน่งจัดเก็บ </span>{position.location_code}
+                              </span>
+                              <span className="block text-xs muted mt-1 sm:hidden">คงเหลือ {formatQuantity(Number(position.balance))}</span>
                             </label>
                             <div className="hidden sm:block text-right text-sm tabular-nums">
                               <span className="block muted text-xs">คงเหลือ</span>
                               <strong>{formatQuantity(Number(position.balance))}</strong>
                             </div>
-                            <div className="col-start-3 row-start-1 sm:col-start-4">
-                              <label htmlFor={baseId + '-quantity'} className="block text-xs muted mb-1">จำนวนเบิก</label>
+                            <div className="col-start-3 row-start-1 sm:col-start-4 min-w-0">
+                              <label htmlFor={baseId + '-quantity'} className="block text-xs text-slate-600 mb-1">จำนวนเบิก</label>
                               <input id={baseId + '-quantity'} type="number" inputMode="numeric"
                                 step="1" min="1" max={position.balance}
                                 aria-invalid={invalidQty || undefined}
