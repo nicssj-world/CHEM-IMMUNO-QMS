@@ -38,14 +38,19 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
     const groupPageSize = 10;
     const requestedPage = Number(params.page);
     const groupPage = Number.isSafeInteger(requestedPage) && requestedPage >= 1 && requestedPage <= 10000 ? requestedPage : 1;
-    const [available, groups] = client && allowed.length ? await Promise.all([
+    const [available, groups, balances] = client && allowed.length ? await Promise.all([
       client.from('ci_fefo_candidates')
         .select('warehouse_id,product_id,lot_id,lot_number,expiry_date,location_id,balance')
         .in('warehouse_id',allowed).order('expiry_date').order('lot_number').limit(2000),
       client.from('ci_issue_groups').select('id,status,created_at',{count:'exact'})
         .in('status',['pending','picking']).order('created_at',{ascending:false})
         .range((groupPage-1)*groupPageSize,groupPage*groupPageSize-1),
-    ]) : [{data:[],error:null},{data:[],error:null,count:0}];
+      params.mode==='prepare'
+        ? client.from('ci_stock_balances')
+            .select('warehouse_id,product_id,lot_id,lot_number,expiry_date,location_id,balance')
+            .in('warehouse_id',allowed).gt('balance',0).order('expiry_date').order('lot_number').limit(2000)
+        : Promise.resolve({data:[],error:null}),
+    ]) : [{data:[],error:null},{data:[],error:null,count:0},{data:[],error:null}];
     const recent = groups.data ?? [];
     const {data:counts,error:countsError}=recent.length && client
       ? await client.from('ci_issue_group_lines').select('group_id,picked').in('group_id',recent.map(g=>g.id)).limit(2000)
@@ -55,9 +60,12 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
       return {id:g.id,status:g.status,created_at:g.created_at,
         line_count:subset.length,done_count:subset.filter(x=>x.picked).length};
     });
-    const allCandidates:IssueCandidate[]=(available.data??[]).map(x=>({
+    const availableKeys=new Set((available.data??[]).map(x=>x.lot_id+':'+x.location_id));
+    const sourceRows=params.mode==='prepare'?(balances.data??[]):(available.data??[]);
+    const allCandidates:IssueCandidate[]=sourceRows.map(x=>({
       ...x,warehouse_id:Number(x.warehouse_id),balance:Number(x.balance),
-      location_code:locations.get(x.location_id)??'—'
+      location_code:locations.get(x.location_id)??'—',
+      selectable:params.mode==='batch'||availableKeys.has(x.lot_id+':'+x.location_id),
     }));
     const scopedProducts:IssueProduct[]=products.filter(p=>allowed.includes(Number(p.warehouse_id)));
     return <main className="grid gap-5 max-w-[1050px]">
@@ -69,9 +77,10 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
         <Link className={'button text-center text-xs sm:text-sm min-h-12 px-2 '+(params.mode==='batch'?'':'secondary')} href="/issue?mode=batch">สแกนแบบชุด</Link>
         <Link className={'button text-center text-xs sm:text-sm min-h-12 px-2 '+(params.mode==='prepare'?'':'secondary')} href="/issue?mode=prepare">สร้างรายการเบิก</Link>
       </nav>
-      {(available.error||groups.error||countsError)&&<p role="alert" className="error">โหลดข้อมูลรายการเบิกไม่ได้ กรุณาลองใหม่</p>}
+      {(available.error||groups.error||balances.error||countsError)&&<p role="alert" className="error">โหลดข้อมูลรายการเบิกไม่ได้ กรุณาลองใหม่</p>}
       {!allowed.length?<p className="notice">บัญชีนี้ไม่มีสิทธิ์เบิกสินค้า</p>
-        :!(available.error||groups.error||countsError)&&<IssueGroupWorkbench mode={params.mode} products={scopedProducts}
+        :!(available.error||groups.error||balances.error||countsError)&&<IssueGroupWorkbench mode={params.mode} products={scopedProducts}
+           warehouses={access.warehouses.filter(w=>allowed.includes(Number(w.id))).map(w=>({id:Number(w.id),code:w.code}))}
            candidates={allCandidates} openGroups={openGroups} groupPage={groupPage} groupPageSize={groupPageSize}
            groupTotal={groups.count??0}/>}
     </main>;
