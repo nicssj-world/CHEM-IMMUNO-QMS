@@ -7,7 +7,14 @@ import type { IssueCandidate, IssueProduct } from './issue-group-workbench';
 
 export type IssueWarehouse = { id: number; code: string };
 
-type CatalogRow = { product: IssueProduct; candidate: IssueCandidate | null };
+type LotGroup = {
+  id: string;
+  number: string;
+  expiry: string;
+  locations: IssueCandidate[];
+  balance: number;
+};
+type ProductGroup = { product: IssueProduct; lots: LotGroup[]; balance: number };
 const keyOf = (lotId: string, locationId: string) => lotId + ':' + locationId;
 const formatDate = (value: string) => {
   const [year, month, day] = value.split('-');
@@ -21,7 +28,9 @@ function warehouseTitle(code: string) {
   return code;
 }
 
-/** Prepare-only stock table. LOT/location identity and FEFO remain authoritative. */
+/** One product heading, one LOT heading, and one selectable row per physical location.
+ * Selecting a row never mutates inventory; group creation and closing are separate RPCs.
+ */
 export function IssuePrepareCatalog({
   warehouses, products, candidates, lines, onChange,
 }: {
@@ -32,45 +41,65 @@ export function IssuePrepareCatalog({
   onChange: (next: IssueCartLine[]) => void;
 }) {
   const [query, setQuery] = useState('');
-  const [expanded, setExpanded] = useState<number[]>(() => warehouses.length ? [warehouses[0].id] : []);
+  const [expandedWarehouses, setExpandedWarehouses] = useState<number[]>(() =>
+    warehouses.length ? [warehouses[0].id] : []);
+  // Every product starts open so a new user can select LOTs without extra clicks.
+  const [collapsedProducts, setCollapsedProducts] = useState<string[]>([]);
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });
   const selected = new Map(lines.map(line => [keyOf(line.lot_id, line.location_id), line]));
+
   const prepared = useMemo(() => {
     const byProduct = new Map<string, IssueCandidate[]>();
     for (const candidate of candidates) {
-      const existing = byProduct.get(candidate.product_id) ?? [];
-      existing.push(candidate);
-      byProduct.set(candidate.product_id, existing);
+      const list = byProduct.get(candidate.product_id) ?? [];
+      list.push(candidate);
+      byProduct.set(candidate.product_id, list);
     }
-    for (const options of byProduct.values()) {
-      options.sort((a, b) =>
-        a.expiry_date.localeCompare(b.expiry_date) ||
-        a.lot_number.localeCompare(b.lot_number) ||
-        a.lot_id.localeCompare(b.lot_id) ||
-        a.location_code.localeCompare(b.location_code));
-    }
-    const byWarehouse = new Map<number, CatalogRow[]>();
-    for (const product of [...products].sort((a, b) => a.product_code.localeCompare(b.product_code))) {
-      const rows = byWarehouse.get(product.warehouse_id) ?? [];
-      const options = byProduct.get(product.id) ?? [];
-      if (options.length === 0) rows.push({ product, candidate: null });
-      else for (const candidate of options) rows.push({ product, candidate });
-      byWarehouse.set(product.warehouse_id, rows);
-    }
+    const byWarehouse = new Map<number, ProductGroup[]>();
     const firstFefo = new Map<string, string>();
-    for (const [productId, options] of byProduct) {
-      const first = options.find(x => x.selectable !== false && x.balance > 0 && x.expiry_date >= today);
-      if (first) firstFefo.set(productId, first.lot_id);
+    for (const product of [...products].sort((a, b) =>
+      a.product_code.localeCompare(b.product_code) || a.id.localeCompare(b.id))) {
+      const options = byProduct.get(product.id) ?? [];
+      const lotMap = new Map<string, LotGroup>();
+      for (const option of options) {
+        const entry = lotMap.get(option.lot_id) ?? {
+          id: option.lot_id, number: option.lot_number, expiry: option.expiry_date,
+          locations: [], balance: 0,
+        };
+        entry.locations.push(option);
+        entry.balance += Number(option.balance);
+        lotMap.set(option.lot_id, entry);
+      }
+      const lots = [...lotMap.values()].sort((a, b) =>
+        a.expiry.localeCompare(b.expiry) || a.number.localeCompare(b.number) ||
+        a.id.localeCompare(b.id));
+      for (const lot of lots) {
+        lot.locations.sort((a, b) =>
+          a.location_code.localeCompare(b.location_code) ||
+          a.location_id.localeCompare(b.location_id));
+      }
+      const earliest = lots.find(lot =>
+        lot.locations.some(position =>
+          position.selectable !== false && position.balance > 0 && position.expiry_date >= today));
+      if (earliest) firstFefo.set(product.id, earliest.id);
+      const group = byWarehouse.get(product.warehouse_id) ?? [];
+      group.push({
+        product,
+        lots,
+        balance: lots.reduce((sum, lot) => sum + lot.balance, 0),
+      });
+      byWarehouse.set(product.warehouse_id, group);
     }
     return { byWarehouse, firstFefo };
   }, [products, candidates, today]);
 
-  function isFefo(candidate: IssueCandidate) {
-    return prepared.firstFefo.get(candidate.product_id) === candidate.lot_id;
+  function isFefo(productId: string, lotId: string) {
+    return prepared.firstFefo.get(productId) === lotId;
   }
   function updateLine(candidate: IssueCandidate, change: Partial<IssueCartLine>) {
     const key = keyOf(candidate.lot_id, candidate.location_id);
-    onChange(lines.map(line => keyOf(line.lot_id, line.location_id) === key ? { ...line, ...change } : line));
+    onChange(lines.map(line =>
+      keyOf(line.lot_id, line.location_id) === key ? { ...line, ...change } : line));
   }
   function toggle(product: IssueProduct, candidate: IssueCandidate, checked: boolean) {
     const key = keyOf(candidate.lot_id, candidate.location_id);
@@ -78,8 +107,8 @@ export function IssuePrepareCatalog({
       onChange(lines.filter(line => keyOf(line.lot_id, line.location_id) !== key));
       return;
     }
-    if (candidate.selectable === false || candidate.balance <= 0 || candidate.expiry_date < today || lines.length >= 100) return;
-    if (selected.has(key)) return;
+    if (candidate.selectable === false || candidate.balance <= 0 ||
+        candidate.expiry_date < today || lines.length >= 100 || selected.has(key)) return;
     onChange([...lines, {
       product_id: product.id,
       product_code: product.product_code,
@@ -96,110 +125,157 @@ export function IssuePrepareCatalog({
     }]);
   }
   const needle = query.trim().toLocaleLowerCase();
-  const groupCounts = warehouses.map(warehouse => {
-    const rows = (prepared.byWarehouse.get(warehouse.id) ?? []).filter(row =>
-      !needle || [row.product.product_code, row.product.display_name, row.candidate?.lot_number ?? '', row.candidate?.location_code ?? '']
-        .some(value => value.toLocaleLowerCase().includes(needle)));
-    return { warehouse, rows, selectedCount: rows.filter(row => row.candidate && selected.has(keyOf(row.candidate.lot_id, row.candidate.location_id))).length };
+  const warehousesWithProducts = warehouses.map(warehouse => {
+    const groups = (prepared.byWarehouse.get(warehouse.id) ?? []).flatMap(group => {
+      const matchesProduct = [group.product.product_code, group.product.display_name]
+        .some(value => value.toLocaleLowerCase().includes(needle));
+      const lots = !needle || matchesProduct ? group.lots : group.lots.flatMap(lot => {
+        const matchesLot = lot.number.toLocaleLowerCase().includes(needle);
+        if (matchesLot) return [lot];
+        const positions = lot.locations.filter(candidate =>
+          candidate.location_code.toLocaleLowerCase().includes(needle));
+        return positions.length ? [{ ...lot, locations: positions }] : [];
+      });
+      return !needle || matchesProduct || lots.length ? [{ ...group, lots }] : [];
+    });
+    const countSelected = groups.reduce((sum, group) =>
+      sum + group.lots.reduce((lotSum, lot) =>
+        lotSum + lot.locations.filter(position =>
+          selected.has(keyOf(position.lot_id, position.location_id))).length, 0), 0);
+    return { warehouse, groups, countSelected };
   });
 
   return <div className="grid gap-3">
-    <div className="grid gap-1">
+    <div className="grid gap-1.5">
       <label htmlFor="issue-prepare-query" className="font-semibold text-sm">รายการน้ำยาในคลัง</label>
       <div className="relative">
         <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden />
         <input id="issue-prepare-query" type="search" className="input w-full pl-10"
-          placeholder="แสดงทั้งหมด หรือค้นหาชื่อสินค้า / รหัส / LOT"
-          value={query} onChange={event => setQuery(event.target.value)} />
+          placeholder="ค้นหาชื่อน้ำยา รหัสสินค้า LOT หรือตำแหน่ง"
+          value={query} onChange={event => {
+            setQuery(event.target.value);
+            if (event.target.value.trim()) {
+              setExpandedWarehouses(warehouses.map(w => w.id));
+              setCollapsedProducts([]);
+            }
+          }} />
       </div>
-      <p className="muted text-xs">ติ๊กเลือก LOT และตำแหน่ง แล้วกรอกจำนวนที่ต้องการเบิก (เริ่มที่ 1) · ข้อมูล EXP และคงเหลือแสดงแยกตาม LOT</p>
+      <p className="muted text-sm">เลือก LOT ที่ต้องการแล้วกรอกจำนวน ระบบจะแยกตำแหน่งหยิบให้อัตโนมัติ</p>
     </div>
-    {groupCounts.map(({ warehouse, rows, selectedCount }) => {
-      const open = Boolean(needle) || expanded.includes(warehouse.id);
-      const title = warehouseTitle(warehouse.code);
-      return <section key={warehouse.id} className="border border-line rounded-xl overflow-hidden">
-        <button type="button" className="w-full flex items-center justify-between gap-2 px-4 py-3 bg-surface-2 text-left"
+
+    {warehousesWithProducts.map(({ warehouse, groups, countSelected }) => {
+      const open = expandedWarehouses.includes(warehouse.id);
+      return <section key={warehouse.id} className="rounded-xl border border-line overflow-hidden">
+        <button type="button" className="w-full min-h-12 flex items-center justify-between gap-3 px-4 py-3 bg-surface-2 text-left focus-visible:outline-2 focus-visible:outline-teal-700"
           aria-expanded={open} aria-controls={'issue-warehouse-' + warehouse.id}
-          onClick={() => setExpanded(current => current.includes(warehouse.id)
+          onClick={() => setExpandedWarehouses(current => open
             ? current.filter(id => id !== warehouse.id) : [...current, warehouse.id])}>
           <span className="flex items-center gap-2 font-bold">
             {open ? <ChevronDown size={18} aria-hidden /> : <ChevronRight size={18} aria-hidden />}
-            {title}
+            {warehouseTitle(warehouse.code)}
           </span>
-          <span className="muted text-sm">{rows.length} แถว · เลือก {selectedCount}</span>
+          <span className="muted text-sm text-right">{groups.length} น้ำยา · เลือก {countSelected} รายการ</span>
         </button>
-        {open && <div id={'issue-warehouse-' + warehouse.id} className="overflow-x-auto">
-          <table className="w-full min-w-[780px] text-sm border-collapse">
-            <thead className="bg-slate-50 text-left">
-              <tr className="border-b border-line">
-                <th scope="col" className="p-3 w-12">เลือก</th>
-                <th scope="col" className="p-3">สินค้า</th>
-                <th scope="col" className="p-3">LOT</th>
-                <th scope="col" className="p-3 whitespace-nowrap">EXP</th>
-                <th scope="col" className="p-3">ตำแหน่ง</th>
-                <th scope="col" className="p-3 text-right whitespace-nowrap">คงเหลือ</th>
-                <th scope="col" className="p-3 w-28">จำนวนเบิก</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ product, candidate }) => {
-                const key = candidate ? keyOf(candidate.lot_id, candidate.location_id) : product.id + ':empty';
-                const item = candidate ? selected.get(key) : undefined;
-                const expired = Boolean(candidate && candidate.expiry_date < today);
-                const selectable = Boolean(candidate && candidate.selectable !== false && !expired && candidate.balance > 0);
-                const isOldest = candidate ? isFefo(candidate) : false;
-                return <tr key={key} className={'border-b border-line last:border-none align-top ' + (item ? 'bg-teal-50/60' : expired ? 'bg-rose-50/40' : '')}>
-                  <td className="p-3">
-                    <input type="checkbox" aria-label={'เลือก ' + product.product_code + ' LOT ' + (candidate?.lot_number ?? 'ไม่มี')}
-                      checked={Boolean(item)} disabled={!selectable && !item}
-                      className="w-5 h-5 accent-teal-700 cursor-pointer"
-                      onChange={event => candidate && toggle(product, candidate, event.target.checked)} />
-                  </td>
-                  <td className="p-3 min-w-48">
-                    <strong className="block">{product.product_code}</strong>
-                    <span>{product.display_name}</span>
-                  </td>
-                  <td className="p-3 whitespace-nowrap">
-                    {candidate ? <><span className="font-medium">{candidate.lot_number}</span>
-                      {isOldest && <span className="ml-1 text-xs font-bold text-emerald-700">FEFO</span>}
-                    </> : <span className="muted">ไม่มี LOT คงเหลือ</span>}
-                  </td>
-                  <td className="p-3 whitespace-nowrap">
-                    {candidate ? <><span>{formatDate(candidate.expiry_date)}</span>
-                      {expired && <span className="block text-rose-700 text-xs font-bold">หมดอายุ</span>}
-                      {!expired && !selectable && <span className="block text-amber-700 text-xs">ไม่พร้อมเบิก</span>}
-                    </> : '—'}
-                  </td>
-                  <td className="p-3 whitespace-nowrap">{candidate?.location_code ?? '—'}</td>
-                  <td className="p-3 text-right tabular-nums font-semibold">{formatQuantity(Number(candidate?.balance ?? 0))}</td>
-                  <td className="p-3">
-                    <input type="number" inputMode="numeric" step="1" min="1"
-                      max={candidate?.balance} className="input w-24 text-right tabular-nums"
-                      aria-label={'จำนวนเบิก ' + product.product_code + ' LOT ' + (candidate?.lot_number ?? '')}
-                      disabled={!item} value={item?.quantity ?? ''}
-                      onChange={event => candidate && updateLine(candidate, { quantity: Number(event.target.value) })} />
-                    {item && (!Number.isSafeInteger(item.quantity) || item.quantity < 1 || item.quantity > Number(candidate?.balance)) &&
-                      <span className="block text-rose-700 text-xs mt-1">จำนวนไม่ถูกต้อง</span>}
-                    {item && !isOldest && candidate && <div className="mt-2">
-                      <label htmlFor={'reason-' + candidate.lot_id + '-' + candidate.location_id} className="text-xs text-amber-800 font-semibold">
-                        เหตุผลไม่ใช้ FEFO *
-                      </label>
-                      <input id={'reason-' + candidate.lot_id + '-' + candidate.location_id}
-                        type="text" maxLength={500} required
-                        className="input w-40 text-xs mt-1" placeholder="ระบุเหตุผล"
-                        value={item.override_reason}
-                        onChange={event => updateLine(candidate, { override_reason: event.target.value })}/>
-                    </div>}
-                  </td>
-                </tr>;
-              })}
-              {!rows.length && <tr><td colSpan={7} className="p-5 text-center muted">ไม่มีรายการในคลังนี้ที่ตรงกับคำค้นหา</td></tr>}
-            </tbody>
-          </table>
+        {open && <div id={'issue-warehouse-' + warehouse.id} className="divide-y divide-line">
+          {groups.map(group => {
+            const product = group.product;
+            const collapsed = collapsedProducts.includes(product.id);
+            const countSelectedLocations = group.lots.reduce((sum, lot) =>
+              sum + lot.locations.filter(position =>
+                selected.has(keyOf(position.lot_id, position.location_id))).length, 0);
+            const selectedQty = group.lots.reduce((sum, lot) => sum +
+              lot.locations.reduce((total, position) =>
+                total + (selected.get(keyOf(position.lot_id, position.location_id))?.quantity || 0), 0), 0);
+            return <div key={product.id}>
+              <button type="button"
+                className="w-full min-h-14 flex items-start justify-between gap-3 px-3 sm:px-4 py-3 text-left hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-teal-700"
+                aria-expanded={!collapsed} aria-controls={'issue-product-' + product.id}
+                onClick={() => setCollapsedProducts(previous => collapsed
+                  ? previous.filter(id => id !== product.id) : [...previous, product.id])}>
+                <span className="flex items-start gap-2 min-w-0">
+                  <span className="pt-0.5 shrink-0 text-slate-500">
+                    {collapsed ? <ChevronRight size={18} aria-hidden /> : <ChevronDown size={18} aria-hidden />}
+                  </span>
+                  <span className="min-w-0">
+                    <strong className="block text-sm text-slate-900">{product.product_code}</strong>
+                    <span className="block text-sm leading-5 break-words">{product.display_name}</span>
+                    <span className="block text-xs muted mt-1">{group.lots.length} LOT · คงเหลือรวม {formatQuantity(group.balance)}</span>
+                  </span>
+                </span>
+                {countSelectedLocations > 0 && <span className="shrink-0 text-right text-xs font-semibold text-teal-800 rounded-lg border border-teal-200 bg-teal-50 px-2 py-1">
+                  เลือก {countSelectedLocations} · {formatQuantity(selectedQty)} ชิ้น
+                </span>}
+              </button>
+              {!collapsed && <div id={'issue-product-' + product.id} className="pb-2 sm:pl-8">
+                {!group.lots.length && <p className="px-4 pb-3 muted text-sm">ยังไม่มี LOT คงเหลือ</p>}
+                {group.lots.map(lot => {
+                  const expired = lot.expiry < today;
+                  const recommended = isFefo(product.id, lot.id);
+                  return <div key={lot.id} className="border-t border-line/80 bg-slate-50/60 px-3 sm:px-4 py-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <strong className="text-sm text-slate-900">LOT {lot.number}</strong>
+                        {recommended && <span className="rounded bg-emerald-100 text-emerald-800 text-xs font-bold px-1.5 py-0.5">FEFO</span>}
+                        {expired && <span className="rounded bg-rose-100 text-rose-800 text-xs font-bold px-1.5 py-0.5">หมดอายุ</span>}
+                        <span className={'text-xs ' + (expired ? 'text-rose-700 font-semibold' : 'muted')}>EXP {formatDate(lot.expiry)}</span>
+                      </div>
+                      <span className="text-xs muted">คงเหลือ LOT นี้ <strong className="text-slate-900">{formatQuantity(lot.balance)}</strong></span>
+                    </div>
+                    <div className="grid gap-2">
+                      {lot.locations.map(position => {
+                        const item = selected.get(keyOf(position.lot_id, position.location_id));
+                        const selectable = position.selectable !== false && position.balance > 0 && !expired;
+                        const invalidQty = Boolean(item && (!Number.isSafeInteger(item.quantity) ||
+                          item.quantity < 1 || item.quantity > Number(position.balance)));
+                        const needsReason = Boolean(item && !recommended);
+                        const baseId = 'issue-' + position.lot_id + '-' + position.location_id;
+                        return <div key={position.location_id} className={'rounded-lg border px-2.5 py-2.5 sm:px-3 ' +
+                          (item ? 'bg-white border-teal-300' : 'bg-white border-line')}>
+                          <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] sm:grid-cols-[1.5rem_minmax(0,1fr)_5.5rem_8rem] items-center gap-x-3 gap-y-2">
+                            <input type="checkbox" id={baseId} className="w-5 h-5 accent-teal-700"
+                              aria-label={'เลือก ' + product.product_code + ' LOT ' + lot.number + ' ตำแหน่ง ' + position.location_code}
+                              checked={Boolean(item)} disabled={!selectable && !item}
+                              onChange={event => toggle(product, position, event.target.checked)} />
+                            <label htmlFor={baseId} className="min-w-0 text-sm cursor-pointer">
+                              <span className="block font-medium break-words">{position.location_code}</span>
+                              <span className="block text-xs muted sm:hidden">คงเหลือ {formatQuantity(Number(position.balance))}</span>
+                            </label>
+                            <div className="hidden sm:block text-right text-sm tabular-nums">
+                              <span className="block muted text-xs">คงเหลือ</span>
+                              <strong>{formatQuantity(Number(position.balance))}</strong>
+                            </div>
+                            <div className="col-start-3 row-start-1 sm:col-start-4">
+                              <label htmlFor={baseId + '-quantity'} className="block text-xs muted mb-1">จำนวนเบิก</label>
+                              <input id={baseId + '-quantity'} type="number" inputMode="numeric"
+                                step="1" min="1" max={position.balance}
+                                aria-invalid={invalidQty || undefined}
+                                className="input w-24 sm:w-full min-h-11 text-base text-right tabular-nums"
+                                disabled={!item} value={item?.quantity ?? ''}
+                                onChange={event => updateLine(position, { quantity: Number(event.target.value) })} />
+                            </div>
+                          </div>
+                          {invalidQty && <p role="alert" className="text-xs text-rose-700 mt-1">กรุณากรอกจำนวน 1–{formatQuantity(Number(position.balance))}</p>}
+                          {needsReason && <div className="mt-2">
+                            <label htmlFor={baseId + '-reason'} className="block text-xs font-semibold text-amber-800 mb-1">เหตุผลที่ไม่ใช้ LOT ตาม FEFO *</label>
+                            <input id={baseId + '-reason'} type="text" required maxLength={500}
+                              value={item?.override_reason ?? ''}
+                              onChange={event => updateLine(position, { override_reason: event.target.value })}
+                              placeholder="ระบุเหตุผล" className="input w-full min-h-11 text-base" />
+                          </div>}
+                          {!selectable && !item && <p className="text-xs text-rose-700 mt-1">{expired ? 'LOT หมดอายุ ไม่สามารถเบิกได้' : 'LOT นี้ไม่พร้อมเบิก'}</p>}
+                        </div>;
+                      })}
+                    </div>
+                  </div>;
+                })}
+              </div>}
+            </div>;
+          })}
+          {!groups.length && <p className="p-5 text-center muted text-sm">ไม่พบน้ำยาที่ตรงกับคำค้นหาในคลังนี้</p>}
         </div>}
       </section>;
     })}
-    {lines.length >= 100 && <p role="alert" className="text-sm text-amber-800">เลือกได้สูงสุด 100 แถวต่อ Checklist กรุณาสร้างรายการนี้ก่อน</p>}
-    <p className="muted text-xs">LOT หมดอายุหรือไม่พร้อมเบิกจะแสดงเพื่ออ้างอิง แต่ไม่สามารถเลือกได้ · ยอด Stock จะตรวจอีกครั้งเมื่อปิด Checklist</p>
+    {lines.length >= 100 && <p role="alert" className="text-sm text-amber-800">เลือกได้สูงสุด 100 รายการต่อ Checklist กรุณาสร้างรายการนี้ก่อน</p>}
+    <p className="muted text-xs">น้ำยาหนึ่งรายการอาจมีหลาย LOT · เลือกจำนวนแยกตามตำแหน่ง · LOT หมดอายุแสดงเพื่ออ้างอิงแต่เลือกไม่ได้</p>
   </div>;
 }
