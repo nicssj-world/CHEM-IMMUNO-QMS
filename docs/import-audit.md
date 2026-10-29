@@ -60,6 +60,27 @@ PM-07 retain source Type `Consumable` alongside approved active type
 `calibrator`. PM-08 records the confirmed reagent classification without an
 override.
 
+## Source anomaly register
+
+These values remain visible in `npm run import:audit` output and in each raw
+import snapshot. Approved active values are separate resolution evidence; the
+source row is never rewritten.
+
+| Source anomaly | Workbook evidence retained |
+|---|---|
+| Non-unique Excel `No.` | Numbering overlaps between reagent and FOC sheets. Chemistry and Immunology FOC `No.` 47 and 48 also repeat across the two FOC sheets. Physical sheet and row, not `No.`, identify a record. |
+| Non-sequential Excel `No.` | Immunology FOC `No. 71` occurs after `No. 75`; import order follows physical row order. |
+| Blank Packing Size | Chemistry FOC 15 `PRECISET TDM I CALIBRATOR`; Chemistry FOC 42 `RD STANDARD FALSE BOTTOM TUBE`; Immunology FOC 33 `ELECSYS PROGESTERONE DILUENT`. |
+| Possibly truncated Packing Size | Immunology FOC 38 `HCV Duo PC`: `10 x 1.0 mL, 5 x 2.0 m`. |
+| Platform name conflict | Chemistry FOC 39 source Product `Reaction Cell c 503 / c513`; source `Used with` says `c503 / c703 / ISE`. The owner-approved active override maps only `c503` and `c513`; raw values remain unchanged. |
+| Source type questions | `STANDARDS HIGH/LOW` is source type `Consumable`; `ISE INTERNAL STANDARD GEN.2` is on the reagent sheet. Active corrections/confirmations remain separately identified as PM resolutions. |
+| Unresolved source wording | All 12 original `Used with` rows remain review evidence. Exact sheets, physical rows, source values, and decisions are indexed in `docs/CHEM-IMMUNO-CBH-PLAN-CLOSURE-MATRIX.md` under SRC-12-01..12. |
+
+The audit JSON `notes` field also calls out the reagent/FOC numbering overlap,
+duplicate FOC `No.` 47/48, and the out-of-order Immunology `No. 71` so the
+numbering risks appear in the reproducible import report rather than only in
+phase notes.
+
 Staging preserves the entire raw row and writes an immutable resolution event
 with the authenticated recorder and database timestamp. Review rows keep their
 original critical-source marker but receive their resolved state and decision;
