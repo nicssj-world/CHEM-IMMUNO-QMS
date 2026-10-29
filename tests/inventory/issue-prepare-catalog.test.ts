@@ -18,11 +18,14 @@ const candidates = [
  { warehouse_id: 2, product_id: 'p-imm', lot_id: 'imm-a', lot_number: 'IMM-LOT', expiry_date: '2099-03-01', location_id: 'loc-4', location_code: 'IMM-01', balance: 5, selectable: true },
 ];
 
-function render(lines: IssueCartLine[] = [], visible = warehouses) {
+function render(
+ lines: IssueCartLine[] = [], visible = warehouses,
+ stockProducts = products, stockCandidates = candidates,
+) {
  return renderToStaticMarkup(createElement(IssuePrepareCatalog, {
    warehouses: visible,
-   products,
-   candidates,
+   products: stockProducts,
+   candidates: stockCandidates,
    lines,
    onChange: () => {},
  }));
@@ -86,4 +89,43 @@ test('small screens do not require the previous wide scrolling table', () => {
  assert.doesNotMatch(markup, /min-w-\[780px\]/);
  assert.doesNotMatch(markup, /overflow-x-auto/);
  assert.match(markup, /grid-cols-\[1\.5rem_minmax\(0,1fr\)_auto\]/);
+});
+
+
+test('search uses shared input with reserved icon spacing, not overlapping utility padding', () => {
+ const markup = render();
+ assert.match(markup, /ci-search-icon/);
+ assert.match(markup, /class="input ci-search-input"/);
+ assert.doesNotMatch(markup, /class="input w-full pl-10"/);
+ assert.equal((markup.match(/ci-search-icon/g) ?? []).length, 1);
+});
+
+test('adjacent reagents alternate subtle header colors and location is visually secondary', () => {
+ const additional = {
+   id: 'p-che2', warehouse_id: 1, product_code: 'CHE-0015', display_name: 'Second chemistry reagent',
+ };
+ const secondLot = {
+   warehouse_id: 1, product_id: 'p-che2',
+   lot_id: 'second-lot', lot_number: 'LOT-789', expiry_date: '2099-08-01',
+   location_id: 'loc-5', location_code: 'CHEM-01', balance: 4, selectable: true,
+ };
+ const markup = render([], warehouses, [...products, additional], [...candidates, secondLot]);
+ assert.match(markup, /bg-slate-50 border-l-slate-300/);
+ assert.match(markup, /bg-sky-50\/80 border-l-sky-400/);
+ assert.match(markup, /border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium/);
+ assert.match(markup, /ตำแหน่งจัดเก็บ/);
+ assert.match(markup, /จำนวนเบิก/);
+});
+
+test('reagent without stock is subdued and cannot expand an empty detail pane', () => {
+ const noLot = {
+   id: 'p-zero', warehouse_id: 1, product_code: 'CHE-0099', display_name: 'No available stock',
+ };
+ const markup = render([], warehouses, [...products, noLot]);
+ const index = markup.indexOf('CHE-0099');
+ assert.ok(index > 0);
+ const before = markup.slice(Math.max(0, index - 450), index);
+ assert.match(before, /disabled=""/);
+ assert.match(before, /border-l-slate-200 text-slate-500/);
+ assert.match(markup, /ไม่มี LOT คงเหลือ/);
 });
