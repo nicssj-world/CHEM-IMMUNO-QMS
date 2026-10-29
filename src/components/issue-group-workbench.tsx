@@ -46,6 +46,13 @@ export function IssueGroupWorkbench({mode,products,candidates,warehouses,openGro
  const isFefo=Boolean(selected&&lots[0]?.lot_id===selected.lot_id);
  const filtered=products.filter(p=>[p.product_code,p.display_name].some(s=>s.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))).slice(0,search.trim()?30:10);
  const units=lines.reduce((s,x)=>s+x.quantity,0);
+ const groupedSelected=new Map<string,IssueCartLine[]>();
+ if(mode==='prepare')for(const line of lines){
+   const group=groupedSelected.get(line.product_id)??[];
+   group.push(line);
+   groupedSelected.set(line.product_id,group);
+ }
+
  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Bangkok'});
  const canSubmit=lines.length>0&&lines.length<=100&&lines.every(line=>{
    const candidate=candidates.find(x=>x.product_id===line.product_id&&x.lot_id===line.lot_id&&x.location_id===line.location_id);
@@ -192,17 +199,47 @@ export function IssueGroupWorkbench({mode,products,candidates,warehouses,openGro
        <span className="muted text-sm">{lines.length} รายการ · {units.toLocaleString('th-TH')} ชิ้น</span>
      </div>
      {!lines.length&&<p className="muted text-sm py-5 text-center">ยังไม่มีรายการ · เริ่มจากสแกนหรือค้นหาสินค้าด้านบน</p>}
-     <div className="grid gap-2">{lines.map((l,i)=><article key={l.lot_id+':'+l.location_id}
+     <div className="grid gap-2">
+      {mode==='prepare' ? [...groupedSelected.entries()].map(([productId, entries]) =>
+       <section key={productId} className="rounded-xl border border-line overflow-hidden">
+        <div className="bg-surface-2 px-3 py-2.5 flex items-start justify-between gap-3">
+         <div className="min-w-0">
+          <strong className="block text-sm">{entries[0].product_code} · {entries[0].product_name}</strong>
+          <span className="muted text-xs">{new Set(entries.map(item=>item.lot_id)).size} LOT · {entries.length} ตำแหน่ง</span>
+         </div>
+         <strong className="text-sm text-right shrink-0">{entries.reduce((n,item)=>n+item.quantity,0)} ชิ้น</strong>
+        </div>
+        <div className="divide-y divide-line">
+         {entries.map(line=><div key={line.lot_id+':'+line.location_id}
+            className="px-3 py-2 flex items-start justify-between gap-3">
+          <div className="min-w-0 text-sm">
+           <strong>LOT {line.lot_number}</strong>
+           <p className="muted text-xs">EXP {date(line.expiry_date)} · {line.location_code}</p>
+           {line.override_reason&&<p className="text-amber-800 text-xs">ไม่ใช้ FEFO: {line.override_reason}</p>}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+           <span className="font-bold tabular-nums">{line.quantity} ชิ้น</span>
+           <button type="button" className="button secondary min-h-11 min-w-11 p-2"
+             aria-label={'ลบ '+line.product_code+' LOT '+line.lot_number+' จาก '+line.location_code}
+             onClick={()=>setLines(old=>old.filter(x=>x!==line))}>
+             <Trash2 size={17} aria-hidden/>
+           </button>
+          </div>
+         </div>)}
+        </div>
+       </section>)
+       : lines.map((l,i)=><article key={l.lot_id+':'+l.location_id}
       className="rounded-xl border border-line p-3 grid gap-2">
        <div className="flex items-start justify-between gap-2"><div className="min-w-0"><strong>{i+1}. {l.product_code} · {l.product_name}</strong>
        <p className="muted text-xs">LOT {l.lot_number} · EXP {date(l.expiry_date)} · {l.location_code}</p>
        {l.override_reason&&<p className="text-amber-700 text-xs">ไม่ใช้ FEFO: {l.override_reason}</p>}</div>
        {!review&&<button type="button" className="button secondary px-2" aria-label={'ลบ '+l.product_code}
         onClick={()=>setLines(old=>old.filter(x=>x!==l))}><Trash2 size={18} aria-hidden/></button>}</div>
-       {review||mode==='prepare'?<p className="font-bold text-right">{l.quantity} ชิ้น</p>:<label className="flex justify-between gap-3 items-center text-sm">จำนวน
+       {review?<p className="font-bold text-right">{l.quantity} ชิ้น</p>:<label className="flex justify-between gap-3 items-center text-sm">จำนวน
         <input type="number" className="input max-w-32 text-right" min="1" step="1" max={l.balance} value={l.quantity}
          onChange={e=>setLines(old=>old.map((x,k)=>k===i?{...x,quantity:Number(e.target.value)}:x))}/></label>}
-     </article>)}</div>
+     </article>)}
+     </div>
      <label className="field">วัตถุประสงค์ของรายการ
        <select className="input" value={purpose} onChange={e=>setPurpose(e.target.value)} disabled={review}>
         {purposes.map(([val,name])=><option value={val} key={val}>{name}</option>)}</select></label>
