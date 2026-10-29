@@ -10,16 +10,17 @@ import { createIssueGroup, deleteIssueGroup } from '@/app/actions/issue-groups';
 import { SearchInput } from './search-input';
 import Link from 'next/link';
 import { mergeIssueLine, type IssueCartLine } from '@/lib/issue-cart';
+import { IssuePrepareCatalog, type IssueWarehouse } from './issue-prepare-catalog';
 
 export type IssueProduct={id:string;warehouse_id:number;product_code:string;display_name:string};
-export type IssueCandidate={warehouse_id:number;product_id:string;lot_id:string;lot_number:string;expiry_date:string;location_id:string;location_code:string;balance:number};
+export type IssueCandidate={warehouse_id:number;product_id:string;lot_id:string;lot_number:string;expiry_date:string;location_id:string;location_code:string;balance:number;selectable?:boolean};
 export type OpenGroup={id:string;status:string;created_at:string;line_count:number;done_count:number};
 const purposes=[['Routine','Routine'],['QC','QC'],['Calibration','Calibration'],['Verification/Validation','Verification / Validation'],['Repeat/Troubleshooting','Repeat / Troubleshooting'],['Waste','Waste'],['Other','Other']];
 const date=(x:string)=>{const [y,m,d]=x.split('-');return [d,m,y].join('/');};
 const storageKey=(mode:string)=>'ci-issue-v1-'+mode;
 
 /** Multi-item issue and planned warehouse picking share the same editor, never the legacy single-item form. */
-export function IssueGroupWorkbench({mode,products,candidates,openGroups,groupPage,groupTotal,groupPageSize}:{mode:'batch'|'prepare';products:IssueProduct[];candidates:IssueCandidate[];openGroups:OpenGroup[];groupPage:number;groupTotal:number;groupPageSize:number;}) {
+export function IssueGroupWorkbench({mode,products,candidates,warehouses,openGroups,groupPage,groupTotal,groupPageSize}:{mode:'batch'|'prepare';products:IssueProduct[];candidates:IssueCandidate[];warehouses:IssueWarehouse[];openGroups:OpenGroup[];groupPage:number;groupTotal:number;groupPageSize:number;}) {
  const router=useRouter();
  const [search,setSearch]=useState('');
  const [chosen,setChosen]=useState('');
@@ -45,7 +46,15 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups,groupPa
  const isFefo=Boolean(selected&&lots[0]?.lot_id===selected.lot_id);
  const filtered=products.filter(p=>[p.product_code,p.display_name].some(s=>s.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))).slice(0,search.trim()?30:10);
  const units=lines.reduce((s,x)=>s+x.quantity,0);
- const canSubmit=lines.length>0&&lines.every(x=>x.quantity>0&&Number.isSafeInteger(x.quantity));
+ const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Bangkok'});
+ const canSubmit=lines.length>0&&lines.length<=100&&lines.every(line=>{
+   const candidate=candidates.find(x=>x.product_id===line.product_id&&x.lot_id===line.lot_id&&x.location_id===line.location_id);
+   if(!candidate||candidate.selectable===false||candidate.expiry_date<today||
+      !Number.isSafeInteger(line.quantity)||line.quantity<1||line.quantity>Number(candidate.balance))return false;
+   const earliest=candidates.filter(x=>x.product_id===line.product_id&&x.selectable!==false&&x.balance>0&&x.expiry_date>=today)
+     .sort((a,b)=>a.expiry_date.localeCompare(b.expiry_date)||a.lot_number.localeCompare(b.lot_number)||a.lot_id.localeCompare(b.lot_id))[0];
+   return earliest?.lot_id===line.lot_id||Boolean(line.override_reason.trim());
+ });
  useEffect(()=>{
    let cancelled=false;
    // Hydrate saved drafts after mount without changing state synchronously during the effect.
@@ -54,7 +63,7 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups,groupPa
     try{
      const saved=localStorage.getItem(storageKey(mode));
      if(saved){const data=JSON.parse(saved) as {lines?:IssueCartLine[];purpose?:string;clientKey?:string};
-       if(Array.isArray(data.lines))setLines(data.lines.filter(x=>products.some(p=>p.id===x.product_id)));
+       if(Array.isArray(data.lines))setLines(data.lines.filter(x=>products.some(p=>p.id===x.product_id)&&candidates.some(c=>c.product_id===x.product_id&&c.lot_id===x.lot_id&&c.location_id===x.location_id&&c.selectable!==false)));
        if(data.purpose)setPurpose(data.purpose);
        setClientKey(data.clientKey||crypto.randomUUID());
      } else setClientKey(crypto.randomUUID());
@@ -62,7 +71,7 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups,groupPa
     setHydrated(true);
    });
    return ()=>{cancelled=true;};
- },[mode,products]);
+ },[mode,products,candidates]);
  useEffect(()=>{
    if(!hydrated||!clientKey)return;
    try{localStorage.setItem(storageKey(mode),JSON.stringify({lines,purpose,clientKey}));}catch{/* storage unavailable; server still validates */}
@@ -140,9 +149,12 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups,groupPa
        {mode==='batch'?<ScanLine size={22} aria-hidden/>:<ClipboardList size={22} aria-hidden/>}
        <h2 className="text-lg font-bold">{mode==='batch'?'สแกนเบิกหลายรายการ':'สร้างรายการเบิกล่วงหน้า'}</h2>
      </div>
-     <p className="muted text-sm">{mode==='batch'?'สแกนและเพิ่มจำนวนทีละรายการ ระบบยังไม่ตัด Stock จนกว่าจะตรวจสรุปและยืนยัน':'ค้นหาสินค้า เลือก LOT ตาม FEFO และระบุจำนวน แล้วสร้าง Checklist สำหรับไปหยิบในคลัง'}</p>
+     <p className="muted text-sm">{mode==='batch'?'สแกนและเพิ่มจำนวนทีละรายการ ระบบยังไม่ตัด Stock จนกว่าจะตรวจสรุปและยืนยัน':'ขยายตาราง CHEM หรือ IMMUNO ติ๊ก LOT ที่ต้องการและกรอกจำนวน แล้วสร้าง Checklist สำหรับเดินไปหยิบในคลัง'}</p>
      {mode==='batch'&&!review&&<BarcodeScanner onScan={onScan} continuous />}
-     {!review&&<>
+     {!review && (mode==='prepare'
+       ? <IssuePrepareCatalog warehouses={warehouses} products={products} candidates={candidates}
+           lines={lines} onChange={setLines}/>
+       : <>
        <SearchInput label="ค้นหาน้ำยา / REF แบบ Realtime" placeholder="พิมพ์ชื่อสินค้า หรือ REF"
          value={search} onChange={value=>{setSearch(value);setChosen('');setEditor(false);}}/>
        {search.trim()&&!chosen&&<div className="max-h-60 overflow-y-auto rounded-xl border border-line" role="listbox" aria-label="ผลค้นหาน้ำยา">
@@ -170,12 +182,13 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups,groupPa
          placeholder="ระบุเหตุผลสั้น ๆ" required/></label>}
         <button type="button" className="button min-h-12" onClick={addItem} disabled={!selected}><Plus size={18} aria-hidden/> เพิ่มเข้ารายการ</button>
        </div>}
-     </>}
+
+       </>)}
      {message&&<p role="status" className="notice text-sm">{message}</p>}
    </section>
    <section className="surface p-4 sm:p-6 grid gap-3">
      <div className="flex flex-wrap items-baseline justify-between gap-2">
-       <h2 className="font-bold text-lg">{review?'ตรวจสอบสรุปรายการก่อนเบิก':'รายการที่เพิ่มแล้ว'}</h2>
+       <h2 className="font-bold text-lg">{review?'ตรวจสอบสรุปรายการก่อนเบิก':mode==='prepare'?'รายการที่เลือก':'รายการที่เพิ่มแล้ว'}</h2>
        <span className="muted text-sm">{lines.length} รายการ · {units.toLocaleString('th-TH')} ชิ้น</span>
      </div>
      {!lines.length&&<p className="muted text-sm py-5 text-center">ยังไม่มีรายการ · เริ่มจากสแกนหรือค้นหาสินค้าด้านบน</p>}
@@ -186,7 +199,7 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups,groupPa
        {l.override_reason&&<p className="text-amber-700 text-xs">ไม่ใช้ FEFO: {l.override_reason}</p>}</div>
        {!review&&<button type="button" className="button secondary px-2" aria-label={'ลบ '+l.product_code}
         onClick={()=>setLines(old=>old.filter(x=>x!==l))}><Trash2 size={18} aria-hidden/></button>}</div>
-       {review?<p className="font-bold text-right">{l.quantity} ชิ้น</p>:<label className="flex justify-between gap-3 items-center text-sm">จำนวน
+       {review||mode==='prepare'?<p className="font-bold text-right">{l.quantity} ชิ้น</p>:<label className="flex justify-between gap-3 items-center text-sm">จำนวน
         <input type="number" className="input max-w-32 text-right" min="1" step="1" max={l.balance} value={l.quantity}
          onChange={e=>setLines(old=>old.map((x,k)=>k===i?{...x,quantity:Number(e.target.value)}:x))}/></label>}
      </article>)}</div>
@@ -194,13 +207,18 @@ export function IssueGroupWorkbench({mode,products,candidates,openGroups,groupPa
        <select className="input" value={purpose} onChange={e=>setPurpose(e.target.value)} disabled={review}>
         {purposes.map(([val,name])=><option value={val} key={val}>{name}</option>)}</select></label>
      <div className="sticky bottom-16 md:bottom-3 z-10 bg-white/95 backdrop-blur rounded-xl border border-line p-3 grid gap-2 shadow-sm">
-       {!review?<button type="button" disabled={!canSubmit} className="button min-h-12" onClick={()=>setReview(true)}>
-        <Check size={18} aria-hidden/> {mode==='batch'?'ตรวจสอบสรุปรายการเบิก':'ตรวจสอบก่อนสร้างรายการ'}</button>
+       {mode==='prepare'?
+         <button type="button" disabled={!canSubmit||busy} className="button min-h-12" onClick={submit}>
+           <Check size={18} aria-hidden/> {busy?'กำลังสร้าง Checklist…':'สร้างรายการเบิก / Checklist'}
+         </button>
+       :!review?<button type="button" disabled={!canSubmit} className="button min-h-12" onClick={()=>setReview(true)}>
+         <Check size={18} aria-hidden/> ตรวจสอบสรุปรายการเบิก</button>
        :<div className="grid grid-cols-2 gap-2">
          <button type="button" className="button secondary min-h-12" onClick={()=>setReview(false)} disabled={busy}>ย้อนกลับแก้ไข</button>
          <button type="button" className="button min-h-12" onClick={submit} disabled={busy}>
-          {busy?'กำลังบันทึก…':mode==='batch'?'ยืนยันเบิกออก':'สร้างรายการ Checklist'}</button></div>}
+           {busy?'กำลังบันทึก…':'ยืนยันเบิกออก'}</button></div>}
        <p className="muted text-xs text-center">{mode==='batch'?'ตัด Stock จริงเมื่อกดยืนยันเบิกออกเท่านั้น':'สร้างรายการแล้วยังไม่ตัด Stock · ตัดเมื่อหยิบครบและปิดรายการ'}</p>
+       {mode==='prepare'&&lines.length>0&&!canSubmit&&<p role="alert" className="text-xs text-amber-800 text-center">ตรวจจำนวนคงเหลือหรือกรอกเหตุผลเมื่อเลือก LOT ที่ไม่ใช่ FEFO</p>}
      </div>
    </section>
    {mode==='prepare'&&<section className="surface p-4 sm:p-6 grid gap-3">
