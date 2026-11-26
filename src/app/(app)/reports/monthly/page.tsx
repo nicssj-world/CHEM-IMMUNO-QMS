@@ -7,7 +7,7 @@ import { reconcileMonthlyRows, reportMonth, type MonthlyRow } from '@/lib/monthl
 import { logUserMessage } from '@/lib/messages';
 import { formatDateTime, formatMonth } from '@/lib/format';
 import { unitLabel } from '@/lib/units';
-const reportColumnLabels = { opening: 'ยอดยกมา', received: 'รับเข้า', issued: 'เบิกใช้', adjustments: 'ปรับยอด', closing: 'ยอดคงเหลือปลายเดือน' } as const;
+const reportColumnLabels = { opening: 'ยอดยกมา', received: 'รับเข้า', issued: 'เบิกใช้', adjustments: 'ปรับยอด', closing: 'ยอดคงเหลือ' } as const;
 // Display columns only. Expired disposals and reversals still feed the closing balance and the
 // reconciliation check below; they are simply not shown as columns.
 const reportColumns = ['opening','received','issued','adjustments','closing'] as const;
