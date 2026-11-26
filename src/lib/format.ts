@@ -34,6 +34,15 @@ export function formatDateBE(value: string | Date | null | undefined) {
   const date = toDate(value);
   return Number.isNaN(date.getTime()) ? String(value) : dateBE.format(date);
 }
+const datePartsBE = new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' });
+const timeParts = new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' });
+/** `26 พ.ย. 2569 เวลา 16:15 น.` — always Asia/Bangkok, never the server's own timezone. */
+export function formatThaiDateTime(value: string | Date | null | undefined) {
+  if (!value) return '—';
+  const date = toDate(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return `${datePartsBE.format(date)} เวลา ${timeParts.format(date)} น.`;
+}
 export function formatDateTimeBE(value: string | Date | null | undefined) {
   if (!value) return '—';
   const date = toDate(value);

@@ -8,9 +8,11 @@ type SearchInputProps = {
  placeholder:string;
  value:string;
  onChange:(value:string)=>void;
+ /** Keeps the label for screen readers while saving vertical space (e.g. a sticky toolbar). */
+ labelHidden?:boolean;
 };
 /** Shared accessible input: explicit icon spacing prevents .input's base padding from covering text. */
-export function SearchInput({label,placeholder,value,onChange}:SearchInputProps) {
+export function SearchInput({label,placeholder,value,onChange,labelHidden=false}:SearchInputProps) {
  const id=useId();
  const inputRef=useRef<HTMLInputElement>(null);
  function clear(){
@@ -18,7 +20,7 @@ export function SearchInput({label,placeholder,value,onChange}:SearchInputProps)
   inputRef.current?.focus();
  }
  return <div className="field">
-   <label htmlFor={id}>{label}</label>
+   <label htmlFor={id} className={labelHidden?'sr-only':undefined}>{label}</label>
    <div className="ci-search-wrap">
      <Search size={18} aria-hidden="true" className="ci-search-icon"/>
      <input id={id} ref={inputRef} className="input ci-search-input"
