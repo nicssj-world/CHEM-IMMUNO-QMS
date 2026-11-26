@@ -10,6 +10,8 @@ import { userMessage } from '@/lib/messages';
 import { loadMovementDetails, type MovementDetail, type MovementDetailLine, type MovementTransaction } from '@/lib/stock-history';
 import { unitLabel } from '@/lib/units';
 import { formatDateTimeBE } from '@/lib/format';
+import { loadIssueResult, type IssueResult } from '@/lib/issue-results';
+import { IssueResultPanel } from '@/components/issue-result-panel';
 
 type Product = { id: string; warehouse_id: number; product_code: string; display_name: string };
 type Candidate = { lot_id: string; lot_number: string; expiry_date: string; location_id: string; balance: number };
@@ -87,6 +89,7 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
   }
   let successReceipt: { transaction: MovementDetail; line: MovementDetailLine; stockTotal: number } | null = null;
   let receiptProblem = '';
+  let issueResult: IssueResult | null = null;
   // Show a persisted success receipt only after re-reading the committed transaction and balances.
   if (params.tx && /^[0-9a-f-]{36}$/i.test(params.tx) && client) {
     const lookup = await client.from('ci_stock_transactions')
@@ -94,7 +97,10 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
       .eq('id',params.tx).eq('kind','issue').eq('actor_id',access.userId).maybeSingle();
     if (lookup.error || !lookup.data) receiptProblem = 'ไม่สามารถตรวจสอบหลักฐานการเบิกได้';
     else {
-      try {
+      // Balances recorded inside the issue transaction (newer issues); older ones fall back below.
+      const evidence = await loadIssueResult(client,[lookup.data.id as string]);
+      if (evidence.data) issueResult = evidence.data;
+      else try {
         const transactions = await loadMovementDetails(client,[lookup.data as MovementTransaction],access);
         const transaction = transactions[0];
         const line = transaction?.lines[0];
@@ -121,7 +127,9 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
   <Link className="button text-center text-xs sm:text-sm min-h-12 px-2" href="/issue">เบิกปกติ</Link>
   <Link className="button secondary text-center text-xs sm:text-sm min-h-12 px-2" href="/issue?mode=batch">สแกนแบบชุด</Link>
   <Link className="button secondary text-center text-xs sm:text-sm min-h-12 px-2" href="/issue?mode=prepare">สร้างรายการเบิก</Link>
- </nav>{canIssue && <IssueScan/>}{params.error && <p className="error" role="alert">{params.error}</p>}
+ </nav>
+    {issueResult && <IssueResultPanel result={issueResult} actorName={access.displayName} nextHref={product ? `/issue?product=${product.id}` : '/issue'}/>}
+    {canIssue && <IssueScan/>}{params.error && <p className="error" role="alert">{params.error}</p>}
     {receiptProblem && <p className="notice" role="alert">{receiptProblem} · <Link href="/movements">ตรวจสอบประวัติการเคลื่อนไหว</Link></p>}
     {successReceipt && <section className="surface p-4 sm:p-6 grid gap-3" aria-label="ผลการเบิกออกสำเร็จ" role="status">
       <h2 className="text-xl font-extrabold text-emerald-800">✓ เบิกออกสำเร็จ</h2>

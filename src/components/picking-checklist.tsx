@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Check, CheckCheck, Trash2 } from 'lucide-react';
@@ -13,7 +13,7 @@ export type PickingLine={
  expiry_date:string;location_code:string;quantity:number;picked:boolean;
 };
 const date=(s:string)=>{const [y,m,d]=s.split('-');return [d,m,y].join('/');};
-export function PickingChecklist({id,status,initialLines,transactions}:{id:string;status:string;initialLines:PickingLine[];transactions:{warehouse_id:number;transaction_id:string}[]}) {
+export function PickingChecklist({id,status,initialLines,transactions,result}:{id:string;status:string;initialLines:PickingLine[];transactions:{warehouse_id:number;transaction_id:string}[];result?:ReactNode}) {
  const router=useRouter();
  const [lines,setLines]=useState(initialLines);
  const [query,setQuery]=useState('');
@@ -62,6 +62,7 @@ export function PickingChecklist({id,status,initialLines,transactions}:{id:strin
       <p className="muted text-sm">#{id.slice(0,8).toUpperCase()} · {closed?'ปิดรายการแล้ว':status==='cancelled'?'ยกเลิกแล้ว':status==='picking'?'กำลังหยิบ':'รอหยิบ'}</p></div>
      {editable&&<button className="button secondary text-sm" type="button" onClick={removeGroup} disabled={pending}><Trash2 size={17} aria-hidden/> ลบรายการ</button>}
    </header>
+   {closed&&result}
    <section className="surface p-4 sm:p-6 grid gap-3">
      <div className="flex justify-between gap-3 items-center"><strong>หยิบแล้ว {done} / {lines.length} รายการ</strong><span className="muted text-sm">{Math.round((done/Math.max(1,lines.length))*100)}%</span></div>
      <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden" role="progressbar" aria-valuenow={done} aria-valuemin={0} aria-valuemax={lines.length} aria-label="ความคืบหน้าการหยิบ">
@@ -106,7 +107,7 @@ export function PickingChecklist({id,status,initialLines,transactions}:{id:strin
        <span className="text-emerald-700 ml-2">ยกเลิกติ๊ก</span></button>)}
    </section>
    {error&&<p role="alert" className="error">{error}</p>}
-   {closed&&<section className="surface p-5 grid gap-2">
+   {closed&&!result&&<section className="surface p-5 grid gap-2">
       <h2 className="text-emerald-800 font-bold text-lg"><CheckCheck size={20} className="inline mr-2"/>เบิกออกสำเร็จ</h2>
       <p className="muted text-sm">Stock ถูกตัดหลังปิดรายการ และมีหลักฐานธุรกรรมในประวัติ</p>
       {transactions.map(x=><p key={x.transaction_id} className="text-sm">คลัง {x.warehouse_id} · TX {x.transaction_id.slice(0,8)}</p>)}

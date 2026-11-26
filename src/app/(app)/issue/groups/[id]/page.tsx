@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation';
 import { requireAccess } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { PickingChecklist, type PickingLine } from '@/components/picking-checklist';
+import { loadIssueResult } from '@/lib/issue-results';
+import { IssueResultPanel } from '@/components/issue-result-panel';
 
 type Group={id:string;status:string;purpose:string;created_at:string};
 type Row={id:string;product_id:string;lot_id:string;location_id:string;quantity:number;picked:boolean};
@@ -37,6 +39,10 @@ export default async function IssueGroupPage({params}:{params:Promise<{id:string
   location_code:locations.get(x.location_id)??'—',
   quantity:Number(x.quantity),picked:x.picked,
  }));
+ // A closed list shows the balances recorded when its stock was cut; refreshing never issues again.
+ const evidence=(group as Group).status==='closed'
+  ?await loadIssueResult(client,(tx.data??[]).map(x=>x.transaction_id as string)):{data:null,error:null};
  return <PickingChecklist key={(group as Group).status} id={id} status={(group as Group).status} initialLines={lines}
-  transactions={tx.data??[]}/>;
+  transactions={tx.data??[]}
+  result={evidence.data?<IssueResultPanel result={evidence.data} nextHref="/issue?mode=prepare" doneHref="/"/>:null}/>;
 }
