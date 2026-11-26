@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ArrowUpFromLine, Boxes, ClipboardCheck, ClipboardList, FileText, FileUp, History, House, ListChecks, MapPin, NotebookTabs, PackagePlus, QrCode, ScanLine, ScrollText, ShieldCheck, SlidersHorizontal, Trash2, UserCog, Users, Wrench, type LucideIcon } from 'lucide-react';
+import { ArrowLeftRight, ArrowUpFromLine, Boxes, ClipboardCheck, ClipboardList, FileText, FileUp, History, House, ListChecks, MapPin, NotebookTabs, PackagePlus, QrCode, ScanLine, ScrollText, ShieldCheck, ShoppingCart, SlidersHorizontal, Trash2, UserCog, Users, Wrench, type LucideIcon } from 'lucide-react';
 import type { AccessContext } from '@/lib/auth';
 
 // Navigation groups routes into workspaces. It changes where a link is shown, never who may use the page: every page, server
@@ -24,6 +24,7 @@ export const workspaces: Workspace[] = [
     // Every role that can open a warehouse can read its locations; creating and editing them is gated inside the pages.
     { href: '/locations', label: 'ตำแหน่งจัดเก็บ', icon: MapPin },
     { href: '/reorder', label: 'ROP / สั่งซื้อ', icon: SlidersHorizontal },
+    { href: '/purchase-orders', label: 'ใบสั่งซื้อ', icon: ShoppingCart, need: 'work' },
     { href: '/vendors', label: 'ผู้ขาย', icon: Users },
   ] },
   { key: 'operations', label: 'ปฏิบัติงาน', icon: Wrench, tabs: [

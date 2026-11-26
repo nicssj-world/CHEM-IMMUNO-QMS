@@ -228,6 +228,32 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 @page environment-report { size: A4 portrait; margin: 12mm; }
 .environment-report { page: environment-report; }
 @page location-labels { size: A4 portrait; margin: 8mm; }
+/* Monthly report: 5 numeric columns share the width left by the full reagent name, on screen and in PDF. */
+.monthly-table { table-layout: fixed; }
+.monthly-col-name { width: 40%; }
+.monthly-col-num { width: 12%; }
+.monthly-name { overflow-wrap: anywhere; white-space: normal; }
+/* Purchase orders: the order quantity column is the one figure staff act on, so it carries the highlight. */
+.po-order-cell { background: #fff4cc; }
+.po-table th.po-order-cell { color: #5c4a00; }
+.po-print-table { table-layout: fixed; }
+.po-col-no { width: 7%; }
+.po-col-num { width: 13%; }
+.po-col-order { width: 15%; }
+.po-name { overflow-wrap: anywhere; }
+.po-print-table th.po-order-cell, .po-print-table td.po-order-cell { border-left: 2px solid #b08900; border-right: 2px solid #b08900; color: #111; }
+.po-print-table tbody tr:last-child td.po-order-cell { border-bottom: 2px solid #b08900; }
+@page purchase-order { size: A4 portrait; margin: 12mm 12mm 16mm; @bottom-right { content: "หน้า " counter(page) " / " counter(pages); font-size: 8pt; } }
+@media print {
+  .po-document { page: purchase-order; border: 0 !important; padding: 0 !important; }
+  .po-print-table { font-size: 9pt; }
+  .po-print-table th, .po-print-table td { padding: 5px 6px; }
+  .po-print-table thead { display: table-header-group; }
+  .po-print-table tr { break-inside: avoid; }
+  .po-order-cell { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .po-print-table th { color: #111; letter-spacing: 0; text-transform: none; font-size: 8.5pt; }
+  .po-signature { break-inside: avoid; }
+}
 @media print {
   .print-only { display: block; }
   .workspace-tabs { display: none !important; }

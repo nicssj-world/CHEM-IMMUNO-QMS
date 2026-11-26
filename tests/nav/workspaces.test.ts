@@ -34,7 +34,7 @@ test('a viewer sees the read-only tabs, and a workspace with nothing visible is 
 test('CHE staff can work (issue, transfer, count) but not adjust, dispose, audit or administer', () => {
   assert.deepEqual(tabsOf(staffChe), {
     dashboard: ['/', '/attention'],
-    inventory: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
+    inventory: ['/stock', '/products', '/locations', '/reorder', '/purchase-orders', '/vendors'],
     operations: ['/receive', '/invoices', '/issue', '/transfer', '/counts'],
     reports: ['/reports/monthly', '/movements'],
   });
@@ -43,7 +43,7 @@ test('CHE staff can work (issue, transfer, count) but not adjust, dispose, audit
 test('roles are per warehouse: a supervisor in one warehouse gets supervisor tabs, without the both-warehouse admin tabs', () => {
   assert.deepEqual(tabsOf(mixed), {
     dashboard: ['/', '/attention'],
-    inventory: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
+    inventory: ['/stock', '/products', '/locations', '/reorder', '/purchase-orders', '/vendors'],
     operations: ['/receive', '/invoices', '/issue', '/transfer', '/counts', '/adjust', '/dispose'],
     reports: ['/reports/monthly', '/movements', '/audit'],
     admin: ['/scan/review'],
@@ -95,7 +95,7 @@ test('the mobile bottom bar prioritizes inventory receiving and issuing', async 
 test('navigation does not relax any authorization: every tab keeps its previous role gate', () => {
   const previous: Record<string, string | undefined> = {
     '/': undefined, '/attention': undefined, '/receive': undefined, '/invoices': undefined, '/issue': 'work', '/transfer': 'work', '/counts': 'work', '/adjust': 'supervise', '/dispose': 'supervise',
-    '/products': undefined, '/stock': undefined, '/reorder': undefined, '/vendors': undefined, '/reports/monthly': undefined, '/movements': undefined,
+    '/products': undefined, '/stock': undefined, '/reorder': undefined, '/purchase-orders': 'work', '/vendors': undefined, '/reports/monthly': undefined, '/movements': undefined,
     '/scan/review': 'supervise', '/locations': 'supervise', '/import': 'adminBoth', '/import/incremental': 'adminBoth', '/audit': 'supervise', '/admin/users': 'adminBoth',
   };
   for (const tab of workspaces.flatMap(workspace => workspace.tabs)) {
@@ -200,7 +200,7 @@ test('every category still carries its full set of visible links (rendering coll
   const cats = categoriesFor(adminBoth);
   assert.deepEqual(Object.fromEntries(cats.map(c => [c.key, c.groups.flatMap(g => g.items.map(i => i.href))])), {
     home: ['/', '/attention'],
-    stock: ['/stock', '/products', '/locations', '/reorder', '/vendors'],
+    stock: ['/stock', '/products', '/locations', '/reorder', '/purchase-orders', '/vendors'],
     operations: ['/receive', '/invoices', '/issue', '/transfer', '/counts', '/adjust', '/dispose'],
     reports: ['/reports/monthly', '/movements', '/audit'],
     system: ['/scan/review', '/import', '/import/incremental', '/admin/users'],
