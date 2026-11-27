@@ -149,9 +149,9 @@ export function PoEditor({ orderId, products, metrics, templates, initialTemplat
                 <td><span className="muted text-xs tabular-nums block">{product?.product_code ?? '—'}</span><span className="break-words">{product?.display_name ?? 'ไม่พบน้ำยา'}</span>
                   <span className="muted text-xs block">{product?.packing_size_raw ? `${product.packing_size_raw} · ` : ''}หน่วย {unitLabel(product?.base_stock_unit)}</span>
                   {product && !product.active && <span className="text-xs text-[#a83442] block">ปิดใช้งานแล้ว · นำออกก่อนยืนยัน</span>}</td>
-                <td className="text-right tabular-nums">{metric ? fmt(metric.issued_30d) : '—'}</td>
-                <td className={'text-right tabular-nums ' + (low ? 'text-[#a8323e] font-semibold' : '')}>{metric ? fmt(metric.stock_balance) : '—'}</td>
-                <td className={'text-right tabular-nums ' + (metric?.rop == null ? 'muted' : '')}>{ropText(metric?.rop)}</td>
+                <td style={{ verticalAlign: 'middle' }} className="text-right tabular-nums">{metric ? fmt(metric.issued_30d) : '—'}</td>
+                <td style={{ verticalAlign: 'middle' }} className={'text-right tabular-nums ' + (low ? 'text-[#a8323e] font-semibold' : '')}>{metric ? fmt(metric.stock_balance) : '—'}</td>
+                <td style={{ verticalAlign: 'middle' }} className={'text-right tabular-nums ' + (metric?.rop == null ? 'muted' : '')}>{ropText(metric?.rop)}</td>
                 <td className="po-order-cell">{stepper(line, product)}{problems.get(line.productId) && <span className="block text-xs text-[#a8323e] text-center mt-1">{problems.get(line.productId)}</span>}</td>
                 <td><div className="flex justify-center gap-1">
                   <button type="button" className="grid place-items-center w-11 h-11 rounded-lg hover:bg-surface-2 disabled:opacity-30" disabled={index === 0} aria-label="เลื่อนขึ้น" onClick={() => move(index, -1)}><ChevronUp size={18} aria-hidden /></button>
