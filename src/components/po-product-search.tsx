@@ -3,13 +3,13 @@
 import { useMemo, useState } from 'react';
 import { Check, Plus } from 'lucide-react';
 import { SearchInput } from './search-input';
-import { matchesProduct, type PoProduct } from '@/lib/purchase-orders';
+import { matchesProduct, searchTemplateProducts, type PoProduct } from '@/lib/purchase-orders';
 import { unitLabel } from '@/lib/units';
 
 /** Filters the already-loaded catalog on every keystroke (no request per key). */
-export function PoProductSearch({ products, chosen, onAdd }: { products: PoProduct[]; chosen: ReadonlySet<string>; onAdd: (id: string) => void }) {
+export function PoProductSearch({ products, chosen, onAdd, templateMode = false }: { products: PoProduct[]; chosen: ReadonlySet<string>; onAdd: (id: string) => void; templateMode?: boolean }) {
   const [query, setQuery] = useState('');
-  const results = useMemo(() => query.trim() ? products.filter(p => p.active && matchesProduct(p, query)).slice(0, 30) : [], [products, query]);
+  const results = useMemo(() => templateMode ? searchTemplateProducts(products, chosen, query) : query.trim() ? products.filter(p => p.active && matchesProduct(p, query)).slice(0, 30) : [], [products, query, chosen, templateMode]);
   return <div className="grid gap-2">
     <SearchInput label="ค้นหาน้ำยาเพื่อเพิ่ม" placeholder="ชื่อหรือรหัสน้ำยา" value={query} onChange={setQuery} />
     {query.trim() && <ul className="grid gap-1 max-h-72 overflow-y-auto rounded-xl border border-line p-1 bg-white" aria-label="ผลการค้นหา">
@@ -28,7 +28,7 @@ export function PoProductSearch({ products, chosen, onAdd }: { products: PoProdu
           </button>
         </li>;
       })}
-      {!results.length && <li className="muted text-sm p-3">ไม่พบน้ำยาที่ค้นหา</li>}
+      {!results.length && <li className="muted text-sm p-3">{templateMode ? 'ไม่พบน้ำยาที่ยังไม่ได้เพิ่ม' : 'ไม่พบน้ำยาที่ค้นหา'}</li>}
     </ul>}
   </div>;
 }

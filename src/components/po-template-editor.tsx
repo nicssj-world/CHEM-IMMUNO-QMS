@@ -11,8 +11,8 @@ import type { PoProduct } from '@/lib/purchase-orders';
 import { unitLabel } from '@/lib/units';
 
 /** A template is only a named, ordered list of reagents; numbers are always read fresh when it is used. */
-export function PoTemplateEditor({ templateId, initialName, initialProductIds, updatedAt, products, canManage }: {
-  templateId: string | null; initialName: string; initialProductIds: string[]; updatedAt: string | null; products: PoProduct[]; canManage: boolean;
+export function PoTemplateEditor({ templateId, initialName, initialProductIds, updatedAt, products, canManage, readOnlyProductIds = [] }: {
+  templateId: string | null; initialName: string; initialProductIds: string[]; updatedAt: string | null; products: PoProduct[]; canManage: boolean; readOnlyProductIds?: string[];
 }) {
   const router = useRouter();
   const productMap = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
@@ -22,7 +22,7 @@ export function PoTemplateEditor({ templateId, initialName, initialProductIds, u
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState('');
-  const chosen = useMemo(() => new Set(ids), [ids]);
+  const chosen = useMemo(() => new Set([...ids, ...readOnlyProductIds]), [ids, readOnlyProductIds]);
   const editable = canManage || templateId === null;
   const move = (index: number, delta: -1 | 1) => { const next = [...ids]; const [item] = next.splice(index, 1); next.splice(index + delta, 0, item); setIds(next); };
 
@@ -33,7 +33,7 @@ export function PoTemplateEditor({ templateId, initialName, initialProductIds, u
       const result = await savePurchaseOrderTemplate({ id: templateId, name, productIds: ids, expectedUpdatedAt: updatedAt });
       if (!result.ok) { setMessage({ kind: 'error', text: result.message }); return; }
       setMessage({ kind: 'ok', text: 'บันทึก Template แล้ว' });
-      if (!templateId) router.replace(`/purchase-orders/templates/${result.id}?saved=1`); else router.refresh();
+      router.replace(`/purchase-orders/templates/${result.id}?saved=${Date.now()}`);
     } catch { setMessage({ kind: 'error', text: 'เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่' }); }
     finally { setPending(''); }
   }
@@ -50,21 +50,22 @@ export function PoTemplateEditor({ templateId, initialName, initialProductIds, u
 
   return <section className="surface p-4 sm:p-5 grid gap-4">
     <label className="field">ชื่อ Template<input className="input" value={name} maxLength={120} disabled={!editable} onChange={event => setName(event.target.value)} placeholder="เช่น น้ำยา Clinical Chemistry" /></label>
-    {editable && <PoProductSearch products={products} chosen={chosen} onAdd={id => setIds(old => old.includes(id) ? old : [...old, id])} />}
+    {editable && <PoProductSearch templateMode products={products} chosen={chosen} onAdd={id => setIds(old => old.includes(id) ? old : [...old, id])} />}
     <div className="grid gap-1">
-      <p className="text-sm font-semibold">รายการน้ำยา ({ids.length})</p>
+      <p className="text-sm font-semibold">รายการน้ำยา ({ids.length + readOnlyProductIds.length})</p>
       <ul className="grid divide-y divide-[var(--line)] rounded-xl border border-line">
-        {ids.map((id, index) => { const product = productMap.get(id); return <li key={id} className="flex items-center gap-2 px-3 py-2 min-h-12">
+        {[...ids, ...readOnlyProductIds].map((id, index) => { const product = productMap.get(id); return <li key={id} className="flex items-center gap-2 px-3 py-2 min-h-12">
           <span className="w-6 text-right tabular-nums muted text-sm shrink-0">{index + 1}</span>
           <span className="min-w-0 flex-1 text-sm"><span className="muted tabular-nums">{product?.product_code ?? '—'}</span> · {product?.display_name ?? 'ไม่พบน้ำยา'}
             <span className="block text-xs muted">{product?.packing_size_raw ? `${product.packing_size_raw} · ` : ''}หน่วย {unitLabel(product?.base_stock_unit)}{product && !product.active ? ' · ปิดใช้งานแล้ว' : ''}</span></span>
-          {editable && <span className="flex shrink-0">
+          {editable && index < ids.length && <span className="flex shrink-0">
             <button type="button" className="grid place-items-center w-11 h-11 rounded-lg hover:bg-surface-2 disabled:opacity-30" disabled={index === 0} aria-label="เลื่อนขึ้น" onClick={() => move(index, -1)}><ChevronUp size={18} aria-hidden /></button>
             <button type="button" className="grid place-items-center w-11 h-11 rounded-lg hover:bg-surface-2 disabled:opacity-30" disabled={index === ids.length - 1} aria-label="เลื่อนลง" onClick={() => move(index, 1)}><ChevronDown size={18} aria-hidden /></button>
             <button type="button" className="grid place-items-center w-11 h-11 rounded-lg text-[#a83442] hover:bg-rose-50" aria-label={`นำ ${product?.product_code ?? ''} ออก`} onClick={() => setIds(old => old.filter(x => x !== id))}><X size={18} aria-hidden /></button>
           </span>}
+          {editable && index >= ids.length && <span className="muted text-xs shrink-0">ดูได้อย่างเดียว</span>}
         </li>; })}
-        {!ids.length && <li className="muted text-sm p-4 text-center">ยังไม่มีน้ำยา · ค้นหาแล้วกด “เพิ่ม”</li>}
+        {!ids.length && !readOnlyProductIds.length && <li className="muted text-sm p-4 text-center">ยังไม่มีน้ำยา · ค้นหาแล้วกด “เพิ่ม”</li>}
       </ul>
     </div>
     {message && <p className={message.kind === 'ok' ? 'notice' : 'error'} role={message.kind === 'ok' ? 'status' : 'alert'}>{message.text}</p>}
