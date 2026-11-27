@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { ChevronRight } from 'lucide-react';
-import { requireAccess } from '@/lib/auth';
+import { ChevronRight, Pencil } from 'lucide-react';
+import { requireAccess, canSupervise } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { loadCatalog, loadTemplates, orderWarehouseIds } from '@/lib/purchase-order-data';
 import { logUserMessage } from '@/lib/messages';
@@ -22,7 +22,7 @@ export default async function PurchaseOrderTemplatesPage({ searchParams }: { sea
       <ul className="grid gap-2">{templates.data.map(t => <li key={t.id}>
         <Link href={`/purchase-orders/templates/${t.id}`} className="rounded-xl border border-line p-3 min-h-12 flex items-center gap-3 no-underline text-[var(--ink)] hover:bg-surface-2">
           <span className="flex-1 min-w-0"><span className="font-semibold">{t.name}</span><span className="muted text-sm block">{t.productIds.length} รายการ · แก้ไขล่าสุด {formatThaiDateTime(t.updated_at)}</span></span>
-          <ChevronRight size={18} className="muted shrink-0" aria-hidden />
+          {orderWarehouseIds(access).length > 0 && (t.created_by === access.userId || access.warehouses.some(w => canSupervise(w.role))) ? <span className="shrink-0 inline-flex items-center gap-1 text-sm font-semibold text-[var(--blue)]"><Pencil size={16} aria-hidden /> แก้ไข</span> : <span className="muted shrink-0 inline-flex items-center gap-1 text-sm">ดูรายละเอียด <ChevronRight size={18} aria-hidden /></span>}
         </Link></li>)}</ul>
       {!templates.data.length && <p className="muted text-sm">ยังไม่มี Template</p>}
     </section>

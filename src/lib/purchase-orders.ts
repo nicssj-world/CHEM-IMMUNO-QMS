@@ -78,3 +78,16 @@ export function matchesProduct(product: Pick<PoProduct, 'product_code' | 'displa
   const hay = normalize(`${product.product_code} ${product.display_name}`);
   return needle.split(' ').every(part => hay.includes(part));
 }
+
+/** Template search includes all matching active products not yet selected. */
+export function searchTemplateProducts(products: readonly PoProduct[], chosen: ReadonlySet<string>, query: string) {
+  if (!query.trim()) return [];
+  return products.filter(p => p.active && !chosen.has(p.id) && matchesProduct(p, query));
+}
+
+/** The existing RPC preserves rows in warehouses where the actor cannot write. Do not resubmit them. */
+export function splitTemplateProducts(ids: readonly string[], products: readonly PoProduct[], writableWarehouses: readonly number[]) {
+  const writable = new Set(writableWarehouses);
+  const editableProducts = new Set(products.filter(p => writable.has(p.warehouse_id)).map(p => p.id));
+  return { editableIds: ids.filter(id => editableProducts.has(id)), readOnlyIds: ids.filter(id => !editableProducts.has(id)) };
+}

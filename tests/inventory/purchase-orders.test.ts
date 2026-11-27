@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { addProducts, belowRop, defaultOrderQuantity, newLine, parseOrderQuantity, printableLines, refreshLines, ropText, stepOrderQuantity, type PoMetric } from '../../src/lib/purchase-orders';
+import { addProducts, belowRop, defaultOrderQuantity, newLine, parseOrderQuantity, printableLines, refreshLines, ropText, stepOrderQuantity, searchTemplateProducts, splitTemplateProducts, type PoProduct, type PoMetric } from '../../src/lib/purchase-orders';
 import { productTotals } from '../../src/lib/issue-results';
 
 const metric = (product_id: string, rop: number | null, stock = 5, issued = 18): PoMetric => ({ product_id, warehouse_id: 1, issued_30d: issued, stock_balance: stock, rop, stock_requirement: 'required' });
@@ -46,4 +46,23 @@ test('below-ROP flag and printable lines', () => {
 test('issue result: all-LOT total comes from the last recorded line of each product', () => {
   const totals = productTotals([{ product_id: 'p', sequence: 2, product_after: 8 }, { product_id: 'p', sequence: 5, product_after: 5 }, { product_id: 'q', sequence: 3, product_after: 0 }]);
   assert.deepEqual([...totals], [['p', 5], ['q', 0]]);
+});
+
+const reagent = (i: number, active = true, warehouse_id = 1): PoProduct => ({ id: String(i), product_code: `CHE-${i}`, display_name: 'Reagent', packing_size_raw: null, base_stock_unit: 'pack', warehouse_id, active });
+
+test('template search returns all matches beyond 30 and excludes selected and inactive rows', () => {
+  const products = [...Array.from({ length: 65 }, (_, i) => reagent(i)), reagent(65, false)];
+  const chosen = new Set<string>();
+  assert.equal(searchTemplateProducts(products, chosen, 'che').length, 65);
+  chosen.add('0'); chosen.add('34');
+  assert.equal(searchTemplateProducts(products, chosen, 'che').length, 63);
+  assert.ok(!searchTemplateProducts(products, chosen, 'che').some(p => p.id === '0' || p.id === '34'));
+  chosen.delete('34');
+  assert.ok(searchTemplateProducts(products, chosen, 'che').some(p => p.id === '34'));
+  assert.deepEqual(searchTemplateProducts(products, chosen, '   '), []);
+});
+
+test('template edits submit only writable warehouse rows and preserve read-only rows', () => {
+  assert.deepEqual(splitTemplateProducts(['2', '1', '3'], [reagent(1), reagent(2, true, 2)], [1]), { editableIds: ['1'], readOnlyIds: ['2', '3'] });
+  assert.deepEqual(splitTemplateProducts(['2', '1'], [reagent(1), reagent(2, true, 2)], [1, 2]), { editableIds: ['2', '1'], readOnlyIds: [] });
 });
