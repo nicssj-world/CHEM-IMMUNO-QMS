@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CHEM-IMMUNO CBH">
-  <rect width="512" height="512" rx="112" fill="#0d3857"/>
-  <path d="M126 142h260v228H126z" fill="none" stroke="#42c7bb" stroke-width="12" opacity=".7"/>
-  <text x="256" y="313" fill="#fff" text-anchor="middle" font-family="Arial,Tahoma,sans-serif" font-size="160" font-weight="800" letter-spacing="-18">CI</text>
-  <circle cx="162" cy="136" r="14" fill="#42c7bb"/><circle cx="256" cy="136" r="14" fill="#42c7bb"/><circle cx="350" cy="136" r="14" fill="#42c7bb"/>
-</svg>

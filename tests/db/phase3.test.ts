@@ -23,6 +23,8 @@ test('Phase 3 PostgreSQL: signed monthly report, date range, search and warehous
     try{
       product=(await c.query<{id:string}>("insert into public.ci_products(warehouse_id,product_code,product_type,source_name,display_name) values(1,'CHE-0001','reagent','Synthetic reagent','Synthetic reagent') returning id")).rows[0].id;
       emptyProduct=(await c.query<{id:string}>("insert into public.ci_products(warehouse_id,product_code,product_type,source_name,display_name) values(1,'CHE-0002','control','Synthetic empty','Synthetic empty') returning id")).rows[0].id;
+      // Only explicitly required products count as Stockout; zero-balance imports remain unclassified.
+      await c.query("update public.ci_products set stock_requirement='required' where id=$1",[emptyProduct]);
       imm=(await c.query<{id:string}>("insert into public.ci_products(warehouse_id,product_code,product_type,source_name,display_name) values(2,'IMM-0001','control','Synthetic control','Synthetic control') returning id")).rows[0].id;
       platform=(await c.query<{id:string}>("select id from public.ci_platforms where warehouse_id=1 and platform_key='c503'")).rows[0].id;
       await c.query('insert into public.ci_product_platforms(product_id,platform_id,warehouse_id) values($1,$2,1)',[product,platform]);
@@ -56,6 +58,26 @@ test('Phase 3 PostgreSQL: signed monthly report, date range, search and warehous
       const noOther=await asUser(ADMIN,c=>c.query("select * from public.ci_search_inventory(1::smallint,'IMM',null,null,null,null,50,0)"));
       assert.equal(noOther.rows.length,0);
       await assert.rejects(asUser(ADMIN,c=>c.query("select * from public.ci_search_inventory(1::smallint,'',null,null,null,null,101,0)")),/CI_SEARCH_PAGE_INVALID/);
+    });
+    await t.test('P0: Manual ROP uses stock units directly and classification gates stockout',async()=>{
+      // ROP=5 units is not multiplied by order_pack_quantity=10.
+      await asUser(ADMIN,c=>c.query('select public.ci_save_reorder_settings($1::uuid,$2::jsonb)',[
+        product,JSON.stringify({stock_requirement:'required',mode:'manual',manual_rop_packs:5,order_pack_quantity:10})
+      ]));
+      const rop=await asUser(ADMIN,c=>c.query('select rop from public.ci_reorder_status where product_id=$1',[product]));
+      assert.equal(Number(rop.rows[0].rop),5);
+      const status=await asUser(ADMIN,c=>c.query("select stock_status from public.ci_search_inventory(1::smallint,'CHE-0001',null,null,null,null,50,0)"));
+      assert.equal(status.rows[0].stock_status,'adequate');
+      await asUser(ADMIN,c=>c.query('select public.ci_save_reorder_settings($1::uuid,$2::jsonb)',[
+        emptyProduct,JSON.stringify({stock_requirement:'on_demand'})
+      ]));
+      const onDemand=await asUser(ADMIN,c=>c.query("select stock_status from public.ci_search_inventory(1::smallint,'CHE-0002',null,null,null,null,50,0)"));
+      assert.equal(onDemand.rows[0].stock_status,'ตามความต้องการ');
+      const excluded=await asUser(ADMIN,c=>c.query("select * from public.ci_search_inventory(1::smallint,'CHE-0002',null,null,'stockout',null,50,0)"));
+      assert.equal(excluded.rows.length,0);
+      await assert.rejects(asUser(IMM,c=>c.query('select public.ci_save_reorder_settings($1::uuid,$2::jsonb)',[
+        product,JSON.stringify({stock_requirement:'on_demand'})
+      ])),/CI_ACCESS_DENIED/);
     });
     await t.test('warehouse reader cannot request other warehouse report or search',async()=>{
       await assert.rejects(asUser(IMM,c=>c.query("select * from public.ci_monthly_inventory_report(1::smallint,'2026-09-01')")),/CI_ACCESS_DENIED/);

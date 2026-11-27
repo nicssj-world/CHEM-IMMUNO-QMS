@@ -1,15 +1,50 @@
-import Link from 'next/link';
 import { requireAccess, canMutate } from '@/lib/auth';
-import { selectedWarehouse } from '@/lib/warehouse';
 import { createClient } from '@/lib/supabase/server';
-import { WarehouseSwitch } from '@/components/warehouse-switch';
-import { createCount } from '@/app/actions/inventory';
+import { loadRoundSummaries, readAll, readByIds, type RoundSummary } from '@/lib/stock-count-data';
+import { logUserMessage } from '@/lib/messages';
+import { formatThaiDateTime } from '@/lib/format';
+import { CountRoundList, type RoundListItem } from '@/components/count-round-list';
+import { CountCreateForm, type CreateLocation, type CreateProduct } from '@/components/count-create-form';
+import type { ScopeBalance } from '@/lib/stock-count';
 
-type Count = { id: string; created_at: string; status: string; note: string | null };
+const item = (round: RoundSummary): RoundListItem => ({
+  id: round.id, createdAtText: formatThaiDateTime(round.createdAt), note: round.note, scopeLabel: round.scopeLabel,
+  state: round.state, counted: round.progress.counted, total: round.progress.total, removable: round.deletable && round.canDelete,
+});
 
-export default async function CountsPage({ searchParams }: { searchParams: Promise<{ warehouse?: string; error?: string }> }) {
-  const params = await searchParams; const access = await requireAccess(); const warehouse = selectedWarehouse(access,params.warehouse); const client = await createClient();
-  const { data,error } = client ? await client.from('ci_stock_counts').select('id,created_at,status,note').eq('warehouse_id',warehouse.id).order('created_at',{ascending:false}).limit(50) : { data: [],error:null };
-  const counts = (data ?? []) as Count[];
-  return <main className="grid gap-6 max-w-[900px]"><div><p className="eyebrow mb-2">Physical count</p><h1 className="page-title">ตรวจนับ stock</h1><p className="muted mt-2 text-sm">บันทึก snapshot → กรอกยอดจริง → Supervisor อนุมัติหลังตรวจความเปลี่ยนแปลงของ ledger</p></div><WarehouseSwitch warehouses={access.warehouses} selected={warehouse} path="/counts"/>{params.error && <p className="error" role="alert">{params.error}</p>}{error && <p className="error" role="alert">{error.message}</p>}{canMutate(warehouse.role) && <form action={createCount} className="surface p-5 sm:p-7 grid gap-4"><input type="hidden" name="warehouse_id" value={warehouse.id}/><div><h2 className="font-extrabold text-lg">เริ่มรอบตรวจนับ</h2><p className="muted text-sm mt-1">Snapshot LOT × Location ที่มียอดคงเหลือในคลังนี้</p></div><label className="field">หมายเหตุ<input className="input" name="note" placeholder="เช่น ตรวจนับประจำเดือน"/></label><div><button className="button" type="submit">สร้าง snapshot</button></div></form>}<section className="surface p-5 sm:p-7"><h2 className="font-bold mb-4">รอบตรวจนับล่าสุด</h2><div className="grid gap-2">{counts.map(count => <Link href={`/counts/${count.id}`} key={count.id} className="rounded-xl border border-[#dce7eb] p-4 no-underline text-[var(--ink)] flex justify-between gap-3"><span><strong>{new Date(count.created_at).toLocaleString('th-TH')}</strong><span className="muted text-xs block mt-1">{count.note || count.id.slice(0,8)}</span></span><span className="badge h-fit">{count.status}</span></Link>)}{counts.length === 0 && <p className="muted text-sm">ยังไม่มีรอบตรวจนับ</p>}</div></section></main>;
+export default async function CountsPage({ searchParams }: { searchParams: Promise<{ deleted?: string }> }) {
+  const params = await searchParams;
+  const access = await requireAccess();
+  const writable = access.warehouses.filter(w => canMutate(w.role));
+  const client = await createClient();
+  if (!client) return <p className="error" role="alert">ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล</p>;
+  const writableIds = writable.map(w => Number(w.id));
+  const [summaries, balances, locations] = await Promise.all([
+    loadRoundSummaries(client, access),
+    writableIds.length ? readAll<ScopeBalance>((from, to) => client.from('ci_stock_balances')
+      .select('warehouse_id,product_id,lot_id,location_id', { count: 'exact' }).in('warehouse_id', writableIds).gt('balance', 0)
+      .order('lot_id').order('location_id').range(from, to)) : Promise.resolve({ data: [] as ScopeBalance[], error: null }),
+    readAll<CreateLocation>((from, to) => client.from('ci_locations').select('id,code,name,parent_location_id', { count: 'exact' }).order('code').range(from, to)),
+  ]);
+  const productResult = balances.data
+    ? await readByIds<CreateProduct>(balances.data.map(b => b.product_id), chunk => client.from('ci_products').select('id,product_code,display_name,warehouse_id').in('id', chunk))
+    : { data: null, error: null };
+  const error = summaries.error ?? balances.error ?? locations.error ?? productResult.error;
+  const rounds = summaries.data?.rounds ?? [];
+  const legacy = summaries.data?.legacy ?? [];
+  const open = rounds.filter(r => r.state === 'counting' || r.state === 'recheck');
+  const groups = writable.map(w => ({ id: Number(w.id), label: w.code === 'CHE' ? 'CHEM' : w.code === 'IMM' ? 'IMMUNO' : w.name }));
+  return <main className="grid gap-5 max-w-[1000px]">
+    <div>
+      <h1 className="page-title">ตรวจนับคลังน้ำยา</h1>
+      <p className="muted mt-2 text-sm">เลือกขอบเขต เดินตรวจตามตำแหน่ง แล้วกด “ตรวจแล้ว” ทีละรายการ · ผลบันทึกทันทีและกลับมาตรวจต่อได้</p>
+    </div>
+    {params.deleted && <p className="notice" role="status">ลบรอบตรวจนับแล้ว · ยอดคงเหลือในคลังไม่เปลี่ยน</p>}
+    {error && <p className="error" role="alert">โหลดข้อมูลรอบตรวจนับไม่สำเร็จ: {logUserMessage('counts', error)} · โหลดหน้าใหม่อีกครั้ง</p>}
+    {!error && writable.length > 0 && <CountCreateForm balances={balances.data ?? []} locations={locations.data ?? []}
+      products={(productResult.data ?? []).sort((a, b) => a.product_code.localeCompare(b.product_code))} groups={groups}
+      openRounds={open.map(r => ({ id: r.id, createdAtText: formatThaiDateTime(r.createdAt), scopeLabel: r.scopeLabel, counted: r.progress.counted, total: r.progress.total }))} />}
+    {!error && <CountRoundList title="รอบตรวจนับ" items={rounds.map(item)} emptyText="ยังไม่มีรอบตรวจนับ" />}
+    {!error && legacy.length > 0 && <CountRoundList title="รอบตรวจนับเดิม" items={legacy.map(item)} emptyText="" />}
+  </main>;
 }

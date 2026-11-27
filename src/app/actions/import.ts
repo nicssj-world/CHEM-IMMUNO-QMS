@@ -21,6 +21,10 @@ async function requireImportAdmin() {
 /** Staging stores evidence only. No Product Master record is activated here. */
 export async function stageApprovedWorkbook(formData: FormData): Promise<void> {
   const client = await requireImportAdmin();
+  const { data: activeBatch, error: activeBatchError } = await client.from('ci_import_batches')
+    .select('id').eq('status', 'staged').limit(1).maybeSingle();
+  if (activeBatchError) redirect('/import?error=batch-check');
+  if (activeBatch) redirect(`/import?batch=${activeBatch.id}&error=active`);
   const file = formData.get('workbook');
   if (!(file instanceof File) || file.size < 1 || file.size > 1_000_000) {
     redirect('/import?error=file');
@@ -38,6 +42,16 @@ export async function stageApprovedWorkbook(formData: FormData): Promise<void> {
   redirect(`/import?batch=${data}&staged=1`);
 }
 
+export async function cancelApprovedImport(formData: FormData): Promise<void> {
+  const client = await requireImportAdmin();
+  const batchId = String(formData.get('batchId') ?? '');
+  if (!uuidPattern.test(batchId)) redirect('/import?error=batch');
+  const { error } = await client.rpc('ci_cancel_import_batch', { p_batch_id: batchId });
+  if (error) redirect(`/import?batch=${batchId}&error=cancel`);
+  revalidatePath('/import');
+  redirect('/import?cancelled=1');
+}
+
 export async function applyApprovedImport(formData: FormData): Promise<void> {
   const client = await requireImportAdmin();
   const batchId = String(formData.get('batchId') ?? '');
@@ -48,7 +62,7 @@ export async function applyApprovedImport(formData: FormData): Promise<void> {
   if (error) redirect(`/import?batch=${batchId}&error=apply`);
   revalidatePath('/import');
   revalidatePath('/products');
-  redirect(`/import?batch=${batchId}&applied=1`);
+  redirect('/import?applied=1');
 }
 
 export async function resolveImportReview(formData: FormData): Promise<void> {

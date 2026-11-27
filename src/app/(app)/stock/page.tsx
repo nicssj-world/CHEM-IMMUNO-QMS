@@ -1,27 +1,120 @@
 import Link from 'next/link';
 import { requireAccess } from '@/lib/auth';
-import { selectedWarehouse } from '@/lib/warehouse';
+import { searchGroupedStock } from '@/lib/unified-stock';
 import { createClient } from '@/lib/supabase/server';
-import { WarehouseSwitch } from '@/components/warehouse-switch';
+import { LiveSearchForm } from '@/components/live-search-form';
 import { expiryBucket } from '@/lib/inventory-insights';
+import { logUserMessage } from '@/lib/messages';
 
-type Row = { product_id: string; product_code: string; display_name: string; lot_id: string; lot_number: string; expiry_date: string; location_id: string; location_code: string; balance: number };
+function expiryLabel(date:string) {
+  const bucket=expiryBucket(date);
+  if(bucket==='EXPIRED')return {text:'หมดอายุ',css:'bg-red-50 text-red-700'};
+  if(bucket==='≤30')return {text:'ใกล้หมดอายุ ≤30 วัน',css:'bg-amber-100 text-amber-900'};
+  if(bucket==='31–60'||bucket==='61–90')return {text:'เหลือ '+bucket+' วัน',css:'bg-amber-50 text-amber-800'};
+  return {text:'ปกติ',css:'bg-emerald-50 text-emerald-700'};
+}
+function displayDate(iso:string) {
+  const [year,month,day]=iso.split('-');
+  return [day,month,year].join('/');
+}
 
-export default async function StockPage({ searchParams }: { searchParams: Promise<{ warehouse?: string; q?: string; page?: string }> }) {
-  const params = await searchParams;
-  const access = await requireAccess();
-  const warehouse = selectedWarehouse(access,params.warehouse);
-  const client = await createClient();
-  if (!client) return <p className="error">ยังไม่ได้ตั้งค่า Supabase</p>;
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
+  const params=await searchParams;
+  const access=await requireAccess();
+  const client=await createClient();
+  if(!client)return <p className="error">ยังไม่ได้ตั้งค่า Supabase</p>;
   const q=(params.q??'').trim().slice(0,100);
   const page=Math.min(10000,Math.max(1,Number.parseInt(params.page??'1',10)||1));
-  const {data,error}=await client.rpc('ci_search_stock',{p_warehouse_id:warehouse.id,p_query:q,p_limit:50,p_offset:(page-1)*50});
-  const rows=(data??[]) as Row[];
-  const subtotal=rows.reduce((sum,row)=>sum+Number(row.balance),0);
-  const url=new URLSearchParams({warehouse:warehouse.code,q});
-  return <main className="grid gap-6"><div><p className="eyebrow mb-2">Inventory lookup</p><h1 className="page-title">ยอดคงคลัง</h1><p className="muted mt-2 text-sm">ยอดจาก signed ledger แยกตาม Product, LOT และตำแหน่ง · {warehouse.name}</p></div><WarehouseSwitch warehouses={access.warehouses} selected={warehouse} path="/stock"/>
-    <form method="get" className="surface p-4 flex gap-3 flex-wrap items-end"><input type="hidden" name="warehouse" value={warehouse.code}/><label className="field flex-1 min-w-[200px]">ค้นหาสินค้า / REF / Barcode / LOT<input className="input" name="q" defaultValue={q} placeholder="รหัสสินค้า ชื่อ REF Barcode หรือ LOT"/></label><button className="button">ค้นหา</button></form>
-    {error && <p className="error" role="alert">อ่านยอดคงคลังไม่สำเร็จ: {error.message}</p>}
-    {!error && <><div className="surface p-5 flex justify-between gap-4"><div><p className="muted text-sm">หน้า {page} · รายการ LOT × Location</p><p className="text-2xl font-extrabold">{rows.length}</p></div><div className="text-right"><p className="muted text-sm">ยอดรวมเฉพาะหน้านี้</p><p className="text-2xl font-extrabold">{subtotal.toLocaleString()}</p></div></div><section className="surface overflow-hidden"><div className="desktop-table table-wrap"><table className="data-table"><thead><tr><th>สินค้า</th><th>LOT</th><th>วันหมดอายุ</th><th>ตำแหน่ง</th><th className="text-right">คงเหลือ</th></tr></thead><tbody>{rows.map(row=><tr key={`${row.lot_id}:${row.location_id}`}><td><Link href={`/products/${row.product_id}`} className="font-bold text-[#126390]">{row.product_code}</Link><p className="text-sm">{row.display_name}</p></td><td>{row.lot_number}</td><td>{row.expiry_date} · {expiryBucket(row.expiry_date)}</td><td>{row.location_code}</td><td className="text-right font-bold">{Number(row.balance).toLocaleString()}</td></tr>)}</tbody></table></div><div className="mobile-card-list p-4">{rows.map(row=><article className="border border-[#dce7eb] rounded-xl p-4" key={`${row.lot_id}:${row.location_id}`}><div className="flex justify-between gap-3"><Link href={`/products/${row.product_id}`} className="font-bold text-[#126390]">{row.product_code}</Link><strong>{Number(row.balance).toLocaleString()}</strong></div><p className="font-semibold text-sm mt-1">{row.display_name}</p><dl className="grid grid-cols-2 gap-2 mt-3 text-xs"><div><dt className="muted">LOT</dt><dd className="font-semibold">{row.lot_number}</dd></div><div><dt className="muted">หมดอายุ</dt><dd className="font-semibold">{row.expiry_date} · {expiryBucket(row.expiry_date)}</dd></div><div><dt className="muted">ตำแหน่ง</dt><dd className="font-semibold">{row.location_code}</dd></div></dl></article>)}</div>{rows.length===0 && <p className="muted p-5">ไม่มียอดคงคลังตามเงื่อนไข</p>}</section><nav aria-label="หน้าผลการค้นหา" className="flex gap-3">{page>1 && <Link className="button secondary" href={`/stock?${url}&page=${page-1}`}>ก่อนหน้า</Link>}{rows.length===50 && <Link className="button secondary" href={`/stock?${url}&page=${page+1}`}>ถัดไป</Link>}</nav></>}
+  const result=await searchGroupedStock(client,access.warehouses.map(w=>Number(w.id)),q,page);
+  const products=result.products;
+  const query=new URLSearchParams({q});
+  return <main className="grid gap-5 min-w-0">
+    <header className="grid gap-2">
+      <p className="eyebrow">Inventory · LOT-first</p>
+      <h1 className="page-title">คงคลังน้ำยา</h1>
+      <p className="muted text-sm">ดู LOT วันหมดอายุ และจำนวนคงเหลือก่อน · กดขยายเพื่อดูยอดแยกตำแหน่ง</p>
+    </header>
+    <LiveSearchForm ariaLabel="ค้นหา LOT และน้ำยา" className="surface p-4 grid gap-2">
+      <label className="field">ค้นหาน้ำยา / REF / Barcode / LOT
+        <input className="input" type="search" name="q" maxLength={100} defaultValue={q} placeholder="ชื่อ, รหัสน้ำยา, REF, Barcode หรือ LOT"/>
+      </label>
+    </LiveSearchForm>
+    {result.error&&<p className="error" role="alert">อ่านยอดคงคลังไม่สำเร็จ: {logUserMessage('stock',result.error)}</p>}
+    {!result.error&&<>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm muted">พบ <strong className="text-[var(--ink)]">{result.totalProducts.toLocaleString('th-TH')}</strong> น้ำยา · <strong className="text-[var(--ink)]">{result.totalLots.toLocaleString('th-TH')}</strong> LOT ที่มียอดคงเหลือ</p>
+        <p className="text-xs muted">หน้า {page} จาก {Math.max(result.pageCount,1)} · เรียง LOT ตามวันหมดอายุ (FEFO)</p>
+      </div>
+      <section className="surface desktop-table table-wrap" aria-label="ตารางคงคลังแยก LOT">
+        <table className="data-table">
+          <thead><tr><th>น้ำยา</th><th>LOT</th><th>EXP</th><th className="text-right">คงเหลือ</th><th>ตำแหน่ง</th></tr></thead>
+          <tbody>{products.map(product=>product.lots.map((lot,index)=>{
+            const status=expiryLabel(lot.expiry);
+            return <tr key={product.id+':'+lot.id}>
+              {index===0&&<td rowSpan={product.lots.length}>
+                <Link href={`/products/${product.id}?tab=lots`} className="font-bold text-brand">{product.code}</Link>
+                <p className="text-sm max-w-xs break-words">{product.name}</p>
+                <p className="muted text-xs mt-2">รวม {product.balance.toLocaleString('th-TH')} · {product.lots.length} LOT</p>
+              </td>}
+              <td className="font-semibold">{lot.number}</td>
+              <td><span className="tabular-nums">{displayDate(lot.expiry)}</span>
+                <span className={`block w-fit rounded-md mt-1 px-2 py-1 text-xs font-semibold ${status.css}`}>{status.text}</span></td>
+              <td className="text-right font-extrabold tabular-nums">{lot.balance.toLocaleString('th-TH')}</td>
+              <td><details><summary className="cursor-pointer text-brand text-sm font-semibold">ดู {lot.locations.length} ตำแหน่ง</summary>
+                <div className="grid gap-1 mt-2 text-xs">{lot.locations.map(location=>
+                  <p key={location.id} className="flex gap-3 justify-between"><span>{location.code}</span><strong>{location.balance.toLocaleString('th-TH')}</strong></p>)}</div>
+              </details></td>
+            </tr>;
+          }))}</tbody>
+        </table>
+        {!products.length&&<p className="p-5 muted text-sm">ไม่พบ LOT ที่มียอดคงเหลือตามเงื่อนไขที่ค้นหา</p>}
+      </section>
+      <section className="mobile-card-list grid gap-3" aria-label="คงคลังแยกตามน้ำยาและ LOT">
+        {products.map(product=><article key={product.id} className="surface p-4 sm:p-5 min-w-0 grid gap-3">
+          <div className="flex justify-between gap-3 items-start">
+            <div className="min-w-0">
+              <Link href={`/products/${product.id}?tab=lots`} className="font-bold text-brand break-words">{product.code}</Link>
+              <p className="font-semibold text-sm break-words mt-1">{product.name}</p>
+              <p className="muted text-xs mt-1">{product.lots.length} LOT ที่มียอดคงเหลือ</p>
+            </div>
+            <div className="shrink-0 text-right rounded-xl bg-surface-2 px-3 py-2">
+              <strong className="text-2xl tabular-nums">{product.balance.toLocaleString('th-TH')}</strong>
+              <p className="muted text-xs">คงเหลือรวม</p>
+            </div>
+          </div>
+          <div className="grid gap-2">
+            {product.lots.map(lot=>{
+              const status=expiryLabel(lot.expiry);
+              return <div key={lot.id} className="rounded-xl border border-line px-3 py-3 grid gap-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 grid gap-1">
+                    <strong className="text-sm break-all">LOT {lot.number}</strong>
+                    <p className="text-sm">EXP <span className="font-semibold tabular-nums">{displayDate(lot.expiry)}</span></p>
+                    <span className={`self-start text-xs font-semibold rounded-md px-2 py-1 ${status.css}`}>{status.text}</span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <strong className="text-xl tabular-nums">{lot.balance.toLocaleString('th-TH')}</strong>
+                    <p className="text-xs muted">คงเหลือ</p>
+                  </div>
+                </div>
+                <details className="text-xs border-t border-line pt-2">
+                  <summary className="cursor-pointer font-semibold text-brand min-h-9 flex items-center">ตำแหน่งจัดเก็บ ({lot.locations.length})</summary>
+                  <div className="grid gap-2 pt-2">{lot.locations.map(location=>
+                    <div key={location.id} className="flex justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2">
+                      <span className="break-words">{location.code}</span><strong className="tabular-nums">{location.balance.toLocaleString('th-TH')}</strong>
+                    </div>)}</div>
+                </details>
+              </div>;
+            })}
+          </div>
+          <Link href={`/products/${product.id}?tab=lots`} className="text-sm font-semibold text-brand justify-self-start">ดูรายละเอียดน้ำยา →</Link>
+        </article>)}
+        {!products.length&&<p className="surface p-6 muted text-sm">ไม่พบ LOT ที่มียอดคงเหลือตามเงื่อนไขที่ค้นหา</p>}
+      </section>
+      <nav aria-label="หน้าผลการค้นหา" className="flex gap-3 justify-between">
+        {page>1?<Link className="button secondary" href={`/stock?${query}&page=${page-1}`}>← ก่อนหน้า</Link>:<span/>}
+        {page<result.pageCount&&<Link className="button secondary" href={`/stock?${query}&page=${page+1}`}>ถัดไป →</Link>}
+      </nav>
+    </>}
   </main>;
 }

@@ -90,7 +90,50 @@ test('Phase 1 PostgreSQL gate: auth, ledger, workflows, concurrency', { timeout:
     const cheLocation = await rpc<string>(ADMIN, 'ci_create_location', [1, 'A1', 'Chem shelf A1'], ['smallint', 'text', 'text']);
     const cheLocation2 = await rpc<string>(ADMIN, 'ci_create_location', [1, 'A2', 'Chem shelf A2'], ['smallint', 'text', 'text']);
     const immLocation = await rpc<string>(ADMIN, 'ci_create_location', [2, 'I1', 'Imm shelf I1'], ['smallint', 'text', 'text']);
-    const vendor = await rpc<string>(ADMIN, 'ci_create_vendor', ['Vendor A'], ['text']);
+    const vendor = await rpc<string>(ADMIN, 'ci_create_vendor', [{ vendorCode: 'V-A', name: 'Vendor A' }], ['jsonb']);
+
+    await t.test('Product hard delete is admin-only, blocks invoice and LOT history, and audits an unused product', async () => {
+      const deletable = await product(ADMIN, 1, 'consumable', 'Disposable product', 'DELETE-NO-HISTORY');
+      await assert.rejects(
+        () => rpc(STAFF_CHE, 'ci_delete_product', [deletable], ['uuid']),
+        /CI_ACCESS_DENIED/,
+      );
+      await rpc(ADMIN, 'ci_delete_product', [deletable], ['uuid']);
+      const deleted = await asUser(ADMIN, client => client.query('SELECT id FROM ci_products WHERE id=$1', [deletable]));
+      assert.equal(deleted.rows.length, 0);
+      const deleteAudit = await asUser(ADMIN, client => client.query(
+        "SELECT action FROM ci_audit_logs WHERE entity_table='ci_products' AND entity_id=$1",
+        [deletable],
+      ));
+      assert.equal(deleteAudit.rows.filter(row => row.action === 'HARD_DELETE').length, 1);
+
+      const invoiceProduct = await product(ADMIN, 1, 'reagent', 'Invoice-protected product', 'DELETE-INVOICE');
+      await rpc<string>(ADMIN, 'ci_create_invoice', [{
+        vendor_id: vendor,
+        invoice_number: 'INV-PRODUCT-DELETE-HISTORY',
+        invoice_date: '2026-09-23',
+        lines: [{ product_id: invoiceProduct, quantity: 1 }],
+      }], ['jsonb']);
+      await assert.rejects(
+        () => rpc(ADMIN, 'ci_delete_product', [invoiceProduct], ['uuid']),
+        /CI_PRODUCT_HAS_OPERATIONAL_HISTORY/,
+      );
+
+      const lotProduct = await product(ADMIN, 1, 'control', 'LOT-protected product', 'DELETE-LOT');
+      const owner = await connect();
+      try {
+        await owner.query(
+          "INSERT INTO public.ci_stock_lots(warehouse_id,product_id,lot_number,expiry_date) VALUES(1,$1,'DELETE-HISTORY-LOT','2027-01-01')",
+          [lotProduct],
+        );
+      } finally {
+        await owner.end();
+      }
+      await assert.rejects(
+        () => rpc(ADMIN, 'ci_delete_product', [lotProduct], ['uuid']),
+        /CI_PRODUCT_HAS_OPERATIONAL_HISTORY/,
+      );
+    });
 
     await t.test('Ephis provisioning resolves the internal Auth identity and replaces warehouse grants atomically', async () => {
       const provisionedUser = '55555555-5555-4555-8555-555555555555';

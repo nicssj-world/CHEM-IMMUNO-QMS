@@ -8,6 +8,7 @@ export type ParsedBarcode = {
   pcn?: string;
   lot?: string;
   expiry?: string;
+  productionDate?: string;
   serial?: string;
   quantity?: number;
   primary?: string;
@@ -25,10 +26,16 @@ function date(year: number, month: number, day: number): string | undefined {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-function yymmdd(value: string): string | undefined {
+function yymmdd(value: string, endOfMonthForDayZero = false): string | undefined {
   if (!/^\d{6}$/.test(value)) return;
   const yy = Number(value.slice(0, 2));
-  return date(yy >= 50 ? 1900 + yy : 2000 + yy, Number(value.slice(2, 4)), Number(value.slice(4, 6)));
+  const year = yy >= 50 ? 1900 + yy : 2000 + yy;
+  const month = Number(value.slice(2, 4));
+  const day = Number(value.slice(4, 6));
+  if (endOfMonthForDayZero && day === 0 && month >= 1 && month <= 12) {
+    return date(year, month, new Date(Date.UTC(year, month, 0)).getUTCDate());
+  }
+  return date(year, month, day);
 }
 
 function hibcExpiry(format: string, value: string): string | undefined {
@@ -59,14 +66,14 @@ function parseGs1(payload: string, result: ParsedBarcode) {
   let cursor = 0;
   while (cursor < text.length) {
     if (text[cursor] === GS) { cursor++; continue; }
-    const match = parenthesized ? /^\((01|10|17|21|240)\)/.exec(text.slice(cursor)) : /^(01|10|17|21|240)/.exec(text.slice(cursor));
+    const match = parenthesized ? /^\((01|10|11|13|15|16|17|21|240)\)/.exec(text.slice(cursor)) : /^(01|10|11|13|15|16|17|21|240)/.exec(text.slice(cursor));
     if (!match) { result.warnings.push(`Unknown or malformed AI at offset ${cursor}`); return; }
     const ai = match[1];
     cursor += match[0].length;
     if (seen.has(ai)) { result.warnings.push(`Duplicate AI ${ai}`); return; }
     seen.add(ai);
     let value: string;
-    if (ai === '01' || ai === '17') {
+    if (['01', '11', '13', '15', '16', '17'].includes(ai)) {
       const length = ai === '01' ? 14 : 6;
       value = text.slice(cursor, cursor + length);
       if (!/^\d+$/.test(value) || value.length !== length) { result.warnings.push(`Invalid AI ${ai}`); return; }
@@ -85,8 +92,9 @@ function parseGs1(payload: string, result: ParsedBarcode) {
     if (ai === '10') result.lot = value;
     if (ai === '21') result.serial = value;
     if (ai === '240') result.additionalProductId = value;
+    if (ai === '11') result.productionDate = yymmdd(value);
     if (ai === '17') {
-      result.expiry = yymmdd(value);
+      result.expiry = yymmdd(value, true);
       if (!result.expiry) { result.warnings.push('Invalid AI 17 expiry'); return; }
     }
   }
@@ -146,8 +154,45 @@ export function parseBarcode(raw: string, symbology = 'manual'): ParsedBarcode {
   const result: ParsedBarcode = { raw, symbology, standard: 'UNKNOWN', warnings: [] };
   const text = raw.trim();
   if (!text) { result.warnings.push('Empty barcode'); return result; }
-  if (/^\](?:C1|d2|e0)/.test(text) || /^(?:\x1d|<GS>)?\(?01\)?\d{14}/.test(text)) parseGs1(text, result);
+  if (/^\](?:C1|d2|e0)/.test(text) || /^\(240\)/.test(text) || /^(?:\x1d|<GS>)?\(?01\)?\d{14}/.test(text)) parseGs1(text, result);
   else if (/^(?:\](?:A0|C0|d1))?\*?\+/.test(text)) parseHibc(text, result);
   else result.warnings.push('Unrecognized barcode standard; use manual Product search');
   return result;
+}
+
+/** Exact Product Master keys from an optically decoded symbol. Never OCR or truncate digits. */
+export function barcodeIdentifierCandidates(parsed: ParsedBarcode): string[] {
+  const values = new Set<string>();
+  // GS1 Data Matrix carries Roche REF in AI 240. Preserve leading zeroes.
+  if (parsed.additionalProductId) values.add(parsed.additionalProductId);
+  if (parsed.gtin) {
+    values.add(parsed.gtin);
+    values.add(`01${parsed.gtin}`);
+  }
+  if (parsed.primary) values.add(parsed.primary);
+  if (parsed.pcn) values.add(parsed.pcn);
+  // GS1/HIBC raw payloads also contain LOT and dates; never match them as product IDs.
+  if (parsed.standard === 'UNKNOWN' && parsed.raw.trim()) values.add(parsed.raw.trim());
+  return [...values];
+}
+
+/** Common conservative decoded-batch trust rule for receiving and issue. */
+export function scanBatchFields(parsed: ParsedBarcode): { lot: string; expiry: string; requiresReview: boolean } {
+  // A malformed GS1 element, checksum or expiry may compromise the batch identity.
+  // Warnings about an unrelated HIBC supplement / manufacture date do not.
+  const significantWarnings = parsed.warnings.filter(warning =>
+    !warning.startsWith('Unsupported HIBC supplemental field: ') &&
+    warning !== 'Invalid HIBC 16D manufacture date'
+  );
+  // Preserve independently parsed LOT/expiry for human verification if a later,
+  // unrelated GS1 AI is unknown. Never auto-accept a barcode with warnings.
+  // Invalid dates, duplicate AIs and missing boundaries remain untrusted.
+  if (significantWarnings.length) {
+    const trailingUnknownOnly = significantWarnings.every(warning => warning.startsWith('Unknown or malformed AI at offset '));
+    if (parsed.standard === 'GS1' && trailingUnknownOnly && parsed.lot && parsed.expiry) {
+      return { lot: parsed.lot, expiry: parsed.expiry, requiresReview: true };
+    }
+    return { lot: '', expiry: '', requiresReview: true };
+  }
+  return { lot: parsed.lot ?? '', expiry: parsed.expiry ?? '', requiresReview: !parsed.lot || !parsed.expiry };
 }

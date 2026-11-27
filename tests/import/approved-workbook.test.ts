@@ -51,6 +51,8 @@ test("source assertions and owner resolutions remain separate and exact", async 
   assert.equal(audit.active_product_platform_mapping_count, 28);
   assert.equal(audit.used_with_review_row_count, 12);
   assert.equal(audit.source_anomaly_review_count, 8);
+  assert.ok(audit.notes.some((note) => note.includes('FOC No. 47 and 48')));
+  assert.ok(audit.notes.some((note) => note.includes('physical sheet and row identify each source record')));
   assert.equal(payload.product_relations.filter((r) => r.source_sheet.startsWith("FOC item_chem")).length, 60);
   assert.equal(payload.product_relations.filter((r) => r.source_sheet.startsWith("FOC item_Imm")).length, 30);
   assert.deepEqual(
