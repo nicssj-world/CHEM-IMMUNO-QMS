@@ -26,7 +26,7 @@ export default async function PurchaseOrderPage({ params, searchParams }: { para
     const canSellerConfirm = confirmation?.data === true && !confirmation.error;
     return <>
       {confirmation?.error && <p className="error print-hide" role="alert">ตรวจสอบสิทธิ์ยืนยันใบสั่งซื้อไม่สำเร็จ · โหลดหน้าใหม่อีกครั้ง</p>}
-      <PoDocument header={header} lines={lines} created={Boolean(query.created)} canCancel={canCancel} canSellerConfirm={canSellerConfirm} />
+      <PoDocument key={header.id} header={header} lines={lines} created={Boolean(query.created)} canCancel={canCancel} canSellerConfirm={canSellerConfirm} />
     </>;
   }
   const [catalog, templates] = await Promise.all([loadCatalog(client, access, lines.map(l => l.product_id)), loadTemplates(client)]);

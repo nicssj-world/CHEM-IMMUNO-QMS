@@ -67,7 +67,7 @@ test('seller confirmation: authorization, first writer, revocation, history and 
     assert.equal(await eligible(cheOnly,other.id),true);
     assert.equal(await eligible(seller,draft.id),false);
     await assert.rejects(confirm(cheOnly,order.id),/CI_ACCESS_DENIED/);
-    await assert.rejects(confirm(seller,draft.id),/CI_PO_SELLER_NOT_ORDERED/);
+    await assert.rejects(confirm(seller,draft.id),/CI_ACCESS_DENIED/);
     await assert.rejects(confirm(denied,order.id),/CI_ACCESS_DENIED/);
     await assert.rejects(actor(seller,c=>c.query('update ci_purchase_orders set acknowledged_at=now() where id=$1',[order.id])),/permission denied/);
     await assert.rejects(actor(seller,c=>c.query('update ci_user_profiles set can_confirm_purchase_orders=true where user_id=$1',[seller])),/permission denied/);

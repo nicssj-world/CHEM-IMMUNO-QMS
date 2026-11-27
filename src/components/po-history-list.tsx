@@ -19,7 +19,7 @@ export function PoHistoryList({ rows }: { rows: HistoryRow[] }) {
   const [status, setStatus] = useState('all');
   const visible = useMemo(() => {
     const needle = normalize(query);
-    return rows.filter(row => (status === 'all' || row.status === status || (row.status === 'ordered' && ((status === 'awaiting_confirmation' && !row.acknowledgedDateText) || (status === 'seller_confirmed' && !!row.acknowledgedDateText))))
+    return rows.filter(row => (status === 'all' || row.status === status || (status === 'awaiting_confirmation' && row.status === 'ordered' && !row.acknowledgedDateText) || (status === 'seller_confirmed' && !!row.acknowledgedDateText))
       && (!needle || normalize(`${row.poNumber ?? ''} ${row.templateName ?? ''} ${row.createdByName}`).includes(needle)));
   }, [rows, query, status]);
   return <section className="surface p-4 sm:p-5 grid gap-3">

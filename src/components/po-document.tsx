@@ -57,7 +57,7 @@ export function PoDocument({ header, lines, created, canCancel, canSellerConfirm
 
     {confirmError && <p className="error print-hide" role="alert">{confirmError}</p>}
     {(header.status === 'ordered' || confirmedAt) && <section className="surface print-hide p-4 grid gap-1" aria-live="polite">
-      <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">การยืนยันของผู้แทนขาย</h3><span className={'badge ' + (confirmedAt ? '!bg-emerald-50 !text-emerald-800' : '!bg-amber-50 !text-amber-800')}>{confirmedAt ? 'ยืนยันแล้ว' : 'รอยืนยัน'}</span></div>
+      <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{confirmedAt ? 'ผู้แทนขายยืนยันแล้ว' : 'การยืนยันของผู้แทนขาย'}</h3><span className={'badge ' + (confirmedAt ? '!bg-emerald-50 !text-emerald-800' : '!bg-amber-50 !text-amber-800')}>{confirmedAt ? 'ยืนยันแล้ว' : 'รอยืนยัน'}</span></div>
       {confirmedAt && <p className="text-sm"><span>ผู้ยืนยัน: {confirmedName}</span><span className="block muted">{formatThaiDateTime(confirmedAt)}</span></p>}
     </section>}
     <article className="po-document surface p-5 sm:p-8 grid gap-5">

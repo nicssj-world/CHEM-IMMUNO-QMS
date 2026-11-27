@@ -31,6 +31,8 @@ returns boolean language sql stable security definer set search_path = '' as $$
   select auth.uid() is not null
     and exists(select 1 from public.ci_user_profiles p
       where p.user_id=auth.uid() and p.active and p.can_confirm_purchase_orders)
+    and exists(select 1 from public.ci_purchase_orders o where o.id=p_id
+      and (o.status in ('ordered','cancelled') or o.created_by=auth.uid()))
     and exists(select 1 from public.ci_purchase_order_lines l where l.purchase_order_id=p_id)
     and not exists(select 1 from public.ci_purchase_order_lines l where l.purchase_order_id=p_id
       and not ci_private.can_read(l.warehouse_id))
