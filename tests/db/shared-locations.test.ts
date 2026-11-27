@@ -58,7 +58,9 @@ test('shared Location Master: legacy IDs survive, storage is shared, stock and p
   try {
     await owner(async db => {
       await db.query(await readFile('tests/db/bootstrap.sql', 'utf8'));
-      const files = (await readdir('supabase/migrations')).filter(x => x.endsWith('.sql') && !x.includes('ci_shared_location_master')).sort();
+      // Exercise the legacy-to-shared upgrade at its historical migration boundary.
+      // Later migrations require shared locations to exist; the full chain is covered by unified-db.
+      const files = (await readdir('supabase/migrations')).filter(x => x.endsWith('.sql') && x < '20261009052520_ci_shared_location_master.sql').sort();
       for (const name of files) await db.query(await readFile(path.join('supabase/migrations', name), 'utf8'));
       await db.query(`INSERT INTO auth.users(id) VALUES ('${U.admin}'),('${U.staffChe}'),('${U.supervisorChe}'),('${U.staffImm}'),('${U.inactive}')`);
       await db.query(`INSERT INTO public.ci_user_profiles(user_id,ephis_id,display_name,active) VALUES

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CircleCheck, Printer, XCircle } from 'lucide-react';
 import { ConfirmDialog } from './confirm-dialog';
-import { cancelPurchaseOrder } from '@/app/actions/purchase-orders';
+import { cancelPurchaseOrder, confirmPurchaseOrderAsSeller, type SellerConfirmation } from '@/app/actions/purchase-orders';
 import type { OrderHeader, OrderLine } from '@/lib/purchase-order-data';
 import { poStatusLabels, ropText } from '@/lib/purchase-orders';
 import { formatDateBE, formatThaiDateTime } from '@/lib/format';
@@ -13,16 +13,31 @@ import { unitLabel } from '@/lib/units';
 const fmt = (n: number | string | null) => n === null ? '—' : Number(n).toLocaleString('th-TH', { maximumFractionDigits: 3 });
 
 /** The saved order (snapshot only). Screen shows every line; the printout leaves out zero-quantity lines. */
-export function PoDocument({ header, lines, created, canCancel }: { header: OrderHeader; lines: OrderLine[]; created: boolean; canCancel: boolean }) {
+export function PoDocument({ header, lines, created, canCancel, canSellerConfirm }: { header: OrderHeader; lines: OrderLine[]; created: boolean; canCancel: boolean; canSellerConfirm: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState('');
+  const [savedConfirmation, setSavedConfirmation] = useState<SellerConfirmation | null>(null);
+  const confirmedAt = savedConfirmation?.acknowledged_at ?? header.acknowledged_at;
+  const confirmedName = savedConfirmation?.acknowledged_by_name ?? header.acknowledged_by_name;
+  async function confirmAsSeller() {
+    if (!canSellerConfirm || confirming || pending || confirmedAt) return;
+    setConfirming(true); setConfirmError('');
+    try {
+      const result = await confirmPurchaseOrderAsSeller(header.id);
+      if (!result.ok) { setConfirmError(result.message); return; }
+      setSavedConfirmation(result.confirmation); router.refresh();
+    } catch { setConfirmError('เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่'); }
+    finally { setConfirming(false); }
+  }
   const printed = lines.filter(line => Number(line.order_quantity) > 0);
   const zero = lines.length - printed.length;
   const numberOf = new Map(printed.map((line, index) => [line.id, index + 1]));
   async function cancel() {
-    if (pending) return;
+    if (pending || confirming) return;
     setPending(true); setError('');
     try {
       const result = await cancelPurchaseOrder(header.id);
@@ -35,10 +50,16 @@ export function PoDocument({ header, lines, created, canCancel }: { header: Orde
     {created && <p className="notice print-hide flex items-center gap-2" role="status"><CircleCheck size={18} aria-hidden /> สร้างใบสั่งซื้อสำเร็จ · เลขที่ {header.po_number}</p>}
     <div className="print-hide flex flex-wrap items-center gap-2">
       <button type="button" className="button min-h-12" onClick={() => window.print()}><Printer size={18} aria-hidden /> พิมพ์ / บันทึก PDF</button>
-      {canCancel && <button type="button" className="button secondary min-h-12 text-[#a83442]" onClick={() => { setError(''); setOpen(true); }}><XCircle size={17} aria-hidden /> ยกเลิกใบสั่งซื้อ</button>}
+      {canSellerConfirm && !confirmedAt && header.status === 'ordered' && <button type="button" className="button min-h-12 !bg-emerald-700 !text-white" disabled={confirming || pending} aria-busy={confirming} onClick={() => void confirmAsSeller()}><CircleCheck size={18} aria-hidden /> {confirming ? 'กำลังยืนยัน…' : 'ยืนยันใบสั่งซื้อ'}</button>}
+      {canCancel && <button type="button" disabled={confirming || pending} className="button secondary min-h-12 text-[#a83442]" onClick={() => { setError(''); setOpen(true); }}><XCircle size={17} aria-hidden /> ยกเลิกใบสั่งซื้อ</button>}
       {zero > 0 && <p className="muted text-sm">รายการที่ยอดสั่งซื้อเป็น 0 ({zero} รายการ) แสดงบนหน้าจอเท่านั้น ไม่พิมพ์ในเอกสาร</p>}
     </div>
 
+    {confirmError && <p className="error print-hide" role="alert">{confirmError}</p>}
+    {(header.status === 'ordered' || confirmedAt) && <section className="surface print-hide p-4 grid gap-1" aria-live="polite">
+      <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{confirmedAt ? 'ผู้แทนขายยืนยันแล้ว' : 'การยืนยันของผู้แทนขาย'}</h3><span className={'badge ' + (confirmedAt ? '!bg-emerald-50 !text-emerald-800' : '!bg-amber-50 !text-amber-800')}>{confirmedAt ? 'ยืนยันแล้ว' : 'รอยืนยัน'}</span></div>
+      {confirmedAt && <p className="text-sm"><span>ผู้ยืนยัน: {confirmedName}</span><span className="block muted">{formatThaiDateTime(confirmedAt)}</span></p>}
+    </section>}
     <article className="po-document surface p-5 sm:p-8 grid gap-5">
       <header className="grid sm:grid-cols-[minmax(0,1fr)_auto] gap-4 items-start border-b border-line pb-4">
         <div className="flex gap-3 items-start">

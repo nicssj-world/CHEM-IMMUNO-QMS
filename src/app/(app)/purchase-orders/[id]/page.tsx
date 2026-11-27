@@ -22,7 +22,12 @@ export default async function PurchaseOrderPage({ params, searchParams }: { para
     // A confirmed order always shows its saved snapshot, never today's stock or ROP.
     const canCancel = header.status === 'ordered' && (header.created_by === access.userId
       || [...new Set(lines.map(l => Number(l.warehouse_id)))].every(wh => access.warehouses.some(w => Number(w.id) === wh && canSupervise(w.role))));
-    return <PoDocument header={header} lines={lines} created={Boolean(query.created)} canCancel={canCancel} />;
+    const confirmation = header.status === 'ordered' && !header.acknowledged_at ? await client.rpc('ci_can_seller_confirm_purchase_order', { p_id: id }) : null;
+    const canSellerConfirm = confirmation?.data === true && !confirmation.error;
+    return <>
+      {confirmation?.error && <p className="error print-hide" role="alert">ตรวจสอบสิทธิ์ยืนยันใบสั่งซื้อไม่สำเร็จ · โหลดหน้าใหม่อีกครั้ง</p>}
+      <PoDocument key={header.id} header={header} lines={lines} created={Boolean(query.created)} canCancel={canCancel} canSellerConfirm={canSellerConfirm} />
+    </>;
   }
   const [catalog, templates] = await Promise.all([loadCatalog(client, access, lines.map(l => l.product_id)), loadTemplates(client)]);
   const metrics = catalog.data ? await loadMetrics(client, catalog.data.map(p => p.id)) : { data: null, error: null };

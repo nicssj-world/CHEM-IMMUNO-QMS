@@ -29,6 +29,7 @@ const codeMessages: Record<string, string> = {
   CI_PO_PRODUCT_INACTIVE: 'มีน้ำยาที่ปิดใช้งานแล้วในรายการ · นำรายการนั้นออกก่อน',
   CI_PO_QUANTITY_INVALID: 'ยอดสั่งซื้อต้องเป็นจำนวนเต็ม 0 ขึ้นไป',
   CI_PO_EMPTY: 'ยังไม่มีรายการที่มียอดสั่งซื้อมากกว่า 0',
+  CI_PO_SELLER_NOT_ORDERED: 'ยืนยันได้เฉพาะใบสั่งซื้อที่ยังไม่ถูกยกเลิก',
   CI_PO_NOT_FOUND: 'ไม่พบใบสั่งซื้อนี้',
   CI_PO_NOT_EDITABLE: 'ใบสั่งซื้อนี้ยืนยันหรือยกเลิกแล้ว จึงแก้ไขไม่ได้',
   CI_PO_TEMPLATE_NAME_INVALID: 'ตั้งชื่อ Template 1–120 ตัวอักษร',

@@ -1,6 +1,6 @@
 import { requireAccess } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
-import { provisionUser } from '@/app/actions/users';
+import { provisionUser, setPurchaseOrderConfirmationPermission } from '@/app/actions/users';
 import { ChangePasswordDialog } from '@/components/change-password-dialog';
 import { logUserMessage } from '@/lib/messages';
 import { label, roleLabels } from '@/lib/labels';
@@ -8,14 +8,23 @@ import { SubmitButton } from '@/components/submit-button';
 import { PositionCell } from '@/components/position-cell';
 import { UserEditDialog } from '@/components/user-edit-dialog';
 
-type AccessRow = { user_id: string; warehouse_id: number; role: string; active: boolean; ci_user_profiles: { ephis_id: string; display_name: string; active: boolean; position_title: string | null } | null; ci_warehouses: { name: string } | null };
+type AccessRow = { user_id: string; warehouse_id: number; role: string; active: boolean; ci_user_profiles: { ephis_id: string; display_name: string; active: boolean; position_title: string | null; can_confirm_purchase_orders: boolean } | null; ci_warehouses: { name: string } | null };
+
+function ConfirmationPermission({ ephisId, enabled }: { ephisId: string; enabled: boolean }) {
+  return <form action={setPurchaseOrderConfirmationPermission} className="flex flex-wrap items-center gap-2">
+    <input type="hidden" name="ephis_id" value={ephisId}/>
+    <input type="hidden" name="enabled" value={enabled ? 'false' : 'true'}/>
+    <SubmitButton className="button secondary min-h-11 text-sm" label={enabled ? 'ปิดสิทธิ์ยืนยันใบสั่งซื้อ' : 'อนุญาตยืนยันใบสั่งซื้อ'}/>
+    {enabled && <span className="text-xs text-emerald-800">มีสิทธิ์ยืนยัน</span>}
+  </form>;
+}
 
 export default async function UsersPage({ searchParams }: { searchParams: Promise<{ error?: string; saved?: string }> }) {
   const access = await requireAccess(); const params = await searchParams;
   const isAdminBoth = access.warehouses.some(w => w.code === 'CHE' && w.role === 'admin') && access.warehouses.some(w => w.code === 'IMM' && w.role === 'admin');
   if (!isAdminBoth) return <main className="grid gap-5"><div><p className="eyebrow">User access</p><h1 className="page-title">ผู้ใช้และสิทธิ์คลัง</h1></div><p className="error">หน้านี้ใช้ได้เฉพาะผู้ดูแลระบบที่มีสิทธิ์ทั้งสองคลัง</p></main>;
   const client = await createClient();
-  const { data,error } = client ? await client.from('ci_user_access').select('user_id,warehouse_id,role,active,ci_user_profiles(ephis_id,display_name,active,position_title),ci_warehouses(name)').order('user_id').order('warehouse_id') : { data: [],error:null };
+  const { data,error } = client ? await client.from('ci_user_access').select('user_id,warehouse_id,role,active,ci_user_profiles(ephis_id,display_name,active,position_title,can_confirm_purchase_orders),ci_warehouses(name)').order('user_id').order('warehouse_id') : { data: [],error:null };
   const rows = (data ?? []) as unknown as AccessRow[];
   // Phones get one card per person (the table has one row per person × warehouse).
   const users = [...Map.groupBy(rows, row => row.user_id)].map(([id, access]) => ({ id, access, profile: access[0].ci_user_profiles, ephisId: access[0].ci_user_profiles?.ephis_id ?? '—', name: access[0].ci_user_profiles?.display_name ?? '' }));
@@ -25,6 +34,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
       <UserEditDialog ephisId={user.profile.ephis_id} displayName={user.profile.display_name}
         role={user.access[0].role} active={user.profile.active && user.access.every(item=>item.active)}/>
       <ChangePasswordDialog ephisId={user.profile.ephis_id} displayName={user.profile.display_name}/>
+      <ConfirmationPermission ephisId={user.profile.ephis_id} enabled={user.profile.can_confirm_purchase_orders}/>
     </div>}</td></tr>)}</tbody></table></div><div className="mobile-card-list px-4 pb-4">{users.map(user => <article key={user.id} className="rounded-xl border border-line p-4 grid gap-2"><div className="grid gap-2">
       <p className="font-bold">{user.ephisId}</p>
       <p className="muted text-sm break-words">{user.name}</p>
@@ -33,6 +43,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
       {user.profile && <UserEditDialog ephisId={user.profile.ephis_id} displayName={user.profile.display_name}
         role={user.access[0].role} active={user.profile.active && user.access.every(item=>item.active)}/>}
       {user.profile && <ChangePasswordDialog ephisId={user.profile.ephis_id} displayName={user.profile.display_name}/>}
+      {user.profile && <ConfirmationPermission ephisId={user.profile.ephis_id} enabled={user.profile.can_confirm_purchase_orders}/>}
     </div>
     {user.profile && <PositionCell userId={user.id} name={user.profile.display_name} position={user.profile.position_title} />}
     <p className="text-sm muted">{label(roleLabels,user.access[0].role)} · {user.profile?.active && user.access.every(item=>item.active) ? 'ใช้งาน' : 'ปิดใช้งาน'}</p></article>)}</div>{rows.length === 0 && <p className="muted p-5">ยังไม่มีการกำหนดสิทธิ์</p>}</section>

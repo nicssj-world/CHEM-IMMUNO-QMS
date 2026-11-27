@@ -58,11 +58,11 @@ export async function loadTemplates(client: SupabaseClient): Promise<{ data: Tem
 }
 
 export type OrderHeader = { id: string; po_number: string | null; status: string; template_id: string | null; template_name_snapshot: string | null;
-  created_by: string; created_by_name: string; created_at: string; updated_at: string; confirmed_at: string | null; usage_period_start: string | null; usage_period_end: string | null };
+  created_by: string; created_by_name: string; created_at: string; updated_at: string; confirmed_at: string | null; usage_period_start: string | null; usage_period_end: string | null; acknowledged_at: string | null; acknowledged_by: string | null; acknowledged_by_name: string | null };
 export type OrderLine = { id: string; product_id: string; warehouse_id: number; display_order: number; order_quantity: number | string;
   product_code_snapshot: string | null; product_name_snapshot: string | null; packing_snapshot: string | null; unit_snapshot: string | null;
   issued_30d_snapshot: number | string | null; stock_balance_snapshot: number | string | null; rop_snapshot: number | string | null };
-export const ORDER_COLUMNS = 'id,po_number,status,template_id,template_name_snapshot,created_by,created_by_name,created_at,updated_at,confirmed_at,usage_period_start,usage_period_end';
+export const ORDER_COLUMNS = 'id,po_number,status,template_id,template_name_snapshot,created_by,created_by_name,created_at,updated_at,confirmed_at,usage_period_start,usage_period_end,acknowledged_at,acknowledged_by,acknowledged_by_name';
 
 export async function loadOrder(client: SupabaseClient, id: string): Promise<{ data: { header: OrderHeader; lines: OrderLine[] } | null; error: DbError | null }> {
   const header = await client.from('ci_purchase_orders').select(ORDER_COLUMNS).eq('id', id).maybeSingle();
