@@ -22,5 +22,6 @@ export default async function PurchaseOrderHistoryPage() {
     id: order.id, poNumber: order.po_number, status: order.status, templateName: order.template_name_snapshot,
     dateText: order.confirmed_at ? formatDateBE(order.confirmed_at) : `ร่าง · ${formatThaiDateTime(order.updated_at)}`,
     itemCount: items.get(order.id) ?? 0, createdByName: order.created_by_name,
+    acknowledgedByName: order.acknowledged_by_name, acknowledgedDateText: order.acknowledged_at ? formatThaiDateTime(order.acknowledged_at) : null,
   }))} />;
 }

@@ -116,3 +116,19 @@ export async function resetUserPassword(_previous: PasswordResetState, form: For
   }
   return { status: 'success' };
 }
+
+/** Independent permission: does not change the account role or warehouse access. */
+export async function setPurchaseOrderConfirmationPermission(form: FormData) {
+  const actor = await requireAccess();
+  if (!actor.warehouses.some(w => w.id === '1' && w.role === 'admin') ||
+      !actor.warehouses.some(w => w.id === '2' && w.role === 'admin')) fail('ต้องเป็น Admin ทั้งสองคลังเพื่อจัดการสิทธิ์');
+  const ephisId = normalizeEphisId(String(form.get('ephis_id') ?? ''));
+  const enabled = form.get('enabled');
+  if (!ephisId || (enabled !== 'true' && enabled !== 'false')) fail('ข้อมูลผู้ใช้ไม่ถูกต้อง');
+  const client = await createClient();
+  if (!client) fail('เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่');
+  const { error } = await client.rpc('ci_set_po_confirmation_permission', { p_ephis_id: ephisId, p_enabled: enabled === 'true' });
+  if (error) fail(logUserMessage('po-confirmation-permission', error));
+  revalidatePath('/admin/users');
+  redirect('/admin/users?saved=1');
+}

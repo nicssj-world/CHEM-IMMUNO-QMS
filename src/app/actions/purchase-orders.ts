@@ -80,3 +80,13 @@ export async function deletePurchaseOrderTemplate(id: string): Promise<{ ok: tru
   if (error) return { ok: false, message: logUserMessage('po-template-delete', error, 'ลบ Template ไม่สำเร็จ กรุณาลองใหม่') };
   refresh(); return { ok: true };
 }
+
+export type SellerConfirmation = { acknowledged_at: string; acknowledged_by: string; acknowledged_by_name: string };
+export async function confirmPurchaseOrderAsSeller(id: string): Promise<{ ok: true; confirmation: SellerConfirmation } | Fail> {
+  if (!uuid.test(id)) return { ok: false, message: 'ใบสั่งซื้อไม่ถูกต้อง' };
+  const client = await connect(); if (!client) return offline;
+  const { data, error } = await client.rpc('ci_confirm_purchase_order_as_seller', { p_id: id });
+  if (error || !data) return { ok: false, message: logUserMessage('po-seller-confirmation', error, 'ยืนยันใบสั่งซื้อไม่สำเร็จ กรุณาลองใหม่') };
+  refresh(id);
+  return { ok: true, confirmation: data as SellerConfirmation };
+}
