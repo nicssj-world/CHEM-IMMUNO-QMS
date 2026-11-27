@@ -73,7 +73,7 @@ test('seller confirmation: authorization, first writer, revocation, history and 
     await assert.rejects(actor(seller,c=>c.query('update ci_user_profiles set can_confirm_purchase_orders=true where user_id=$1',[seller])),/permission denied/);
     await assert.rejects(rpc(seller,'select ci_cancel_purchase_order($1) result',[order.id]),/CI_ACCESS_DENIED/);
     const [a,b] = await Promise.all([confirm(seller,order.id),confirm(seller2,order.id)]);
-    assert.deepEqual(a,b); assert.ok([seller,seller2].includes(a.acknowledged_by));
+    assert.deepEqual(a,b); assert.ok((a.acknowledged_by === seller || a.acknowledged_by === seller2));
     assert.ok(a.acknowledged_at); assert.ok(['Seller One','Seller Two'].includes(a.acknowledged_by_name));
     assert.deepEqual(await confirm(seller,order.id),a);
     assert.equal(await eligible(seller,order.id),false);
