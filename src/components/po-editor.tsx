@@ -150,7 +150,7 @@ export function PoEditor({ orderId, products, metrics, templates, initialTemplat
                   <span className="muted text-xs block">{product?.packing_size_raw ? `${product.packing_size_raw} · ` : ''}หน่วย {unitLabel(product?.base_stock_unit)}</span>
                   {product && !product.active && <span className="text-xs text-[#a83442] block">ปิดใช้งานแล้ว · นำออกก่อนยืนยัน</span>}</td>
                 <td className="text-right tabular-nums">{metric ? fmt(metric.issued_30d) : '—'}</td>
-                <td className={'text-right tabular-nums ' + (low ? 'text-[#a8323e] font-semibold' : '')}>{metric ? fmt(metric.stock_balance) : '—'}{low && <span className="block text-xs font-normal">ต่ำกว่า ROP</span>}</td>
+                <td className={'text-right tabular-nums ' + (low ? 'text-[#a8323e] font-semibold' : '')}>{metric ? fmt(metric.stock_balance) : '—'}</td>
                 <td className={'text-right tabular-nums ' + (metric?.rop == null ? 'muted' : '')}>{ropText(metric?.rop)}</td>
                 <td className="po-order-cell">{stepper(line, product)}{problems.get(line.productId) && <span className="block text-xs text-[#a8323e] text-center mt-1">{problems.get(line.productId)}</span>}</td>
                 <td><div className="flex justify-center gap-1">
